@@ -6,6 +6,7 @@ extends PanelContainer
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
+const UiUtil = preload("res://scripts/ui/ui_util.gd")
 
 ## @onready は使わない。ツリー投入の次フレームでエンジンが代入するため、
 ## bind() が add_child の直後に呼ばれると、手動で解決した参照を後から
@@ -37,20 +38,11 @@ func refresh() -> void:
 func _resolve_nodes() -> void:
 	if is_instance_valid(_silver_label):
 		return
-	_silver_label = _find("SilverLabel")
-	_day_label = _find("DayLabel")
-	_day_bar = _find("DayBar")
-	_city_label = _find("CityLabel")
-	_cargo_label = _find("CargoLabel")
-
-
-## %記法はシーンのオーナー解決に依存し、ツリー外では引けないことがある。
-## 引けなければ名前で再帰的に探す。
-func _find(node_name: String) -> Node:
-	var found: Node = get_node_or_null("%" + node_name)
-	if found != null:
-		return found
-	return find_child(node_name, true, false)
+	_silver_label = UiUtil.find_node(self, "SilverLabel")
+	_day_label = UiUtil.find_node(self, "DayLabel")
+	_day_bar = UiUtil.find_node(self, "DayBar")
+	_city_label = UiUtil.find_node(self, "CityLabel")
+	_cargo_label = UiUtil.find_node(self, "CargoLabel")
 
 
 ## 表示を更新できる状態か。ノードは必要になった時点で解決する。
@@ -94,14 +86,6 @@ func _on_day_advanced(_day: int) -> void:
 	_refresh_cargo()
 
 
-## 桁区切りを入れる（1234567 -> 1,234,567）。
+## 桁区切りを入れる（1234567 -> 1,234,567）。実体は UiUtil。
 static func _format_number(value: int) -> String:
-	var text: String = str(absi(value))
-	var out: String = ""
-	var count: int = 0
-	for i: int in range(text.length() - 1, -1, -1):
-		out = text[i] + out
-		count += 1
-		if count % 3 == 0 and i > 0:
-			out = "," + out
-	return ("-" if value < 0 else "") + out
+	return UiUtil.format_number(value)
