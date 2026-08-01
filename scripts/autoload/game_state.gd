@@ -1,13 +1,34 @@
 extends Node
-## ゲーム全体の状態を管理するオートロード。
-## セーブ/ロード、現在の日付・ターン管理などをここに集約する。
+## 現在プレイ中のセッションを保持するオートロード。
+##
+## ゲームのルールそのものは scripts/systems/game_session.gd にあり、ここは
+## その入れ物と、UI からの共通の入口を提供するだけに留める。
+## ロジックを autoload に置かないのは、--script のハーネスが autoload を
+## 初期化しないため（詳細は CLAUDE.md）。
 
-signal day_advanced(day: int)
+const GameData = preload("res://scripts/systems/game_data.gd")
+const GameSession = preload("res://scripts/systems/game_session.gd")
 
-var current_day: int = 1
-var player_name: String = "Player"
+signal session_started(session: GameSession)
+
+var session: GameSession
 
 
-func advance_day() -> void:
-	current_day += 1
-	day_advanced.emit(current_day)
+func _ready() -> void:
+	start_new_game()
+
+
+## 新しいプレイを開始する。seed を指定すると再現可能になる。
+func start_new_game(rng_seed: int = 0) -> void:
+	if rng_seed == 0:
+		rng_seed = randi()
+	session = GameSession.new(rng_seed)
+	session_started.emit(session)
+
+
+func current_day() -> int:
+	return session.day if session else 1
+
+
+func total_days() -> int:
+	return GameData.TOTAL_DAYS

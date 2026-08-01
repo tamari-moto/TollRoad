@@ -60,12 +60,33 @@ git ls-files -s | grep -c 100755   # 0 であること
 - 型注釈を付ける（`func add_gold(amount: int) -> void`）
 - 関数定義の間は空行2つ
 
+## ゲームロジックの置き場所
+
+**ロジックは autoload に置かない。** `scripts/systems/` に素のクラスとして書き、
+`load()` + `.new()` で駆動できる形を保つこと。`--script` のハーネスは autoload を
+初期化しないため、autoload 経由でしか触れないロジックは検証できなくなる。
+
+[game_state.gd](scripts/autoload/game_state.gd) は
+[GameSession](scripts/systems/game_session.gd) を保持するだけの薄い入れ物に留める。
+
+**RNG は必ずシードを渡して生成する。** `GameSession.new(seed)` で再現可能になる。
+シードを固定できないと、バグの再現もバランスのバッチ検証もできない。
+
+## 検証
+
+ロジックの検査はシード固定のシナリオで行う（テストフレームワークは使わない）:
+
+```bash
+"...Godot_v4.7.1-stable_win64_console.exe" \
+  --headless --path . --script scripts/systems/scenario_m1.gd
+```
+
+全件合格なら exit 0、失敗があれば `FAIL:` を出力して exit 1。
+
 ## 現在の実装状況
 
-autoload 2つ（[GameState](scripts/autoload/game_state.gd) /
-[EconomyManager](scripts/autoload/economy_manager.gd)）は API のみ存在し、
-シグナルは emit されるだけで受け手がまだ無い。
+M1 まで完了（[roadmap.md](docs/roadmap.md) 参照）。品目9種・都市6つ・価格計算・
+売買・移動・日送り・相場メモがヘッドレスで動く。
 
-`scripts/systems/`、`scenes/ui/`、`scenes/entities/`、`data/` は空。
-ウィンドウ解像度（`project.godot` の `[display]`）は未設定で、Godot デフォルトの
-1152x648。UI を作り始める前に決めるのが望ましい。
+未着手: 製作と黒ゾーン襲撃（M2）、島と騎乗（M3）、60日通しとランク判定（M4）、UI 一式（M5〜）。
+ウィンドウ解像度（`[display]`）は未設定で Godot デフォルトの 1152x648。M5 で決める。

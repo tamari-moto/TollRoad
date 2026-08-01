@@ -10,8 +10,8 @@ scenes/
   ui/        UI画面(ショップ、ステータスパネルなど)
   entities/  NPC・商品・施設などのシーン
 scripts/
-  autoload/  グローバル管理(GameState, EconomyManager)
-  systems/   価格変動、需要供給などのロジック
+  autoload/  グローバル管理(GameState)
+  systems/   ゲームロジック(価格計算、交易、セッション管理)
   ui/        UI用スクリプト
 assets/
   sprites/
