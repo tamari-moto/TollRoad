@@ -81,6 +81,12 @@ func refresh() -> void:
 		var takeable: int = _session.max_withdrawable()
 		_withdraw_button.text = "引き取る（%d個・1日）" % takeable if takeable > 0 else "引き取る（1日）"
 		_withdraw_button.disabled = over or _session.warehouse_total() <= 0 or takeable <= 0
+		if _session.warehouse_total() <= 0:
+			_withdraw_button.tooltip_text = "島倉庫が空。労働者が資源を運ぶまで待つ"
+		elif takeable <= 0:
+			_withdraw_button.tooltip_text = "積荷に空きがない"
+		else:
+			_withdraw_button.tooltip_text = "1日を消費して島倉庫から積載上限まで引き取る"
 
 	for mount_id: String in _mount_buttons:
 		var button: Button = _mount_buttons[mount_id]

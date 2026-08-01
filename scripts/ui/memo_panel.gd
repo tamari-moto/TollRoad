@@ -8,15 +8,16 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-const COLOR_FRESH := Color(0.88, 0.88, 0.9)
+const COLOR_FRESH := UiTheme.TEXT
 ## 古い記録。読めるが確度が落ちていることが一目で分かる濃度にする。
-const COLOR_STALE := Color(0.5, 0.5, 0.55)
-const COLOR_UNKNOWN := Color(0.38, 0.38, 0.42)
-const COLOR_CURRENT := Color(0.55, 0.8, 0.95)
-const COLOR_HEADER := Color(0.6, 0.6, 0.65)
+const COLOR_STALE := UiTheme.TEXT_STALE
+const COLOR_UNKNOWN := UiTheme.TEXT_UNKNOWN
+const COLOR_CURRENT := UiTheme.FOCUS
+const COLOR_HEADER := UiTheme.TEXT_DIM
 ## 既知の中で最安を示す色。買い先を探す用途に直結する。
-const COLOR_CHEAPEST := Color(0.45, 0.85, 0.5)
+const COLOR_CHEAPEST := UiTheme.GOOD
 
 var _session: GameSession
 var _grid: GridContainer

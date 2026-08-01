@@ -6,8 +6,9 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-const COLOR_BONUS := Color(0.45, 0.85, 0.5)
+const COLOR_BONUS := UiTheme.GOOD
 
 var _session: GameSession
 var _title: Label

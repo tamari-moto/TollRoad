@@ -7,15 +7,7 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
-
-## 基準価格に対する比率がこれ以下なら「安い」表示にする。
-const CHEAP_RATIO: float = 0.95
-## これ以上なら「高い」表示にする。
-const DEAR_RATIO: float = 1.05
-
-const COLOR_CHEAP := Color(0.45, 0.85, 0.5)
-const COLOR_DEAR := Color(0.95, 0.6, 0.45)
-const COLOR_NEUTRAL := Color(0.85, 0.85, 0.85)
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 ## 数量の選び方。half は所持数/購入可能数の半分。
 enum Quantity { ONE, FIVE, HALF, ALL }
@@ -59,7 +51,7 @@ func _build() -> void:
 	for heading: String in ["品目", "価格", "基準比", "所持", "", ""]:
 		var label := Label.new()
 		label.text = heading
-		label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+		label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
 		_grid.add_child(label)
 
 	for item_id: String in GameData.ITEMS:
@@ -119,19 +111,11 @@ func refresh() -> void:
 
 		row["price"].text = UiUtil.format_number(price)
 		row["ratio"].text = "%d%%" % int(round(ratio * 100.0))
-		row["ratio"].add_theme_color_override("font_color", _ratio_color(ratio))
+		row["ratio"].add_theme_color_override("font_color", UiTheme.ratio_color(ratio))
 		row["held"].text = str(_session.cargo_count(item_id))
 
 		row["buy"].disabled = over or _buy_amount(item_id) <= 0
 		row["sell"].disabled = over or _sell_amount(item_id) <= 0
-
-
-static func _ratio_color(ratio: float) -> Color:
-	if ratio <= CHEAP_RATIO:
-		return COLOR_CHEAP
-	if ratio >= DEAR_RATIO:
-		return COLOR_DEAR
-	return COLOR_NEUTRAL
 
 
 ## 選択中の数量指定に基づく実際の購入数。

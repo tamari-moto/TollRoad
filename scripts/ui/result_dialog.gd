@@ -7,13 +7,14 @@ extends Window
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 signal restart_requested
 
-const COLOR_LEGENDARY := Color(1.0, 0.85, 0.4)
-const COLOR_MASTER := Color(0.55, 0.85, 0.95)
-const COLOR_NORMAL := Color(0.85, 0.85, 0.88)
-const COLOR_BANKRUPT := Color(0.9, 0.55, 0.5)
+const COLOR_LEGENDARY := UiTheme.RANK_LEGENDARY
+const COLOR_MASTER := UiTheme.RANK_MASTER
+const COLOR_NORMAL := UiTheme.RANK_NORMAL
+const COLOR_BANKRUPT := UiTheme.RANK_BANKRUPT
 
 var _session: GameSession
 var _rank_label: Label
@@ -108,11 +109,7 @@ static func _next_threshold(net_worth: int) -> int:
 
 
 static func _rank_color(rank_name: String) -> Color:
-	match rank_name:
-		"LEGENDARY MERCHANT": return COLOR_LEGENDARY
-		"MASTER TRADER": return COLOR_MASTER
-		"BANKRUPT": return COLOR_BANKRUPT
-		_: return COLOR_NORMAL
+	return UiTheme.rank_color(rank_name)
 
 
 func _add_row(label_text: String, value_text: String) -> void:

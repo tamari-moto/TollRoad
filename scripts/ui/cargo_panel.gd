@@ -4,19 +4,7 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
-
-## 品目ごとの表示色。資源は寒色〜土色、装備は暖色で系統を分ける。
-const ITEM_COLORS: Dictionary = {
-	"ore":   Color(0.55, 0.58, 0.65),
-	"wood":  Color(0.55, 0.42, 0.28),
-	"fiber": Color(0.45, 0.65, 0.55),
-	"hide":  Color(0.68, 0.5, 0.35),
-	"stone": Color(0.5, 0.5, 0.5),
-	"sword": Color(0.85, 0.45, 0.4),
-	"bow":   Color(0.8, 0.65, 0.35),
-	"robe":  Color(0.65, 0.45, 0.75),
-	"armor": Color(0.8, 0.55, 0.3),
-}
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 var _session: GameSession
 var _title: Label
@@ -65,12 +53,12 @@ func refresh() -> void:
 	for item_id: String in _session.cargo:
 		var count: int = _session.cargo[item_id]
 		var weight: int = count * GameData.ITEMS[item_id]["weight"]
-		_bar.add_child(_make_segment(weight, ITEM_COLORS.get(item_id, Color.GRAY)))
+		_bar.add_child(_make_segment(weight, UiTheme.item_color(item_id)))
 		detail_parts.append("%s %d個" % [GameData.ITEMS[item_id]["name"], count])
 
 	var free: int = capacity - used
 	if free > 0:
-		_bar.add_child(_make_segment(free, Color(0.2, 0.2, 0.22)))
+		_bar.add_child(_make_segment(free, UiTheme.CARGO_EMPTY))
 
 	if is_instance_valid(_detail):
 		_detail.text = "　".join(detail_parts) if not detail_parts.is_empty() else "（空）"

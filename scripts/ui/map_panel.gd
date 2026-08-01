@@ -7,11 +7,12 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 signal move_requested(city_id: String)
 
-const COLOR_CURRENT := Color(0.55, 0.8, 0.95)
-const COLOR_DANGER := Color(0.95, 0.6, 0.45)
+const COLOR_CURRENT := UiTheme.FOCUS
+const COLOR_DANGER := UiTheme.WARN
 
 var _session: GameSession
 var _list: VBoxContainer

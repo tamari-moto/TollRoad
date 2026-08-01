@@ -6,11 +6,13 @@ extends Node2D
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
 
 @onready var _hud: PanelContainer = %HUD
+@onready var _tabs: TabContainer = %Tabs
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _rest_button: Button = %RestButton
@@ -30,6 +32,10 @@ func _ready() -> void:
 	_rest_button.pressed.connect(_on_rest_pressed)
 	_result_button.pressed.connect(_show_result)
 	_result_dialog.restart_requested.connect(_on_restart_requested)
+
+	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
+	for index: int in _tabs.get_tab_count():
+		_tabs.set_tab_tooltip(index, "%s（%d キー）" % [_tabs.get_tab_title(index), index + 1])
 
 	_bind_session(GameState.session)
 
@@ -55,6 +61,25 @@ func _bind_session(session: GameSession) -> void:
 	_rest_button.disabled = false
 	_result_button.visible = false
 	_refresh_status()
+
+
+## キー操作。_input ではなく _unhandled_input を使うのは、ボタンや
+## ダイアログにフォーカスがある時にキーを奪わないため。
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_pressed() or event.is_echo():
+		return
+
+	if event.is_action("tr_rest"):
+		if not _rest_button.disabled:
+			_session.rest()
+		get_viewport().set_input_as_handled()
+		return
+
+	for index: int in _tabs.get_tab_count():
+		if event.is_action("tr_tab_%d" % (index + 1)):
+			_tabs.current_tab = index
+			get_viewport().set_input_as_handled()
+			return
 
 
 func _on_rest_pressed() -> void:
@@ -109,6 +134,9 @@ func _append_log(message: String) -> void:
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 積荷の全損は最も重い事象なので、その行だけ色を変えて見落とさせない。
+	if message.contains("襲撃"):
+		label.add_theme_color_override("font_color", UiTheme.WARN)
 	_log_list.add_child(label)
 
 	while _log_list.get_child_count() > LOG_DISPLAY_LIMIT:

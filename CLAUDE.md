@@ -104,11 +104,23 @@ git ls-files -s | grep -c 100755   # 0 であること
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
 製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m8.gd` の8本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m9.gd` の9本。
 新しい機能を足したら対応するシナリオも足すこと。
 
 UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解決は
-[ui_util.gd](scripts/ui/ui_util.gd) の `find_node()` を使う。
+[ui_util.gd](scripts/ui/ui_util.gd) の `find_node()`、**色は必ず**
+[ui_theme.gd](scripts/ui/ui_theme.gd) から取る（パネルに生の `Color()` を
+書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
+古いセッションが繋がったままになるのを防ぐため。
+
+**Tween はツリー外では作れない。** `--script` のハーネスは
+`root.add_child()` してもツリー外扱いなので、`is_inside_tree()` が false の
+場合はアニメーションを挟まず即座に反映する分岐を必ず用意する
+（[hud.gd](scripts/ui/hud.gd) の `_animate_silver()` が例）。
+
+キー操作は `[input]` の `tr_rest`（Space）と `tr_tab_1`〜`4`（1〜4）。
+`_input` ではなく `_unhandled_input` で処理し、フォーカス中のコントロールから
+キーを奪わないようにしている。
 右側の4画面は `Main.tscn` の `%Tabs`（TabContainer）配下にあり、**ノード名が
 そのままタブ名になる**ため日本語（`%大陸図` など）。名前を変えると
 シナリオの参照も壊れるので注意。
