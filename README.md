@@ -1,4 +1,4 @@
-# EconomySim
+# TollRoad
 
 Godot 4製の経済シミュレーションゲーム(プロトタイプ)。
 
