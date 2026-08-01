@@ -9,6 +9,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 const COLOR_FRESH := UiTheme.TEXT
 ## 古い記録。読めるが確度が落ちていることが一目で分かる濃度にする。
@@ -59,9 +60,8 @@ func _build() -> void:
 
 	# 品目ごとの行。
 	for item_id: String in GameData.ITEMS:
-		var name_label := Label.new()
-		name_label.text = GameData.ITEMS[item_id]["name"]
-		_grid.add_child(name_label)
+		# アイコンと名前を1セルに収める。列数は変えない。
+		_grid.add_child(UiIcons.make_labeled_item(item_id, GameData.ITEMS[item_id]["name"]))
 
 		var row: Dictionary = {}
 		for city_id: String in cities:

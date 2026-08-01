@@ -104,13 +104,22 @@ git ls-files -s | grep -c 100755   # 0 であること
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
 製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m9.gd` の9本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m10.gd` の10本。
 新しい機能を足したら対応するシナリオも足すこと。
+
+**シグナルとハンドラの引数を一致させること。** `silver_changed(amount)` や
+`day_advanced(day)` は引数を渡す。引数なしのハンドラを繋いでも Godot は接続を
+許すが、発火時に毎回エラーになり**そのハンドラだけ呼ばれない**。他のシグナル
+経由で更新されると検査は通ってしまうため気づきにくい。`scenario_m10.gd` の
+`_test_signal_arity()` が全パネルで検出する。
 
 UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解決は
 [ui_util.gd](scripts/ui/ui_util.gd) の `find_node()`、**色は必ず**
 [ui_theme.gd](scripts/ui/ui_theme.gd) から取る（パネルに生の `Color()` を
-書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
+書かない）。品目アイコンは [ui_icons.gd](scripts/ui/ui_icons.gd) 経由で取り、
+**画像が無くても壊れない**（`null` が返り、名前だけで表示される）。
+`GridContainer` に並ぶセルは `make_labeled_item()` でアイコンと名前を1セルに
+収める — 列を増やすと既存シナリオの行数検査が壊れるため。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
 **Tween はツリー外では作れない。** `--script` のハーネスは

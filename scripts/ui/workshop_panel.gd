@@ -7,6 +7,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 const COLOR_BONUS := UiTheme.GOOD
 
@@ -18,7 +19,8 @@ var _rows: Dictionary = {}
 
 func bind(session: GameSession) -> void:
 	UiUtil.rebind(_session, session, {
-		"silver_changed": _on_changed,
+		# silver_changed は引数を1つ渡すため、専用のハンドラで受ける。
+		"silver_changed": _on_silver_changed,
 		"cargo_changed": _on_changed,
 		"day_advanced": _on_day_advanced,
 	})
@@ -51,13 +53,9 @@ func _build_row(item_id: String) -> Dictionary:
 	var item: Dictionary = GameData.ITEMS[item_id]
 	var material_id: String = item["material"]
 
-	var name_label := Label.new()
-	name_label.text = item["name"]
-	_grid.add_child(name_label)
-
-	var material_label := Label.new()
-	material_label.text = GameData.ITEMS[material_id]["name"]
-	_grid.add_child(material_label)
+	# アイコンと名前を1セルに収める。列を増やすと行数の検査が壊れるため。
+	_grid.add_child(UiIcons.make_labeled_item(item_id, item["name"]))
+	_grid.add_child(UiIcons.make_labeled_item(material_id, GameData.ITEMS[material_id]["name"]))
 
 	# ボーナス都市では消費数が減るため、都市によって変わる。
 	var cost_label := Label.new()
@@ -140,6 +138,10 @@ func _on_craft_pressed(item_id: String) -> void:
 
 
 func _on_changed() -> void:
+	refresh()
+
+
+func _on_silver_changed(_amount: int) -> void:
 	refresh()
 
 

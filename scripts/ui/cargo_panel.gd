@@ -5,10 +5,12 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 var _session: GameSession
 var _title: Label
 var _bar: HBoxContainer
+var _icons: HBoxContainer
 var _detail: Label
 
 
@@ -28,6 +30,7 @@ func _resolve() -> void:
 		return
 	_title = UiUtil.find_node(self, "CargoTitle")
 	_bar = UiUtil.find_node(self, "CargoBar")
+	_icons = UiUtil.find_node(self, "CargoIcons")
 	_detail = UiUtil.find_node(self, "CargoDetail")
 
 
@@ -62,6 +65,20 @@ func refresh() -> void:
 
 	if is_instance_valid(_detail):
 		_detail.text = "　".join(detail_parts) if not detail_parts.is_empty() else "（空）"
+
+	_refresh_icons()
+
+
+## 積んでいる品目をアイコン付きで並べる。画像が無ければ個数だけが出る。
+func _refresh_icons() -> void:
+	if not is_instance_valid(_icons):
+		return
+	for child: Node in _icons.get_children():
+		_icons.remove_child(child)
+		child.queue_free()
+	for item_id: String in _session.cargo:
+		_icons.add_child(UiIcons.make_labeled_item(
+			item_id, "×%d" % _session.cargo[item_id]))
 
 
 ## 重量に比例した幅を持つ色付きの区画。

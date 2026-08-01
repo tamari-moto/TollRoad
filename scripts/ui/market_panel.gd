@@ -8,6 +8,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 ## 数量の選び方。half は所持数/購入可能数の半分。
 enum Quantity { ONE, FIVE, HALF, ALL }
@@ -23,7 +24,8 @@ var _quantity_buttons: Dictionary = {}
 
 func bind(session: GameSession) -> void:
 	UiUtil.rebind(_session, session, {
-		"silver_changed": _on_state_changed,
+		# silver_changed は引数を1つ渡すため、専用のハンドラで受ける。
+		"silver_changed": _on_silver_changed,
 		"cargo_changed": _on_state_changed,
 		"day_advanced": _on_day_advanced,
 	})
@@ -59,9 +61,8 @@ func _build() -> void:
 
 
 func _build_row(item_id: String) -> Dictionary:
-	var name_label := Label.new()
-	name_label.text = GameData.ITEMS[item_id]["name"]
-	_grid.add_child(name_label)
+	# アイコンと名前を1セルに収める。列を増やすと行数の検査が壊れるため。
+	_grid.add_child(UiIcons.make_labeled_item(item_id, GameData.ITEMS[item_id]["name"]))
 
 	var price_label := Label.new()
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -165,6 +166,10 @@ func _on_sell_pressed(item_id: String) -> void:
 
 
 func _on_state_changed() -> void:
+	refresh()
+
+
+func _on_silver_changed(_amount: int) -> void:
 	refresh()
 
 

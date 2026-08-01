@@ -16,7 +16,8 @@ var _mount_buttons: Dictionary = {}
 
 func bind(session: GameSession) -> void:
 	UiUtil.rebind(_session, session, {
-		"silver_changed": _on_changed,
+		# silver_changed は引数を1つ渡すため、専用のハンドラで受ける。
+		"silver_changed": _on_silver_changed,
 		"warehouse_changed": _on_changed,
 		"island_upgraded": _on_island_upgraded,
 		"mount_changed": _on_mount_changed,
@@ -124,6 +125,10 @@ func _on_mount_pressed(mount_id: String) -> void:
 
 
 func _on_changed() -> void:
+	refresh()
+
+
+func _on_silver_changed(_amount: int) -> void:
 	refresh()
 
 
