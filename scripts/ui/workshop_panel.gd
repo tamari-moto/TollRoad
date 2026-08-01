@@ -16,10 +16,12 @@ var _rows: Dictionary = {}
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"silver_changed": _on_changed,
+		"cargo_changed": _on_changed,
+		"day_advanced": _on_day_advanced,
+	})
 	_session = session
-	session.silver_changed.connect(_on_changed)
-	session.cargo_changed.connect(_on_changed)
-	session.day_advanced.connect(_on_day_advanced)
 	_build()
 	refresh()
 
@@ -108,6 +110,27 @@ func refresh() -> void:
 		row["max"].text = str(maximum)
 		row["button"].text = "作る（%d）" % maximum if maximum > 0 else "作る"
 		row["button"].disabled = over or maximum <= 0
+		row["button"].tooltip_text = _blocked_reason(item_id, per_unit) if maximum <= 0 else ""
+
+
+## なぜ作れないのかを返す。特に積載不足は気づきにくい:
+## 資源2〜3個（重量2〜3）が装備1個（重量3）になるため正味の重量が増え、
+## 積荷を満杯にしていると製作できなくなる。
+func _blocked_reason(item_id: String, per_unit: int) -> String:
+	var material: String = GameData.ITEMS[item_id]["material"]
+	var material_name: String = GameData.ITEMS[material]["name"]
+
+	if _session.cargo_count(material) < per_unit:
+		return "%s が %d 個必要（所持 %d 個）" % [
+			material_name, per_unit, _session.cargo_count(material)]
+	if _session.silver < GameData.CRAFT_FEE:
+		return "手数料 %d シルバーが足りない" % GameData.CRAFT_FEE
+
+	var weight_delta: int = GameData.ITEMS[item_id]["weight"] - GameData.ITEMS[material]["weight"] * per_unit
+	if weight_delta > 0 and _session.free_capacity() < weight_delta:
+		return "積載に空きが %d 必要（%s %d個 → %s 1個で重量が %d 増えるため）" % [
+			weight_delta, material_name, per_unit, GameData.ITEMS[item_id]["name"], weight_delta]
+	return ""
 
 
 func _on_craft_pressed(item_id: String) -> void:

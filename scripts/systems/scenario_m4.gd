@@ -143,9 +143,9 @@ func _run_balance_batch() -> void:
 		"平均が初期資金を上回る（単純戦略でも増える）", str(average))
 
 
-## 単純な戦略で60日を通しプレイする。
-## 「現在地で最も割安な資源を積めるだけ買い、隣町へ運んで売る」を繰り返し、
-## 資金が貯まったら島を拡張する。最適解ではなく、破綻検出のための基準線。
+## 意図された成長ルートで60日を通しプレイする。
+## ボーナス都市で特産資源を装備に変え、カーレオンへ運んで売る。余力があれば
+## 島を拡張する。最適解ではなく、バランスが破綻していないことを測る基準線。
 func _play(s: GameSession) -> Dictionary:
 	var actions: int = 0
 	while not s.is_over():
@@ -159,8 +159,10 @@ func _play(s: GameSession) -> Dictionary:
 			for item_id: String in s.cargo.keys():
 				var price: int = s.prices.get_price(s.current_city, item_id)
 				var base: int = GameData.ITEMS[item_id]["base_price"]
-				# 基準価格を上回っていれば売る。
-				if price > base:
+				var is_equipment: bool = GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT
+				# 装備はカーレオンが最も高いので、他所では基準の1割増を待つ。
+				var threshold: float = 1.1 if is_equipment and s.current_city != GameData.CAERLEON else 1.0
+				if float(price) > float(base) * threshold:
 					s.sell(item_id, s.cargo_count(item_id))
 					actions += 1
 
@@ -169,6 +171,21 @@ func _play(s: GameSession) -> Dictionary:
 			s.withdraw_from_warehouse()
 			actions += 1
 			continue
+
+		# ボーナス都市なら特産資源を装備に変える（原価の2倍以上で売れる）。
+		# 資源2個(重量2)が装備1個(重量3)になるため、積載に空きを残しておく必要がある。
+		var bonus: String = GameData.CITIES[s.current_city]["bonus"]
+		if bonus != "" and GameData.ITEMS[bonus]["material"] == GameData.CITIES[s.current_city]["specialty"]:
+			var material: String = GameData.ITEMS[bonus]["material"]
+			var per_unit: int = s.material_cost_per_unit(bonus)
+			# 完成品が収まるよう、積載の 2/3 までしか材料を積まない。
+			var room: int = (s.capacity() * 2 / 3) / GameData.ITEMS[material]["weight"]
+			var want: int = mini(room - s.cargo_count(material), s.max_buyable(material))
+			if want > 0:
+				s.buy(material, want)
+			if s.max_craftable(bonus) > 0:
+				s.craft(bonus, s.max_craftable(bonus))
+				continue
 
 		# 空きがあれば、最も割安な資源を買う。
 		if s.free_capacity() > 0:
@@ -184,6 +201,17 @@ func _play(s: GameSession) -> Dictionary:
 			if best_id != "":
 				s.buy(best_id, s.max_buyable(best_id))
 				actions += 1
+
+		# 装備を積んでいればカーレオンへ渡る（装備は 1.24 倍で売れる）。
+		# 22% で全損するが、期待値では見合う。
+		var has_equipment: bool = false
+		for item_id: String in s.cargo:
+			if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT:
+				has_equipment = true
+		if has_equipment and s.current_city != GameData.CAERLEON and s.can_move_to(GameData.CAERLEON):
+			s.move_to(GameData.CAERLEON)
+			actions += 1
+			continue
 
 		# 隣町へ移動する。移動できなければ休息（Q7 の継続）。
 		var moved: bool = false

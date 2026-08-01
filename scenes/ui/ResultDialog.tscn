@@ -1,0 +1,73 @@
+[gd_scene load_steps=2 format=3 uid="uid://dr35ultd14l0g"]
+
+[ext_resource type="Script" path="res://scripts/ui/result_dialog.gd" id="1"]
+
+[node name="ResultDialog" type="Window"]
+title = "60日間の航海を終えて"
+initial_position = 2
+size = Vector2i(520, 480)
+visible = false
+wrap_controls = true
+script = ExtResource("1")
+
+[node name="Panel" type="PanelContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Column" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RankLabel" type="Label" parent="Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "SURVIVOR"
+horizontal_alignment = 1
+
+[node name="NetWorthLabel" type="Label" parent="Panel/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "純資産 0 シルバー"
+horizontal_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="Panel/Margin/Column"]
+layout_mode = 2
+
+[node name="BreakdownScroll" type="ScrollContainer" parent="Panel/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Breakdown" type="VBoxContainer" parent="Panel/Margin/Column/BreakdownScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Actions" type="HBoxContainer" parent="Panel/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="RestartButton" type="Button" parent="Panel/Margin/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 40)
+layout_mode = 2
+text = "もう一度遊ぶ"
+
+[node name="CloseButton" type="Button" parent="Panel/Margin/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+text = "結果を見る"

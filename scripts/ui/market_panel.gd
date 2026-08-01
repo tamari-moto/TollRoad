@@ -30,10 +30,12 @@ var _quantity_buttons: Dictionary = {}
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"silver_changed": _on_state_changed,
+		"cargo_changed": _on_state_changed,
+		"day_advanced": _on_day_advanced,
+	})
 	_session = session
-	session.silver_changed.connect(_on_state_changed)
-	session.cargo_changed.connect(_on_state_changed)
-	session.day_advanced.connect(_on_day_advanced)
 	_build()
 	refresh()
 

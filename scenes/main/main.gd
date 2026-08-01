@@ -1,5 +1,5 @@
 extends Node2D
-## メイン画面。HUD と航海日誌を表示し、休息で日を進められる。
+## メイン画面。各画面パネルを束ね、日誌とリザルトを扱う。
 ##
 ## ゲームのルールは GameState.session（GameSession）にあり、ここは
 ## 表示と入力の橋渡しのみを行う。
@@ -14,7 +14,9 @@ const LOG_DISPLAY_LIMIT: int = 200
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _rest_button: Button = %RestButton
+@onready var _result_button: Button = %ResultButton
 @onready var _status_label: Label = %StatusLabel
+@onready var _result_dialog: Window = %ResultDialog
 
 var _session: GameSession
 
@@ -23,24 +25,35 @@ var _panels: Array[Node] = []
 
 
 func _ready() -> void:
-	_session = GameState.session
+	_panels = [%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備]
+
+	_rest_button.pressed.connect(_on_rest_pressed)
+	_result_button.pressed.connect(_show_result)
+	_result_dialog.restart_requested.connect(_on_restart_requested)
+
+	_bind_session(GameState.session)
+
+
+## セッションを各画面に配る。再プレイ時にも呼ばれる。
+func _bind_session(session: GameSession) -> void:
+	_session = session
 	print("TollRoad start. Day: %d/%d, Silver: %d, City: %s" % [
 		_session.day, GameData.TOTAL_DAYS, _session.silver, _session.current_city])
 
 	_hud.bind(_session)
-	_panels = [
-		%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備,
-	]
 	for panel: Node in _panels:
 		panel.bind(_session)
+	_result_dialog.bind(_session)
 
 	_session.logged.connect(_append_log)
 	_session.day_advanced.connect(_on_day_advanced)
 
-	_rest_button.pressed.connect(_on_rest_pressed)
-
+	_clear_log()
 	for entry: String in _session.log_entries:
 		_append_log(entry)
+
+	_rest_button.disabled = false
+	_result_button.visible = false
 	_refresh_status()
 
 
@@ -54,16 +67,42 @@ func _on_day_advanced(_day: int) -> void:
 		panel.refresh()
 	_refresh_status()
 
+	if _session.is_over():
+		_show_result()
+
 
 func _refresh_status() -> void:
 	if _session.is_over():
 		_rest_button.disabled = true
-		_status_label.text = "60日が終了した。純資産 %d（%s）" % [_session.net_worth(), _session.rank()]
+		_result_button.visible = true
+		_status_label.text = "60日が終了した。純資産 %d（%s）" % [
+			_session.net_worth(), _session.rank()]
 		return
 	if _session.is_stranded():
 		_status_label.text = "資金が尽きて移動できない。休息して島の収入を待つしかない。"
 	else:
 		_status_label.text = ""
+
+
+func _show_result() -> void:
+	_result_dialog.show_result()
+
+
+func _on_restart_requested() -> void:
+	# 古いセッションのシグナルは新しいセッションに繋ぎ替えるので切っておく。
+	if _session.logged.is_connected(_append_log):
+		_session.logged.disconnect(_append_log)
+	if _session.day_advanced.is_connected(_on_day_advanced):
+		_session.day_advanced.disconnect(_on_day_advanced)
+
+	GameState.start_new_game()
+	_bind_session(GameState.session)
+
+
+func _clear_log() -> void:
+	for child: Node in _log_list.get_children():
+		_log_list.remove_child(child)
+		child.queue_free()
 
 
 func _append_log(message: String) -> void:

@@ -15,13 +15,15 @@ var _mount_buttons: Dictionary = {}
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"silver_changed": _on_changed,
+		"warehouse_changed": _on_changed,
+		"island_upgraded": _on_island_upgraded,
+		"mount_changed": _on_mount_changed,
+		"cargo_changed": _on_changed,
+		"day_advanced": _on_day_advanced,
+	})
 	_session = session
-	session.silver_changed.connect(_on_changed)
-	session.warehouse_changed.connect(_on_changed)
-	session.island_upgraded.connect(_on_island_upgraded)
-	session.mount_changed.connect(_on_mount_changed)
-	session.cargo_changed.connect(_on_changed)
-	session.day_advanced.connect(_on_day_advanced)
 	_build()
 	refresh()
 

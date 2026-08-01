@@ -21,9 +21,11 @@ var _pending_city: String = ""
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"day_advanced": _on_day_advanced,
+		"silver_changed": _on_silver_changed,
+	})
 	_session = session
-	session.day_advanced.connect(_on_day_advanced)
-	session.silver_changed.connect(_on_silver_changed)
 	_build()
 	refresh()
 

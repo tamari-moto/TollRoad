@@ -21,10 +21,12 @@ var _session: GameSession
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"silver_changed": _on_silver_changed,
+		"day_advanced": _on_day_advanced,
+		"cargo_changed": _refresh_cargo,
+	})
 	_session = session
-	session.silver_changed.connect(_on_silver_changed)
-	session.day_advanced.connect(_on_day_advanced)
-	session.cargo_changed.connect(_refresh_cargo)
 	refresh()
 
 

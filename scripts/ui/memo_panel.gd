@@ -25,8 +25,8 @@ var _city_headers: Dictionary = {}
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {"day_advanced": _on_day_advanced})
 	_session = session
-	session.day_advanced.connect(_on_day_advanced)
 	_build()
 	refresh()
 

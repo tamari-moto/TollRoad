@@ -25,10 +25,12 @@ var _detail: Label
 
 
 func bind(session: GameSession) -> void:
+	UiUtil.rebind(_session, session, {
+		"cargo_changed": _on_changed,
+		"day_advanced": _on_day_advanced,
+		"mount_changed": _on_mount_changed,
+	})
 	_session = session
-	session.cargo_changed.connect(_on_changed)
-	session.day_advanced.connect(_on_day_advanced)
-	session.mount_changed.connect(_on_mount_changed)
 	_resolve()
 	refresh()
 

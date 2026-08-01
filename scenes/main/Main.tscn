@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://b0m1n3econ0my"]
+[gd_scene load_steps=10 format=3 uid="uid://b0m1n3econ0my"]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://cvh0d8tollhud" path="res://scenes/ui/HUD.tscn" id="2"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" uid="uid://cw0rksh0pp4n3" path="res://scenes/ui/WorkshopPanel.tscn" id="6"]
 [ext_resource type="PackedScene" uid="uid://bm3m0p4n3l0000" path="res://scenes/ui/MemoPanel.tscn" id="7"]
 [ext_resource type="PackedScene" uid="uid://ci5l4ndp4n3l0" path="res://scenes/ui/IslandPanel.tscn" id="8"]
+[ext_resource type="PackedScene" uid="uid://dr35ultd14l0g" path="res://scenes/ui/ResultDialog.tscn" id="9"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -127,9 +128,19 @@ custom_minimum_size = Vector2(150, 40)
 layout_mode = 2
 text = "休息する（1日）"
 
+[node name="ResultButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 40)
+layout_mode = 2
+visible = false
+text = "結果を見る"
+
 [node name="StatusLabel" type="Label" parent="UI/Root/Body/Columns/RightColumn/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 autowrap_mode = 3
+
+[node name="ResultDialog" parent="UI/Root" instance=ExtResource("9")]
+unique_name_in_owner = true
