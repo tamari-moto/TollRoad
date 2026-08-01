@@ -11,15 +11,22 @@ const PriceTable = preload("res://scripts/systems/price_table.gd")
 signal day_advanced(day: int)
 signal silver_changed(amount: int)
 signal cargo_changed()
+signal warehouse_changed()
+signal island_upgraded(level: int)
+signal mount_changed(mount_id: String)
 signal logged(message: String)
 
 var day: int = 1
 var silver: int = GameData.INITIAL_SILVER
 var current_city: String = GameData.INITIAL_CITY
 var mount: String = GameData.INITIAL_MOUNT
+var island_level: int = 0
 
 ## item_id -> 個数
 var cargo: Dictionary = {}
+
+## 島倉庫。容量は無制限（Q3）。item_id -> 個数
+var warehouse: Dictionary = {}
 
 ## city_id -> {"day": int, "prices": {item_id -> int}}
 var memo: Dictionary = {}
@@ -64,12 +71,29 @@ func is_over() -> bool:
 	return day > GameData.TOTAL_DAYS
 
 
-## 純資産 = シルバー + 積荷の基準価格 × 0.9
-## （島倉庫は M3 で加算する）
+## 残り日数。
+func days_left() -> int:
+	return maxi(0, GameData.TOTAL_DAYS - day + 1)
+
+
+## どの都市にも移動できない状態か（Q7: ゲームオーバーにはせず休息で継続できる）。
+## 島倉庫が貯まれば引き取って売り、復帰できる余地を残す。
+func is_stranded() -> bool:
+	if is_over():
+		return false
+	for city_id: String in GameData.CITIES:
+		if city_id != current_city and can_move_to(city_id):
+			return false
+	return true
+
+
+## 純資産 = シルバー + (積荷 + 島倉庫) の基準価格 × 0.9
 func net_worth() -> int:
 	var stock_value: int = 0
 	for item_id: String in cargo:
 		stock_value += GameData.ITEMS[item_id]["base_price"] * cargo[item_id]
+	for item_id: String in warehouse:
+		stock_value += GameData.ITEMS[item_id]["base_price"] * warehouse[item_id]
 	return silver + int(round(stock_value * GameData.NET_WORTH_STOCK_RATE))
 
 
@@ -90,7 +114,7 @@ func max_buyable(item_id: String) -> int:
 
 
 func buy(item_id: String, count: int) -> bool:
-	if count <= 0 or count > max_buyable(item_id):
+	if is_over() or count <= 0 or count > max_buyable(item_id):
 		return false
 	var price: int = prices.get_price(current_city, item_id)
 	var total: int = price * count
@@ -105,7 +129,7 @@ func buy(item_id: String, count: int) -> bool:
 
 ## 売却。税は売上総額にかかる（Q2）。手取り = 総額 - 税。
 func sell(item_id: String, count: int) -> bool:
-	if count <= 0 or count > cargo_count(item_id):
+	if is_over() or count <= 0 or count > cargo_count(item_id):
 		return false
 	var price: int = prices.get_price(current_city, item_id)
 	var gross: int = price * count
@@ -155,7 +179,7 @@ func max_craftable(item_id: String) -> int:
 
 ## 資源から装備を製作する。個数をまとめて指定でき、消費日数は1日のみ。
 func craft(item_id: String, count: int) -> bool:
-	if count <= 0 or count > max_craftable(item_id):
+	if is_over() or count <= 0 or count > max_craftable(item_id):
 		return false
 	var material: String = GameData.ITEMS[item_id]["material"]
 	var per_unit: int = material_cost_per_unit(item_id)
@@ -208,6 +232,8 @@ func route_to(destination: String) -> Dictionary:
 
 
 func can_move_to(destination: String) -> bool:
+	if is_over():
+		return false
 	var route: Dictionary = route_to(destination)
 	return not route.is_empty() and silver >= route["cost"]
 
@@ -239,18 +265,138 @@ func move_to(destination: String) -> bool:
 	return true
 
 
+# --- 島と労働者 ---
+
+func worker_count() -> int:
+	return GameData.ISLAND_LEVELS[island_level]["workers"]
+
+
+func warehouse_count(item_id: String) -> int:
+	return warehouse.get(item_id, 0)
+
+
+func warehouse_total() -> int:
+	var total: int = 0
+	for item_id: String in warehouse:
+		total += warehouse[item_id]
+	return total
+
+
+func is_island_max_level() -> bool:
+	return island_level >= GameData.ISLAND_LEVELS.size() - 1
+
+
+## 次のレベルへの拡張費用。最大レベルなら -1。
+func island_upgrade_cost() -> int:
+	if is_island_max_level():
+		return -1
+	return GameData.ISLAND_LEVELS[island_level + 1]["cost"]
+
+
+## 島を1段階拡張する。レベルは飛ばせない。
+func upgrade_island() -> bool:
+	if is_island_max_level():
+		return false
+	var cost: int = island_upgrade_cost()
+	if silver < cost:
+		return false
+	silver -= cost
+	island_level += 1
+	_log("島をレベル%d へ拡張した（費用 %d、労働者 %d 人）" % [island_level, cost, worker_count()])
+	silver_changed.emit(silver)
+	island_upgraded.emit(island_level)
+	return true
+
+
+## 労働者が1日ぶん働く。1人につきランダムな資源を2個運ぶ（Q4: 5資源から均等）。
+func _run_workers() -> void:
+	var workers: int = worker_count()
+	if workers <= 0:
+		return
+	var resources: Array[String] = GameData.resource_ids()
+	var delivered: int = workers * GameData.RESOURCES_PER_WORKER_PER_DAY
+	for i: int in delivered:
+		var pick: String = resources[_rng.randi_range(0, resources.size() - 1)]
+		warehouse[pick] = warehouse_count(pick) + 1
+	warehouse_changed.emit()
+
+
+## 島倉庫から積荷へ移せる最大数（積載空きで決まる）。
+func max_withdrawable() -> int:
+	var space: int = free_capacity()
+	var available: int = warehouse_total()
+	# 倉庫にあるのは資源のみ（重量1）なので、空きがそのまま個数になる。
+	return mini(space / GameData.RESOURCE_WEIGHT, available)
+
+
+## 島倉庫から積載上限まで引き取る（1日消費）。
+func withdraw_from_warehouse() -> bool:
+	if is_over() or warehouse.is_empty():
+		return false
+	var moved: int = 0
+	var limit: int = max_withdrawable()
+	# 品目ごとに順に積み、積載上限で打ち切る。
+	for item_id: String in warehouse.keys():
+		if moved >= limit:
+			break
+		var take: int = mini(warehouse[item_id], limit - moved)
+		if take <= 0:
+			continue
+		cargo[item_id] = cargo_count(item_id) + take
+		var remaining: int = warehouse[item_id] - take
+		if remaining > 0:
+			warehouse[item_id] = remaining
+		else:
+			warehouse.erase(item_id)
+		moved += take
+
+	_log("島倉庫から %d 個を引き取った（倉庫の残り %d 個）" % [moved, warehouse_total()])
+	cargo_changed.emit()
+	warehouse_changed.emit()
+	_advance_day()
+	return true
+
+
+# --- 騎乗 ---
+
+## 騎乗を購入して積載量を変える。同じ騎乗は買い直せない。
+func buy_mount(mount_id: String) -> bool:
+	if not GameData.MOUNTS.has(mount_id) or mount_id == mount:
+		return false
+	var cost: int = GameData.MOUNTS[mount_id]["cost"]
+	if silver < cost:
+		return false
+	silver -= cost
+	mount = mount_id
+	_log("%s を購入した（費用 %d、積載 %d）" % [
+		GameData.MOUNTS[mount_id]["name"], cost, capacity()])
+	silver_changed.emit(silver)
+	mount_changed.emit(mount_id)
+	return true
+
+
 # --- 時間 ---
 
-## 何もせず1日を送る。
-func rest() -> void:
+## 何もせず1日を送る。移動費が払えない状態でもこれだけは常に行える（Q7）。
+func rest() -> bool:
+	if is_over():
+		return false
 	_log("休息した。")
 	_advance_day()
+	return true
 
 
 func _advance_day() -> void:
 	day += 1
+	if is_over():
+		# 60日を終えた時点で相場も労働も止まる。純資産は積荷・倉庫を
+		# 評価額として算入する（Q8: 強制換金はしない）。
+		_log("60日が終了した。純資産 %d（%s）" % [net_worth(), rank()])
+		day_advanced.emit(day)
+		return
 	prices.reroll()
 	_record_memo()
+	_run_workers()
 	day_advanced.emit(day)
 
 
