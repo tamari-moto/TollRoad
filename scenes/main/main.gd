@@ -11,15 +11,15 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 const LOG_DISPLAY_LIMIT: int = 200
 
 @onready var _hud: PanelContainer = %HUD
-@onready var _market_panel: PanelContainer = %MarketPanel
-@onready var _cargo_panel: PanelContainer = %CargoPanel
-@onready var _map_panel: PanelContainer = %MapPanel
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _rest_button: Button = %RestButton
 @onready var _status_label: Label = %StatusLabel
 
 var _session: GameSession
+
+## bind と refresh を持つ画面パネル。日送り時にまとめて更新する。
+var _panels: Array[Node] = []
 
 
 func _ready() -> void:
@@ -28,9 +28,11 @@ func _ready() -> void:
 		_session.day, GameData.TOTAL_DAYS, _session.silver, _session.current_city])
 
 	_hud.bind(_session)
-	_market_panel.bind(_session)
-	_cargo_panel.bind(_session)
-	_map_panel.bind(_session)
+	_panels = [
+		%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備,
+	]
+	for panel: Node in _panels:
+		panel.bind(_session)
 
 	_session.logged.connect(_append_log)
 	_session.day_advanced.connect(_on_day_advanced)
@@ -47,9 +49,9 @@ func _on_rest_pressed() -> void:
 
 
 func _on_day_advanced(_day: int) -> void:
-	# 移動で現在地が変わると市場の相場も変わるため、まとめて更新する。
-	_market_panel.refresh()
-	_map_panel.refresh()
+	# 移動で現在地が変わると相場も製作ボーナスも変わるため、まとめて更新する。
+	for panel: Node in _panels:
+		panel.refresh()
 	_refresh_status()
 
 

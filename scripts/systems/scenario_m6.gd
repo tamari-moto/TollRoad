@@ -244,7 +244,8 @@ func _test_main_scene_structure() -> void:
 	if scene == null:
 		return
 	var main: Node = scene.instantiate()
-	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%MapPanel",
+	# 大陸図は M7 でタブ化した際にノード名を「大陸図」に変えている。
+	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%大陸図",
 			"%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 	main.free()

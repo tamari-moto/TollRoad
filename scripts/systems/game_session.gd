@@ -422,6 +422,20 @@ func has_memo(city_id: String) -> bool:
 	return memo.has(city_id)
 
 
+## 記録が何日前のものか。未訪問なら -1。現在地は 0。
+func memo_age(city_id: String) -> int:
+	if not memo.has(city_id):
+		return -1
+	return day - memo[city_id]["day"]
+
+
+## 記録されている価格。未訪問なら -1。
+func memo_price(city_id: String, item_id: String) -> int:
+	if not memo.has(city_id):
+		return -1
+	return memo[city_id]["prices"].get(item_id, -1)
+
+
 # --- 内部 ---
 
 func _reduce_cargo(item_id: String, count: int) -> void:
