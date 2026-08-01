@@ -1,0 +1,54 @@
+# Normalize all text files to LF in the repository.
+# Godot writes LF and its .tscn/.tres parsers are LF-oriented;
+# CRLF causes spurious diffs and merge conflicts.
+* text=auto eol=lf
+
+# Godot text formats (explicit, never misdetected)
+*.gd          text eol=lf
+*.tscn        text eol=lf
+*.tres        text eol=lf
+*.godot       text eol=lf
+*.cfg         text eol=lf
+*.import      text eol=lf
+*.uid         text eol=lf
+*.gdshader    text eol=lf
+*.gdshaderinc text eol=lf
+
+# Common text
+*.md   text eol=lf
+*.json text eol=lf
+*.csv  text eol=lf
+*.svg  text eol=lf
+*.txt  text eol=lf
+
+# Windows scripts must keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets: never touch
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.bmp   binary
+*.webp  binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.wav   binary
+*.ogg   binary
+*.mp3   binary
+*.glb   binary
+*.gltf  binary
+*.blend binary
+*.exr   binary
+*.hdr   binary
+*.zip   binary
+*.pck   binary
+*.exe   binary
+
+# GitHub linguist
+assets/** linguist-vendored

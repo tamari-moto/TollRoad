@@ -7,9 +7,12 @@ export_presets.cfg
 # Imported translations (automatically generated from CSV files)
 *.translation
 
-# Mono-specific ignores
+# Mono/C#-specific ignores (only if the C# build is ever enabled)
 .mono/
-data_*/
+# Anchored to repo root: Mono emits a root-level data_* folder.
+# Must NOT be unanchored, or a future content folder such as
+# data_items/ would be silently ignored (see README: data/).
+/data_*/
 mono_crash.*.json
 
 # System/editor-specific
