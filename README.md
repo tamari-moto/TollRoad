@@ -20,6 +20,10 @@ assets/
 data/        アイテム・価格などの設定データ(JSON/Resource)
 ```
 
+## ゲーム設計
+
+ゲームの仕様は [docs/game_design.md](docs/game_design.md) を参照。
+
 ## 動作環境
 
 - Godot 4.7.1以降
