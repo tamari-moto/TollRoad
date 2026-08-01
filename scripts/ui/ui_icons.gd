@@ -11,11 +11,17 @@ extends RefCounted
 
 const ITEM_ICON_DIR: String = "res://assets/sprites/items"
 const CITY_ICON_DIR: String = "res://assets/sprites/cities"
+const MOUNT_ICON_DIR: String = "res://assets/sprites/mounts"
+const ISLAND_ICON_DIR: String = "res://assets/sprites/island"
 
 ## 一覧に並べる際の推奨サイズ。
 const LIST_ICON_SIZE: int = 20
 ## 大陸図のノードに使う紋章のサイズ。
 const CITY_ICON_SIZE: int = 44
+## 騎乗の図（横長）。
+const MOUNT_ICON_SIZE := Vector2(56, 42)
+## 島の図（横長）。
+const ISLAND_ICON_SIZE := Vector2(96, 64)
 
 ## "種別/id" -> Texture2D。見つからなかった場合も記録し、再探索を避ける。
 static var _cache: Dictionary = {}
@@ -29,6 +35,16 @@ static func item_texture(item_id: String) -> Texture2D:
 ## 都市の紋章。存在しなければ null。
 static func city_texture(city_id: String) -> Texture2D:
 	return _texture(CITY_ICON_DIR, city_id)
+
+
+## 騎乗の図。存在しなければ null。
+static func mount_texture(mount_id: String) -> Texture2D:
+	return _texture(MOUNT_ICON_DIR, mount_id)
+
+
+## 島の図。レベルに対応する画像を返す。存在しなければ null。
+static func island_texture(level: int) -> Texture2D:
+	return _texture(ISLAND_ICON_DIR, "island_%d" % level)
 
 
 static func _texture(dir: String, id: String) -> Texture2D:

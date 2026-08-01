@@ -20,6 +20,13 @@ theme_override_constants/separation = 8
 layout_mode = 2
 text = "島と装備"
 
+[node name="IslandImage" type="TextureRect" parent="Margin/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
 [node name="IslandLabel" type="Label" parent="Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2

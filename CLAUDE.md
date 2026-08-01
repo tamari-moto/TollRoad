@@ -104,7 +104,7 @@ git ls-files -s | grep -c 100755   # 0 であること
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
 製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m11.gd` の11本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m12.gd` の12本。
 新しい機能を足したら対応するシナリオも足すこと。
 
 **シグナルとハンドラの引数を一致させること。** `silver_changed(amount)` や
@@ -127,7 +127,14 @@ UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解�
 `button.text` は空。
 
 `Window` 系（`popup_centered` など）はツリー外だとエラーになる。
-`is_inside_tree()` でガードする。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
+`is_inside_tree()` でガードする。
+
+画像は `assets/sprites/` の4種別（`items` / `cities` / `mounts` / `island`）。
+`ui_icons.gd` が種別ごとに引く（`item_texture` / `city_texture` /
+`mount_texture` / `island_texture`）。**種別が違えば同名でも混ざらない**。
+背景とパネルの地色は `ui_theme.gd` の `apply_panel_style()` /
+`make_backdrop_style()` で、[main.gd](scenes/main/main.gd) の
+`_apply_backdrop()` がまとめて適用する（パネル側には書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
 **Tween はツリー外では作れない。** `--script` のハーネスは

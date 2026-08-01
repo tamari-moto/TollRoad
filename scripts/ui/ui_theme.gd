@@ -59,6 +59,17 @@ const RANK_BANKRUPT := Color(0.9, 0.55, 0.5)
 const CHEAP_RATIO: float = 0.95
 const DEAR_RATIO: float = 1.05
 
+# --- 背景 ---
+
+## 画面全体の下地。深い藍色で、羊皮紙の上の帳簿を思わせる暗さにする。
+const BACKDROP_TOP := Color(0.10, 0.11, 0.15)
+const BACKDROP_BOTTOM := Color(0.07, 0.08, 0.11)
+
+## パネルの地色と縁。
+const PANEL_FILL := Color(0.14, 0.15, 0.19, 0.93)
+const PANEL_BORDER := Color(0.28, 0.30, 0.36)
+const PANEL_RADIUS: int = 6
+
 # --- アニメーション ---
 
 ## 数値のカウントアップやバーの補間にかける秒数。
@@ -80,6 +91,33 @@ static func ratio_color(ratio: float) -> Color:
 	if ratio >= DEAR_RATIO:
 		return WARN
 	return TEXT
+
+
+## パネルの外観。地色と細い縁で、区画の切れ目を分かりやすくする。
+static func make_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = PANEL_FILL
+	style.border_color = PANEL_BORDER
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(PANEL_RADIUS)
+	style.set_content_margin_all(0)
+	return style
+
+
+## 画面全体の下地。上から下へわずかに暗くする。
+static func make_backdrop_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = BACKDROP_TOP
+	style.set_border_width_all(0)
+	style.set_corner_radius_all(0)
+	return style
+
+
+## 対象のパネルに地色を適用する。すでに指定があれば上書きしない。
+static func apply_panel_style(panel: Control) -> void:
+	if panel == null or panel.has_theme_stylebox_override("panel"):
+		return
+	panel.add_theme_stylebox_override("panel", make_panel_style())
 
 
 ## ランク名に応じた色。

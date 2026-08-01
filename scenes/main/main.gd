@@ -33,6 +33,7 @@ func _ready() -> void:
 	_result_button.pressed.connect(_show_result)
 	_result_dialog.restart_requested.connect(_on_restart_requested)
 
+	_apply_backdrop()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
 	for index: int in _tabs.get_tab_count():
 		_tabs.set_tab_tooltip(index, "%s（%d キー）" % [_tabs.get_tab_title(index), index + 1])
@@ -61,6 +62,27 @@ func _bind_session(session: GameSession) -> void:
 	_rest_button.disabled = false
 	_result_button.visible = false
 	_refresh_status()
+
+
+## 画面全体の下地を敷き、各パネルに共通の地色を与える。
+## パネルごとに書かず、ここでまとめて適用する。
+func _apply_backdrop() -> void:
+	var root_control: Control = %HUD.get_parent()
+	if root_control == null:
+		return
+
+	# 下地は最背面に敷く。
+	var backdrop := Panel.new()
+	backdrop.name = "Backdrop"
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.add_theme_stylebox_override("panel", UiTheme.make_backdrop_style())
+	root_control.add_child(backdrop)
+	root_control.move_child(backdrop, 0)
+
+	UiTheme.apply_panel_style(_hud)
+	for panel: Node in _panels:
+		UiTheme.apply_panel_style(panel as Control)
 
 
 ## キー操作。_input ではなく _unhandled_input を使うのは、ボタンや

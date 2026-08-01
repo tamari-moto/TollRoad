@@ -4,8 +4,10 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 var _session: GameSession
+var _island_image: TextureRect
 var _island_label: Label
 var _upgrade_button: Button
 var _warehouse_label: Label
@@ -32,6 +34,7 @@ func bind(session: GameSession) -> void:
 func _build() -> void:
 	if not _mount_buttons.is_empty():
 		return
+	_island_image = UiUtil.find_node(self, "IslandImage")
 	_island_label = UiUtil.find_node(self, "IslandLabel")
 	_upgrade_button = UiUtil.find_node(self, "UpgradeButton")
 	_warehouse_label = UiUtil.find_node(self, "WarehouseLabel")
@@ -49,6 +52,17 @@ func _build() -> void:
 		var button := Button.new()
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(_on_mount_pressed.bind(mount_id))
+
+		# 騎乗の図をボタンの icon として持たせる。積載の差が絵で伝わる。
+		# text は従来どおり設定するので、既存の検査はそのまま通る。
+		var art: Texture2D = UiIcons.mount_texture(mount_id)
+		if art != null:
+			button.icon = art
+			button.expand_icon = true
+			button.custom_minimum_size = Vector2(0, UiIcons.MOUNT_ICON_SIZE.y)
+			button.add_theme_constant_override(
+				"icon_max_width", int(UiIcons.MOUNT_ICON_SIZE.x))
+
 		_mount_list.add_child(button)
 		_mount_buttons[mount_id] = button
 
@@ -58,6 +72,10 @@ func refresh() -> void:
 		return
 	_build()
 	var over: bool = _session.is_over()
+
+	# 島の図はレベルごとに差し替える。拡張の成果が絵で分かるようにする。
+	if is_instance_valid(_island_image):
+		_island_image.texture = UiIcons.island_texture(_session.island_level)
 
 	if is_instance_valid(_island_label):
 		_island_label.text = "島レベル %d　労働者 %d 人（1日 %d 個）" % [
