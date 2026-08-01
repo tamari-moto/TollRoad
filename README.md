@@ -22,7 +22,7 @@ data/        アイテム・価格などの設定データ(JSON/Resource)
 
 ## ゲーム設計
 
-ゲームの仕様は [docs/game_design.md](docs/game_design.md) を参照。
+ゲームの仕様は [docs/game_design.md](docs/game_design.md)、実装の進め方は [docs/roadmap.md](docs/roadmap.md) を参照。
 
 ## 動作環境
 
