@@ -10,24 +10,37 @@ extends RefCounted
 ## ハーネスからも参照できる。
 
 const ITEM_ICON_DIR: String = "res://assets/sprites/items"
+const CITY_ICON_DIR: String = "res://assets/sprites/cities"
 
 ## 一覧に並べる際の推奨サイズ。
 const LIST_ICON_SIZE: int = 20
+## 大陸図のノードに使う紋章のサイズ。
+const CITY_ICON_SIZE: int = 44
 
-## item_id -> Texture2D。見つからなかった場合も記録し、再探索を避ける。
+## "種別/id" -> Texture2D。見つからなかった場合も記録し、再探索を避ける。
 static var _cache: Dictionary = {}
 
 
 ## 品目のアイコン。存在しなければ null。
 static func item_texture(item_id: String) -> Texture2D:
-	if _cache.has(item_id):
-		return _cache[item_id]
+	return _texture(ITEM_ICON_DIR, item_id)
 
-	var path: String = "%s/%s.svg" % [ITEM_ICON_DIR, item_id]
+
+## 都市の紋章。存在しなければ null。
+static func city_texture(city_id: String) -> Texture2D:
+	return _texture(CITY_ICON_DIR, city_id)
+
+
+static func _texture(dir: String, id: String) -> Texture2D:
+	var key: String = "%s/%s" % [dir, id]
+	if _cache.has(key):
+		return _cache[key]
+
+	var path: String = "%s/%s.svg" % [dir, id]
 	var texture: Texture2D = null
 	if ResourceLoader.exists(path):
 		texture = load(path) as Texture2D
-	_cache[item_id] = texture
+	_cache[key] = texture
 	return texture
 
 

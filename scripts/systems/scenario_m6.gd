@@ -178,25 +178,32 @@ func _test_map_panel() -> void:
 	var session: GameSession = GameSession.new(6004)
 	panel.bind(session)
 
-	var list: VBoxContainer = UiUtil.find_node(panel, "CityList")
+	var list: Control = UiUtil.find_node(panel, "CityList")
 	_check(list != null, "CityList がある", "ない")
 	if list == null:
 		_despawn(panel)
 		return
-	_check(list.get_child_count() == 6, "6都市のボタンがある", str(list.get_child_count()))
 
-	# 現在地は無効かつ「現在地」と表示される。
+	# 地図化以降、CityList には経路線の層とボタンが混在する。
+	var buttons: Array[Button] = []
+	for child: Node in list.get_children():
+		var button: Button = child as Button
+		if button != null:
+			buttons.append(button)
+	_check(buttons.size() == 6, "6都市のボタンがある", str(buttons.size()))
+
+	# 表示テキストはノード内のラベルとツールチップに入る。
 	var found_current: bool = false
 	var found_raid: bool = false
 	var found_adjacent: bool = false
-	for child: Node in list.get_children():
-		var button: Button = child as Button
-		if button.text.contains("現在地"):
+	for button: Button in buttons:
+		var tip: String = button.tooltip_text
+		if tip.contains("現在地"):
 			found_current = true
 			_check(button.disabled, "現在地のボタンは無効", "押せる")
-		if button.text.contains("襲撃22%"):
+		if tip.contains("襲撃22%"):
 			found_raid = true
-		if button.text.contains("1日 / 250"):
+		if tip.contains("1日 / 250"):
 			found_adjacent = true
 	_check(found_current, "現在地が明示される", "ない")
 	_check(found_raid, "カーレオンに襲撃率が出る", "ない")
@@ -204,9 +211,9 @@ func _test_map_panel() -> void:
 
 	# 移動確認ダイアログが出る。
 	var caerleon_button: Button = null
-	for child: Node in list.get_children():
-		if (child as Button).text.contains("カーレオン"):
-			caerleon_button = child as Button
+	for button: Button in buttons:
+		if button.tooltip_text.contains("カーレオン"):
+			caerleon_button = button
 	_check(caerleon_button != null, "カーレオンのボタンがある", "ない")
 	if caerleon_button != null:
 		caerleon_button.pressed.emit()
@@ -228,8 +235,7 @@ func _test_map_panel() -> void:
 	session.silver = 10
 	panel.refresh()
 	var all_disabled: bool = true
-	for child: Node in list.get_children():
-		var button: Button = child as Button
+	for button: Button in buttons:
 		if not button.disabled:
 			all_disabled = false
 	_check(all_disabled, "資金不足で全移動先が無効", "押せるものがある")

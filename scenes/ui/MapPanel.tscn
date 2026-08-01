@@ -14,14 +14,14 @@ theme_override_constants/margin_bottom = 12
 
 [node name="Column" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="MapTitle" type="Label" parent="Margin/Column"]
 layout_mode = 2
-text = "大陸図"
+text = "大陸図（破線は黒ゾーン）"
 
-[node name="CityList" type="VBoxContainer" parent="Margin/Column"]
+[node name="CityList" type="Control" parent="Margin/Column"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 300)
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 4

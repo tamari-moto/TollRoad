@@ -104,7 +104,7 @@ git ls-files -s | grep -c 100755   # 0 であること
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
 製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m10.gd` の10本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m11.gd` の11本。
 新しい機能を足したら対応するシナリオも足すこと。
 
 **シグナルとハンドラの引数を一致させること。** `silver_changed(amount)` や
@@ -119,7 +119,15 @@ UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解�
 書かない）。品目アイコンは [ui_icons.gd](scripts/ui/ui_icons.gd) 経由で取り、
 **画像が無くても壊れない**（`null` が返り、名前だけで表示される）。
 `GridContainer` に並ぶセルは `make_labeled_item()` でアイコンと名前を1セルに
-収める — 列を増やすと既存シナリオの行数検査が壊れるため。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
+収める — 列を増やすと既存シナリオの行数検査が壊れるため。
+
+大陸図（[map_panel.gd](scripts/ui/map_panel.gd)）は都市を絶対座標で円周配置する。
+`CityList` の子には経路線の層（`Routes`）とボタンが混在するので、ボタンだけを
+拾うこと。ノードのテキストは中の `Note` ラベルとツールチップに入り、
+`button.text` は空。
+
+`Window` 系（`popup_centered` など）はツリー外だとエラーになる。
+`is_inside_tree()` でガードする。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
 **Tween はツリー外では作れない。** `--script` のハーネスは
