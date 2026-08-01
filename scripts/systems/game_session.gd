@@ -120,6 +120,66 @@ func sell(item_id: String, count: int) -> bool:
 	return true
 
 
+# --- 製作（1日消費） ---
+
+## その装備をこの都市で作ると材料が還元されるか（生産ボーナス都市か）。
+func has_craft_bonus(item_id: String) -> bool:
+	return GameData.CITIES[current_city]["bonus"] == item_id
+
+
+## 装備1個あたりの実質材料消費数。
+## ボーナス都市では 3個消費して 3×0.3=0.9 → 四捨五入で1個還元、実質2個（Q: 1個ごとに計算）。
+func material_cost_per_unit(item_id: String) -> int:
+	if not has_craft_bonus(item_id):
+		return GameData.CRAFT_MATERIAL_COUNT
+	var refund: int = int(round(GameData.CRAFT_MATERIAL_COUNT * GameData.CRAFT_REFUND_RATE))
+	return GameData.CRAFT_MATERIAL_COUNT - refund
+
+
+## 製作可能な最大数（材料・手数料・積載空きの制約）。
+func max_craftable(item_id: String) -> int:
+	var item: Dictionary = GameData.ITEMS.get(item_id, {})
+	if item.get("kind") != GameData.ItemKind.EQUIPMENT:
+		return 0
+	var material: String = item["material"]
+	var per_unit: int = material_cost_per_unit(item_id)
+	var by_material: int = cargo_count(material) / per_unit
+	var by_silver: int = silver / GameData.CRAFT_FEE
+	# 材料が減って装備が増えるぶんの正味の重量増加。
+	var weight_delta: int = item["weight"] - GameData.ITEMS[material]["weight"] * per_unit
+	var by_space: int = 99999
+	if weight_delta > 0:
+		by_space = free_capacity() / weight_delta
+	return maxi(0, mini(by_material, mini(by_silver, by_space)))
+
+
+## 資源から装備を製作する。個数をまとめて指定でき、消費日数は1日のみ。
+func craft(item_id: String, count: int) -> bool:
+	if count <= 0 or count > max_craftable(item_id):
+		return false
+	var material: String = GameData.ITEMS[item_id]["material"]
+	var per_unit: int = material_cost_per_unit(item_id)
+	var material_used: int = per_unit * count
+	var fee: int = GameData.CRAFT_FEE * count
+
+	silver -= fee
+	_reduce_cargo(material, material_used)
+	cargo[item_id] = cargo_count(item_id) + count
+
+	var bonus_note: String = ""
+	if has_craft_bonus(item_id):
+		var saved: int = (GameData.CRAFT_MATERIAL_COUNT - per_unit) * count
+		bonus_note = "、生産ボーナスで %s を %d 個還元" % [GameData.ITEMS[material]["name"], saved]
+	_log("%s で %s を %d 個製作（%s %d 個消費、手数料 %d%s）" % [
+		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"], count,
+		GameData.ITEMS[material]["name"], material_used, fee, bonus_note])
+
+	silver_changed.emit(silver)
+	cargo_changed.emit()
+	_advance_day()
+	return true
+
+
 # --- 移動 ---
 
 ## その都市へ移動するのに必要な日数・費用を返す。
@@ -153,7 +213,9 @@ func can_move_to(destination: String) -> bool:
 
 
 ## 移動する。黒ゾーンでは襲撃判定を行い、被弾すると積荷を全て失う
-## （シルバーと島倉庫は無傷）。襲撃判定は移動1回につき1度（Q6 は M2 で確定）。
+## （シルバーと島倉庫は無傷）。
+## 襲撃判定は片道につき1度（Q6）。黒ゾーンは1日移動なので区間は1つしかなく、
+## カーレオンを往復すると計2回判定される（往復とも無事な確率は約61%）。
 func move_to(destination: String) -> bool:
 	if not can_move_to(destination):
 		return false
