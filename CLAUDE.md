@@ -107,6 +107,13 @@ git ls-files -s | grep -c 100755   # 0 であること
 検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m13.gd` の13本。
 新しい機能を足したら対応するシナリオも足すこと。
 
+**`.tscn` を手書きしたら `load_steps` を必ず合わせる。**
+`ext_resource` と `sub_resource` の合計 ＋ 1 が正しい値。書き忘れると Godot は
+読み込みを成功させるが**中身が展開されず、実行時に空のウィンドウだけが出る**。
+`load()` も `instantiate()` も通ってしまうためシナリオでは気づけない
+（実際に開始画面がこれで真っ黒になった）。`scenario_m13.gd` の
+`_test_scene_headers()` が全 `.tscn` を走査して検出する。
+
 **目標額は `GameData.GOAL_RANK` 経由で引く。** HUD の進捗バーと開始画面が
 同じ定義を参照しており、`RANKS` の数値を変えれば説明文も追従する。
 UI に閾値をハードコードしないこと。

@@ -19,6 +19,7 @@ func _init() -> void:
 	_test_hud_net_worth()
 	_test_investment_is_visible()
 	_test_main_scene()
+	_test_scene_headers()
 
 	print("")
 	if _failures == 0:
@@ -207,6 +208,61 @@ func _test_main_scene() -> void:
 		_check(dialog.has_method("show_briefing"), "show_briefing がある", "ない")
 		_check(dialog.has_signal("closed"), "closed シグナルがある", "ない")
 	main.free()
+
+
+## .tscn の load_steps が実際の ext_resource 数と合っているか。
+##
+## 手書きの .tscn で load_steps を書き忘れると、Godot は読み込み自体は
+## 成功させるが中身が展開されず、実行時に空のウィンドウだけが出る。
+## instantiate() は通ってしまうため、シナリオでは検出できなかった。
+func _test_scene_headers() -> void:
+	print("--- .tscn のヘッダ整合 ---")
+	var dir: DirAccess = DirAccess.open("res://scenes")
+	if dir == null:
+		_check(false, "scenes/ を開ける", "開けない")
+		return
+
+	var paths: PackedStringArray = []
+	_collect_scenes("res://scenes", paths)
+	_check(paths.size() > 0, "シーンが見つかる", "0件")
+
+	for path: String in paths:
+		var file: FileAccess = FileAccess.open(path, FileAccess.READ)
+		if file == null:
+			continue
+		var header: String = file.get_line()
+		var body: String = file.get_as_text()
+		file.close()
+
+		var ext_count: int = body.count("[ext_resource ")
+		var sub_count: int = body.count("[sub_resource ")
+		var expected: int = ext_count + sub_count + 1
+		if ext_count + sub_count == 0:
+			continue
+
+		var declared: int = 0
+		var marker: int = header.find("load_steps=")
+		if marker >= 0:
+			declared = header.substr(marker + 11).split(" ")[0].to_int()
+
+		_check(declared == expected, "%s の load_steps" % path.get_file(),
+			"宣言 %d / 期待 %d" % [declared, expected])
+
+
+func _collect_scenes(dir_path: String, out: PackedStringArray) -> void:
+	var dir: DirAccess = DirAccess.open(dir_path)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var entry: String = dir.get_next()
+	while entry != "":
+		var full: String = "%s/%s" % [dir_path, entry]
+		if dir.current_is_dir():
+			_collect_scenes(full, out)
+		elif entry.ends_with(".tscn"):
+			out.append(full)
+		entry = dir.get_next()
+	dir.list_dir_end()
 
 
 # --- ヘルパ ---
