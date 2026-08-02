@@ -144,6 +144,12 @@ func _build_node(city_id: String) -> Button:
 	button.custom_minimum_size = NODE_SIZE
 	button.size = NODE_SIZE
 	button.clip_text = false
+	# 背景を消して地形の上に直接ピンが立って見えるようにする。
+	# flat だけでは押下時やフォーカス時の枠が残るため、状態ごとに
+	# 空のスタイルを与える。
+	button.flat = true
+	for state: String in ["normal", "hover", "pressed", "disabled", "focus"]:
+		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	button.pressed.connect(_on_city_pressed.bind(city_id))
 
 	# 枠と軸を描くピン。中身より先に足して背面に置く。
@@ -287,6 +293,8 @@ func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 		button.text = ""
 		button.tooltip_text = "%s（現在地）" % city_name
 		button.disabled = true
+		# 現在地は押せないが、居場所を示すので薄くしない。
+		button.modulate.a = 1.0
 		if note != null:
 			note.text = "%s\n現在地" % city_name
 			note.add_theme_color_override("font_color", COLOR_CURRENT)
@@ -310,6 +318,8 @@ func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 	button.text = ""
 	button.tooltip_text = "%s　%s" % [city_name, detail.replace("\n", " / ")]
 	button.disabled = over or not _session.can_move_to(city_id)
+	# 背景を消しているぶん、行けない都市は文字を薄くして見分ける。
+	button.modulate.a = 0.45 if button.disabled else 1.0
 
 	if note != null:
 		note.text = "%s\n%s" % [city_name, detail]
