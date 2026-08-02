@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://b0m1n3econ0my"]
+[gd_scene load_steps=11 format=3 uid="uid://b0m1n3econ0my"]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://cvh0d8tollhud" path="res://scenes/ui/HUD.tscn" id="2"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://bm3m0p4n3l0000" path="res://scenes/ui/MemoPanel.tscn" id="7"]
 [ext_resource type="PackedScene" uid="uid://ci5l4ndp4n3l0" path="res://scenes/ui/IslandPanel.tscn" id="8"]
 [ext_resource type="PackedScene" uid="uid://dr35ultd14l0g" path="res://scenes/ui/ResultDialog.tscn" id="9"]
+[ext_resource type="PackedScene" uid="uid://cbr13f1ngd14l" path="res://scenes/ui/BriefingDialog.tscn" id="10"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -128,6 +129,12 @@ custom_minimum_size = Vector2(150, 40)
 layout_mode = 2
 text = "休息する（1日）"
 
+[node name="BriefingButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 40)
+layout_mode = 2
+text = "目標"
+
 [node name="ResultButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(110, 40)
@@ -143,4 +150,7 @@ size_flags_vertical = 4
 autowrap_mode = 3
 
 [node name="ResultDialog" parent="UI/Root" instance=ExtResource("9")]
+unique_name_in_owner = true
+
+[node name="BriefingDialog" parent="UI/Root" instance=ExtResource("10")]
 unique_name_in_owner = true

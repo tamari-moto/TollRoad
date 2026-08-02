@@ -16,9 +16,11 @@ const LOG_DISPLAY_LIMIT: int = 200
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _rest_button: Button = %RestButton
+@onready var _briefing_button: Button = %BriefingButton
 @onready var _result_button: Button = %ResultButton
 @onready var _status_label: Label = %StatusLabel
 @onready var _result_dialog: Window = %ResultDialog
+@onready var _briefing_dialog: Window = %BriefingDialog
 
 var _session: GameSession
 
@@ -31,7 +33,9 @@ func _ready() -> void:
 
 	_rest_button.pressed.connect(_on_rest_pressed)
 	_result_button.pressed.connect(_show_result)
+	_briefing_button.pressed.connect(_show_briefing)
 	_result_dialog.restart_requested.connect(_on_restart_requested)
+	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
@@ -62,6 +66,13 @@ func _bind_session(session: GameSession) -> void:
 	_rest_button.disabled = false
 	_result_button.visible = false
 	_refresh_status()
+
+	# 1日目に何を目指すのかを伝える。再プレイでも同様に出す。
+	_show_briefing()
+
+
+func _show_briefing() -> void:
+	_briefing_dialog.show_briefing()
 
 
 ## 画面全体の下地を敷き、各パネルに共通の地色を与える。

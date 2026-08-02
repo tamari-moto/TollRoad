@@ -104,8 +104,12 @@ git ls-files -s | grep -c 100755   # 0 であること
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
 製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m12.gd` の12本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m13.gd` の13本。
 新しい機能を足したら対応するシナリオも足すこと。
+
+**目標額は `GameData.GOAL_RANK` 経由で引く。** HUD の進捗バーと開始画面が
+同じ定義を参照しており、`RANKS` の数値を変えれば説明文も追従する。
+UI に閾値をハードコードしないこと。
 
 **シグナルとハンドラの引数を一致させること。** `silver_changed(amount)` や
 `day_advanced(day)` は引数を渡す。引数なしのハンドラを繋いでも Godot は接続を

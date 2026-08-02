@@ -98,6 +98,9 @@ const MEMO_STALE_DAYS: int = 7
 ## 積荷・島倉庫を純資産に算入する際の掛け率。
 const NET_WORTH_STOCK_RATE: float = 0.9
 
+## プレイヤーに提示する目標ランク。HUD の進捗バーと開始画面がこれを基準にする。
+const GOAL_RANK: String = "MASTER TRADER"
+
 ## 判定は上から順に行い、最初に満たした閾値のランクとなる。
 const RANKS: Array[Dictionary] = [
 	{"threshold": 1200000, "name": "LEGENDARY MERCHANT"},
