@@ -59,6 +59,29 @@ const RANK_BANKRUPT := Color(0.9, 0.55, 0.5)
 const CHEAP_RATIO: float = 0.95
 const DEAR_RATIO: float = 1.05
 
+# --- 価格バー ---
+
+## バーの目盛り。基準価格に対する比率で表す。
+##
+## 実際に取りうる幅は資源が 62〜123%、装備が 76〜144%（都市補正 ×
+## ゆらぎ 0.86〜1.16 による）。全ケースを含む値に固定しておく。
+##
+## **品目ごとに目盛りを変えないこと。** 変えると同じバー位置が別の意味に
+## なり、行をまたいで「どれが安いか」を比べられなくなる。
+const PRICE_SCALE_MIN: float = 0.60
+const PRICE_SCALE_MAX: float = 1.45
+
+## バーの地色。
+const BAR_TRACK := Color(0.16, 0.17, 0.21)
+## 安い側・高い側の帯。地色に薄く重ねる。
+const BAR_CHEAP_ZONE := Color(0.45, 0.85, 0.5, 0.18)
+const BAR_DEAR_ZONE := Color(0.95, 0.6, 0.45, 0.18)
+## 基準価格（100%）を示す線。
+const BAR_BASELINE := Color(0.55, 0.56, 0.62)
+
+## 1行おきに敷く背景。行を横に追いやすくする。
+const ROW_STRIPE := Color(1.0, 1.0, 1.0, 0.03)
+
 # --- 背景 ---
 
 ## 画面全体の下地。深い藍色で、羊皮紙の上の帳簿を思わせる暗さにする。
