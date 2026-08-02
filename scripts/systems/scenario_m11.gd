@@ -8,6 +8,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 var _failures: int = 0
 
@@ -73,11 +74,24 @@ func _test_map_layout() -> void:
 		var node_center: Vector2 = button.position + button.custom_minimum_size * 0.5
 		radii.append(node_center.distance_to(center))
 
-	# 5都市が同じ半径の円周上にある。
-	if radii.size() == 5:
-		var spread: float = radii.max() - radii.min()
-		_check(spread < 1.0, "5都市が同一円周上にある", "半径の差 %.2f" % spread)
-		_check(radii[0] > 10.0, "半径がゼロでない", str(radii[0]))
+	# 斜め見下ろしにしたため円は楕円に潰れている。Y を戻してから
+	# 等距離を確認する（真上から見れば同一円周上にあること）。
+	var unprojected: Array[float] = []
+	for city_id: String in ring:
+		var button: Button = panel._buttons.get(city_id)
+		if button == null:
+			continue
+		var node_center: Vector2 = button.position + button.custom_minimum_size * 0.5
+		var offset: Vector2 = node_center - center
+		# 圧縮した Y を元に戻す。
+		offset.y /= UiTheme.MAP_TILT
+		unprojected.append(offset.length())
+
+	if unprojected.size() == 5:
+		var spread: float = unprojected.max() - unprojected.min()
+		_check(spread < 1.0, "逆変換すると5都市が同一円周上にある",
+			"半径の差 %.2f" % spread)
+		_check(unprojected[0] > 10.0, "半径がゼロでない", str(unprojected[0]))
 
 	# カーレオンは中央。
 	var caerleon: Button = panel._buttons.get(GameData.CAERLEON)
@@ -121,7 +135,11 @@ func _test_route_lines() -> void:
 		return
 
 	# 線はノードより後ろに描かれる（先に追加されている）。
-	_check(area.get_child(0) == routes, "経路線はノードの下に敷かれる", "順序が違う")
+	# 層は下から順に 地盤 → 経路線 → 都市ノード。
+	var ground: Node = area.get_node_or_null("Ground")
+	_check(ground != null, "地盤の層がある", "ない")
+	_check(area.get_child(0) == ground, "地盤が最も下に敷かれる", "順序が違う")
+	_check(area.get_child(1) == routes, "経路線は地盤の上・ノードの下", "順序が違う")
 	_check(routes.mouse_filter == Control.MOUSE_FILTER_IGNORE,
 		"経路線はクリックを妨げない", "妨げる")
 

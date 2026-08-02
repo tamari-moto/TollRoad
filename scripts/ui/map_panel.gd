@@ -13,6 +13,8 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 const MapRoutes = preload("res://scripts/ui/map_routes.gd")
+const MapGround = preload("res://scripts/ui/map_ground.gd")
+const MapPin = preload("res://scripts/ui/map_pin.gd")
 
 signal move_requested(city_id: String)
 
@@ -21,13 +23,15 @@ const COLOR_DANGER := UiTheme.WARN
 
 ## 地図領域の最小の高さ。円周配置が潰れない大きさを確保する。
 const MAP_MIN_HEIGHT: int = 300
-## 都市ノード1つの大きさ。
-const NODE_SIZE := Vector2(96, 74)
+## 都市ノード1つの大きさ。ピンと都市名が収まる高さを取る。
+const NODE_SIZE := Vector2(104, 96)
 ## 円周の半径を領域の短辺に対してどれだけ取るか。
-const RADIUS_RATIO: float = 0.34
+## 斜め見下ろしで縦が潰れるぶん、横は大きめに取る。
+const RADIUS_RATIO: float = 0.40
 
 var _session: GameSession
 var _map_area: Control
+var _ground: MapGround
 var _routes: MapRoutes
 var _buttons: Dictionary = {}
 var _confirm: ConfirmationDialog
@@ -53,7 +57,11 @@ func _build() -> void:
 	_map_area.custom_minimum_size = Vector2(0, MAP_MIN_HEIGHT)
 	_map_area.resized.connect(_layout_nodes)
 
-	# 経路線はノードの下に敷く。
+	# 地盤を最も下に敷き、その上に経路線、さらに上にノードを置く。
+	_ground = MapGround.new()
+	_ground.name = "Ground"
+	_map_area.add_child(_ground)
+
 	_routes = MapRoutes.new()
 	_routes.name = "Routes"
 	_routes.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -84,21 +92,43 @@ func _build_node(city_id: String) -> Button:
 	button.clip_text = false
 	button.pressed.connect(_on_city_pressed.bind(city_id))
 
+	# 枠と軸を描くピン。中身より先に足して背面に置く。
+	var pin: MapPin = MapPin.new()
+	pin.name = "Pin"
+	pin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pin.anchor_right = 1.0
+	pin.anchor_bottom = 1.0
+	pin.offset_right = 0.0
+	pin.offset_bottom = 0.0
+	pin.danger = city_id == GameData.CAERLEON
+	button.add_child(pin)
+
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.set_anchors_preset(Control.PRESET_FULL_RECT)
+	column.anchor_right = 1.0
+	column.anchor_bottom = 1.0
+	column.offset_right = 0.0
+	column.offset_bottom = 0.0
 	column.add_theme_constant_override("separation", 0)
-	column.alignment = BoxContainer.ALIGNMENT_CENTER
 
+	# 紋章を菱形の枠の中に収める。枠の中心に合わせて上に寄せる。
 	var crest: Texture2D = UiIcons.city_texture(city_id)
 	if crest != null:
 		var icon := TextureRect.new()
 		icon.texture = crest
-		icon.custom_minimum_size = Vector2(UiIcons.CITY_ICON_SIZE, UiIcons.CITY_ICON_SIZE)
+		icon.custom_minimum_size = Vector2(26, 26)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		column.add_child(icon)
+
+	# 軸のぶんの余白。ピンが地面に立って見えるようにする。
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, MapPin.STEM_LENGTH + 6)
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(spacer)
 
 	var note := Label.new()
 	note.name = "Note"
@@ -128,15 +158,38 @@ func _layout_nodes() -> void:
 	var ring: Array[String] = GameData.royal_city_ids()
 	for index: int in ring.size():
 		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
-		var point: Vector2 = center + Vector2(cos(angle), sin(angle)) * radius
+		# Y を潰して斜め見下ろしにする。真上からの円が楕円になる。
+		var point: Vector2 = center + Vector2(
+			cos(angle) * radius,
+			sin(angle) * radius * UiTheme.MAP_TILT)
 		positions[ring[index]] = point
 		_place(ring[index], point)
 
 	positions[GameData.CAERLEON] = center
 	_place(GameData.CAERLEON, center)
 
+	if is_instance_valid(_ground):
+		_ground.set_positions(positions,
+			_session.current_city if _session != null else "")
 	if is_instance_valid(_routes):
 		_routes.set_positions(positions)
+	_sort_by_depth(positions)
+
+
+## 奥（Y が小さい）の都市を先に描き、手前が上に重なるようにする。
+## 奥行きの感覚はこの重なり順から生まれる。
+func _sort_by_depth(positions: Dictionary) -> void:
+	var ordered: Array[String] = []
+	for city_id: String in positions:
+		if _buttons.has(city_id):
+			ordered.append(city_id)
+	ordered.sort_custom(func(a: String, b: String) -> bool:
+		return positions[a].y < positions[b].y)
+
+	for city_id: String in ordered:
+		var button: Button = _buttons[city_id]
+		if is_instance_valid(button):
+			_map_area.move_child(button, _map_area.get_child_count() - 1)
 
 
 func _place(city_id: String, point: Vector2) -> void:
@@ -159,6 +212,16 @@ func refresh() -> void:
 func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 	var city_name: String = GameData.CITIES[city_id]["name"]
 	var note: Label = button.find_child("Note", true, false)
+
+	# ピンの見た目を状態に合わせる。
+	var pin: MapPin = button.find_child("Pin", true, false)
+	if pin != null:
+		pin.is_current = city_id == _session.current_city
+		pin.danger = city_id == GameData.CAERLEON
+		# 都市名の下に線を引く。ラベルの位置に合わせる。
+		if note != null and note.size.x > 0.0:
+			pin.underline_y = note.position.y - 2.0
+			pin.underline_width = minf(note.size.x, NODE_SIZE.x - 8.0)
 
 	if city_id == _session.current_city:
 		button.text = ""
