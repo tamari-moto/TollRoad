@@ -8,6 +8,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const FxLayer = preload("res://scripts/ui/fx_layer.gd")
+const Sfx = preload("res://scripts/ui/sfx.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
@@ -31,6 +32,9 @@ var _panels: Array[Node] = []
 ## パネルをまたぐ演出を飛ばす層。
 var _fx: FxLayer
 
+## 効果音。
+var _sfx: Sfx
+
 
 func _ready() -> void:
 	_panels = [%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備]
@@ -43,6 +47,7 @@ func _ready() -> void:
 
 	_apply_backdrop()
 	_setup_fx()
+	_setup_sfx()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
 	for index: int in _tabs.get_tab_count():
 		_tabs.set_tab_tooltip(index, "%s（%d キー）" % [_tabs.get_tab_title(index), index + 1])
@@ -65,8 +70,9 @@ func _bind_session(session: GameSession) -> void:
 	_session.day_advanced.connect(_on_day_advanced)
 
 	_clear_log()
+	# 過去ログの復元では音を鳴らさない（全件が一斉に鳴ってしまう）。
 	for entry: String in _session.log_entries:
-		_append_log(entry)
+		_append_log(entry, false)
 
 	_rest_button.disabled = false
 	_result_button.visible = false
@@ -117,9 +123,16 @@ func _setup_fx() -> void:
 		market.traded.connect(_on_traded)
 
 
+func _setup_sfx() -> void:
+	_sfx = Sfx.new()
+	_sfx.name = "Sfx"
+	add_child(_sfx)
+
+
 ## 売買が成立したら、品目のアイコンを市場と積荷の間で飛ばす。
 ## 買いは市場から積荷へ、売りはその逆。向きで何をしたかが分かる。
 func _on_traded(item_id: String, is_buy: bool, origin: Vector2) -> void:
+	_play(Sfx.Kind.BUY if is_buy else Sfx.Kind.SELL)
 	if _fx == null or not is_instance_valid(_fx):
 		return
 	var cargo_point: Vector2 = %CargoPanel.flight_anchor()
@@ -128,6 +141,26 @@ func _on_traded(item_id: String, is_buy: bool, origin: Vector2) -> void:
 	else:
 		# 売却は積荷から市場へ。入金を示すため緑に寄せる。
 		_fx.fly_item(item_id, cargo_point, origin, UiTheme.GOOD)
+
+
+func _play(kind: Sfx.Kind) -> void:
+	if _sfx != null and is_instance_valid(_sfx):
+		_sfx.play(kind)
+
+
+## 航海日誌の内容から音を選ぶ。
+## 売買はボタン側で鳴らすため、ここでは扱わない（二重に鳴らさない）。
+func _play_for_log(message: String) -> void:
+	if message.contains("襲撃"):
+		_play(Sfx.Kind.RAID)
+	elif message.contains("製作"):
+		_play(Sfx.Kind.CRAFT)
+	elif message.contains("拡張") or message.contains("購入した"):
+		_play(Sfx.Kind.UPGRADE)
+	elif message.contains("移動"):
+		_play(Sfx.Kind.TRAVEL)
+	elif message.contains("休息") or message.contains("引き取"):
+		_play(Sfx.Kind.DAY)
 
 
 ## キー操作。_input ではなく _unhandled_input を使うのは、ボタンや
@@ -197,7 +230,7 @@ func _clear_log() -> void:
 		child.queue_free()
 
 
-func _append_log(message: String) -> void:
+func _append_log(message: String, with_sound: bool = true) -> void:
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -205,6 +238,8 @@ func _append_log(message: String) -> void:
 	if message.contains("襲撃"):
 		label.add_theme_color_override("font_color", UiTheme.WARN)
 	_log_list.add_child(label)
+	if with_sound:
+		_play_for_log(message)
 
 	while _log_list.get_child_count() > LOG_DISPLAY_LIMIT:
 		var oldest: Node = _log_list.get_child(0)
