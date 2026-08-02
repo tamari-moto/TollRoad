@@ -62,51 +62,45 @@ func _test_map_layout() -> void:
 	area.size = Vector2(400, 320)
 	panel._layout_nodes()
 
-	var center: Vector2 = area.size * 0.5
+	# 3D になったので、配置は 3D 座標（Vector3）で確認する。
+	# 投影後の画面座標はカメラの向き次第で変わるため、幾何の検査には使わない。
+	var world: Node = panel._world
+	_check(world != null, "3D の世界がある", "ない")
+	if world == null:
+		_despawn(panel)
+		return
+
 	var ring: Array[String] = GameData.royal_city_ids()
+	for city_id: String in ring:
+		_check(panel._buttons.has(city_id), "%s のノードがある" % city_id, "ない")
+		_check(world.positions.has(city_id), "%s の3D座標がある" % city_id, "ない")
+
+	# 水平面（X-Z）で中心からの距離を測る。高さは地形に沿うので除く。
+	var center3: Vector3 = world.positions.get(GameData.CAERLEON, Vector3.ZERO)
 	var radii: Array[float] = []
-
 	for city_id: String in ring:
-		var button: Button = panel._buttons.get(city_id)
-		_check(button != null, "%s のノードがある" % city_id, "ない")
-		if button == null:
+		if not world.positions.has(city_id):
 			continue
-		var node_center: Vector2 = button.position + button.custom_minimum_size * 0.5
-		radii.append(node_center.distance_to(center))
+		var p: Vector3 = world.positions[city_id]
+		radii.append(Vector2(p.x, p.z).length())
 
-	# 斜め見下ろしにしたため円は楕円に潰れている。Y を戻してから
-	# 等距離を確認する（真上から見れば同一円周上にあること）。
-	var unprojected: Array[float] = []
-	for city_id: String in ring:
-		var button: Button = panel._buttons.get(city_id)
-		if button == null:
-			continue
-		var node_center: Vector2 = button.position + button.custom_minimum_size * 0.5
-		var offset: Vector2 = node_center - center
-		# 圧縮した Y を元に戻す。
-		offset.y /= UiTheme.MAP_TILT
-		unprojected.append(offset.length())
+	if radii.size() == 5:
+		var spread: float = radii.max() - radii.min()
+		_check(spread < 0.01, "5都市が中心から等距離にある", "半径の差 %.3f" % spread)
+		_check(radii[0] > 1.0, "半径がゼロでない", str(radii[0]))
 
-	if unprojected.size() == 5:
-		var spread: float = unprojected.max() - unprojected.min()
-		_check(spread < 1.0, "逆変換すると5都市が同一円周上にある",
-			"半径の差 %.2f" % spread)
-		_check(unprojected[0] > 10.0, "半径がゼロでない", str(unprojected[0]))
+	# カーレオンは中央（水平面の原点）。
+	_check(Vector2(center3.x, center3.z).length() < 0.01, "カーレオンは中央にある",
+		"中心から %.3f" % Vector2(center3.x, center3.z).length())
 
-	# カーレオンは中央。
-	var caerleon: Button = panel._buttons.get(GameData.CAERLEON)
-	if caerleon != null:
-		var caerleon_center: Vector2 = caerleon.position + caerleon.custom_minimum_size * 0.5
-		_check(caerleon_center.distance_to(center) < 1.0, "カーレオンは中央にある",
-			"中心から %.2f" % caerleon_center.distance_to(center))
-
-	# 環状の隣接どうしは、非隣接より近い。
-	var fort: Button = panel._buttons.get("fort_sterling")
-	var lym: Button = panel._buttons.get("lymhurst")
-	var bridge: Button = panel._buttons.get("bridgewatch")
-	if fort != null and lym != null and bridge != null:
-		var adjacent_dist: float = fort.position.distance_to(lym.position)
-		var far_dist: float = fort.position.distance_to(bridge.position)
+	# 環状の隣接どうしは、非隣接より近い。移動ルールとの対応の担保。
+	if world.positions.has("fort_sterling") and world.positions.has("lymhurst") \
+			and world.positions.has("bridgewatch"):
+		var fort3: Vector3 = world.positions["fort_sterling"]
+		var lym3: Vector3 = world.positions["lymhurst"]
+		var bridge3: Vector3 = world.positions["bridgewatch"]
+		var adjacent_dist: float = fort3.distance_to(lym3)
+		var far_dist: float = fort3.distance_to(bridge3)
 		_check(adjacent_dist < far_dist, "隣接都市は非隣接より近くに置かれる",
 			"隣接 %.1f / 非隣接 %.1f" % [adjacent_dist, far_dist])
 
@@ -128,25 +122,26 @@ func _test_route_lines() -> void:
 	area.size = Vector2(400, 320)
 	panel._layout_nodes()
 
-	var routes: Node = area.get_node_or_null("Routes")
-	_check(routes != null, "経路線の層がある", "ない")
-	if routes == null:
+	# 経路線は 3D の中のメッシュになった。
+	var world: Node = panel._world
+	_check(world != null, "3D の世界がある", "ない")
+	if world == null:
 		_despawn(panel)
 		return
 
-	# 線はノードより後ろに描かれる（先に追加されている）。
-	# 層は下から順に 地盤 → 経路線 → 都市ノード。
-	var ground: Node = area.get_node_or_null("Ground")
-	_check(ground != null, "地盤の層がある", "ない")
-	_check(area.get_child(0) == ground, "地盤が最も下に敷かれる", "順序が違う")
-	_check(area.get_child(1) == routes, "経路線は地盤の上・ノードの下", "順序が違う")
-	_check(routes.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-		"経路線はクリックを妨げない", "妨げる")
+	var routes: MeshInstance3D = world.get_node_or_null("Routes")
+	_check(routes != null, "経路線のメッシュがある", "ない")
+	if routes != null:
+		_check(routes.mesh != null, "経路線に中身がある", "空")
 
-	# 全6都市の座標が渡されている。
-	_check(routes._positions.size() == 6, "6都市の座標が渡る", str(routes._positions.size()))
+	# 地形と光源も揃っている。
+	_check(world.get_node_or_null("Terrain") != null, "地形がある", "ない")
+	_check(world.get_node_or_null("Sun") != null, "光源がある", "ない")
+
+	# 全6都市の座標が 3D 側にある。
+	_check(world.positions.size() == 6, "6都市の座標がある", str(world.positions.size()))
 	for city_id: String in GameData.CITIES:
-		_check(routes._positions.has(city_id), "%s の座標がある" % city_id, "ない")
+		_check(world.positions.has(city_id), "%s の座標がある" % city_id, "ない")
 
 	_despawn(panel)
 

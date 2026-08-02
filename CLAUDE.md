@@ -127,10 +127,24 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m17.gd` の17本。
 新しい機能を足したら対応するシナリオも足すこと。
 
-**大陸図は斜め見下ろし**（`UiTheme.MAP_TILT` で Y を圧縮）。円が楕円に潰れるため、
-幾何を検査するときは **Y を `MAP_TILT` で割って逆変換してから**距離や角度を見る
-（`scenario_m11.gd` / `m17.gd` が例）。層は下から 地盤 → 経路線 → 都市ノードで、
-都市は Y の昇順に並べて手前が上に重なるようにしている。
+**大陸図は 3D**（[map_view_3d.gd](scripts/ui/map_view_3d.gd)）。`SubViewport` に
+地形・都市・経路を描き、`Camera3D` で周回する。`own_world_3d = true` は必須
+（付けないと本編の 2D 世界を映す）。
+
+**都市ボタンは 2D のまま。** `unproject_position()` で 3D 座標を画面座標に変換し、
+そこに `Button` を重ねている。クリック判定・`disabled`・ツールチップが従来の
+ままなので、操作の検査（`scenario_m6.gd`）は 3D 化の影響を受けない。
+カメラを動かしたら `_update_button_positions()` を呼ぶこと。
+
+幾何の検査は **3D の `Vector3` で行う**（投影後の画面座標はカメラ次第で変わる）。
+`gl_compatibility` でも基本的な 3D は動くが、SSAO・VoxelGI・高度な影は使えない。
+
+**ツリー外では `global_transform` が更新されない。** `--script` のハーネスで
+カメラの向きを見るときは `transform` を使う。`look_at()` も使えないので
+`look_at_from_position()` を使うこと。
+
+2D 版の地図（`map_ground.gd` / `map_pin.gd` / `map_routes.gd`）は戻せるよう
+残してあるが、現在は未使用。
 
 **価格バーの目盛りは全品目で共通**（`UiTheme.PRICE_SCALE_MIN`〜`MAX` = 60〜145%）。
 品目ごとに変えると同じバー位置が別の意味になり、行をまたいだ比較ができなく

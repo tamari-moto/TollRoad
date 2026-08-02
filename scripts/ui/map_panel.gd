@@ -15,6 +15,8 @@ const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 const MapRoutes = preload("res://scripts/ui/map_routes.gd")
 const MapGround = preload("res://scripts/ui/map_ground.gd")
 const MapPin = preload("res://scripts/ui/map_pin.gd")
+const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
+const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
 signal move_requested(city_id: String)
 
@@ -31,8 +33,10 @@ const RADIUS_RATIO: float = 0.40
 
 var _session: GameSession
 var _map_area: Control
-var _ground: MapGround
-var _routes: MapRoutes
+var _viewport: SubViewport
+var _world: MapView3D
+var _camera: MapCamera
+var _dragging: bool = false
 var _buttons: Dictionary = {}
 var _confirm: ConfirmationDialog
 var _pending_city: String = ""
@@ -57,16 +61,7 @@ func _build() -> void:
 	_map_area.custom_minimum_size = Vector2(0, MAP_MIN_HEIGHT)
 	_map_area.resized.connect(_layout_nodes)
 
-	# 地盤を最も下に敷き、その上に経路線、さらに上にノードを置く。
-	_ground = MapGround.new()
-	_ground.name = "Ground"
-	_map_area.add_child(_ground)
-
-	_routes = MapRoutes.new()
-	_routes.name = "Routes"
-	_routes.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_routes.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_area.add_child(_routes)
+	_build_viewport()
 
 	var ordered: Array[String] = GameData.royal_city_ids()
 	ordered.append(GameData.CAERLEON)
@@ -81,6 +76,65 @@ func _build() -> void:
 	add_child(_confirm)
 
 	_layout_nodes()
+
+
+## 3D の地図を SubViewport に描き、地図領域いっぱいに敷く。
+## 都市ボタンはこの上に重ねるので、ここには入れない。
+func _build_viewport() -> void:
+	var container := SubViewportContainer.new()
+	container.name = "MapViewport"
+	container.stretch = true
+	container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	container.anchor_right = 1.0
+	container.anchor_bottom = 1.0
+	container.offset_right = 0.0
+	container.offset_bottom = 0.0
+	# 3D の上でドラッグとホイールを拾う。
+	container.mouse_filter = Control.MOUSE_FILTER_STOP
+	container.gui_input.connect(_on_map_input)
+	_map_area.add_child(container)
+
+	_viewport = SubViewport.new()
+	_viewport.name = "MapSubViewport"
+	# 本編の 2D 世界を映さないよう、独自の 3D 世界を持たせる。
+	_viewport.own_world_3d = true
+	_viewport.transparent_bg = true
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	container.add_child(_viewport)
+
+	_world = MapView3D.new()
+	_world.name = "World"
+	_viewport.add_child(_world)
+
+	_camera = MapCamera.new()
+	_camera.name = "MapCamera"
+	_viewport.add_child(_camera)
+
+
+## 地図の上でのマウス操作。左ドラッグで回し、ホイールで寄る。
+## SubViewportContainer の中でだけ拾うので、外のタブには影響しない。
+func _on_map_input(event: InputEvent) -> void:
+	if _camera == null or not is_instance_valid(_camera):
+		return
+
+	var button: InputEventMouseButton = event as InputEventMouseButton
+	if button != null:
+		if button.button_index == MOUSE_BUTTON_LEFT:
+			_dragging = button.pressed
+		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_camera.zoom_by(-MapCamera.ZOOM_STEP)
+			_update_button_positions()
+		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_camera.zoom_by(MapCamera.ZOOM_STEP)
+			_update_button_positions()
+		return
+
+	var motion: InputEventMouseMotion = event as InputEventMouseMotion
+	if motion != null and _dragging:
+		_camera.rotate_by(
+			-motion.relative.x * MapCamera.YAW_SPEED,
+			motion.relative.y * MapCamera.PITCH_SPEED)
+		_update_button_positions()
 
 
 ## 紋章とラベルを持つ都市ノード。ボタン自体が押下対象。
@@ -142,38 +196,39 @@ func _build_node(city_id: String) -> Button:
 	return button
 
 
-## 王国都市を円周に、カーレオンを中央に置く。
-## 環状位置 0 を上（12時方向）にして時計回りに並べる。
+## 3D の都市座標を画面へ投影し、その位置にボタンを置く。
+##
+## ボタンを 3D 化せず 2D のまま重ねるのは、クリック判定・disabled・
+## ツールチップという既存の仕組みをそのまま使うため。カメラを動かすと
+## ここが呼ばれてボタンが追従する。
 func _layout_nodes() -> void:
 	if _map_area == null or _buttons.is_empty():
 		return
 	var area: Vector2 = _map_area.size
 	if area.x <= 0.0 or area.y <= 0.0:
 		return
+	if is_instance_valid(_viewport):
+		_viewport.size = Vector2i(area)
+	_update_button_positions()
 
-	var center: Vector2 = area * 0.5
-	var radius: float = minf(area.x, area.y) * RADIUS_RATIO
-	var positions: Dictionary = {}
 
-	var ring: Array[String] = GameData.royal_city_ids()
-	for index: int in ring.size():
-		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
-		# Y を潰して斜め見下ろしにする。真上からの円が楕円になる。
-		var point: Vector2 = center + Vector2(
-			cos(angle) * radius,
-			sin(angle) * radius * UiTheme.MAP_TILT)
-		positions[ring[index]] = point
-		_place(ring[index], point)
+## 各ボタンを 3D 座標の投影先へ動かす。
+func _update_button_positions() -> void:
+	if _world == null or _camera == null:
+		return
+	if not is_instance_valid(_world) or not is_instance_valid(_camera):
+		return
 
-	positions[GameData.CAERLEON] = center
-	_place(GameData.CAERLEON, center)
+	var screen_positions: Dictionary = {}
+	for city_id: String in _world.positions:
+		var world_point: Vector3 = _world.positions[city_id]
+		# 柱の頭あたりを狙う。地面すれすれだとラベルが埋もれる。
+		world_point.y += MapView3D.CITY_HEIGHT
+		var screen: Vector2 = _camera.unproject_position(world_point)
+		screen_positions[city_id] = screen
+		_place(city_id, screen)
 
-	if is_instance_valid(_ground):
-		_ground.set_positions(positions,
-			_session.current_city if _session != null else "")
-	if is_instance_valid(_routes):
-		_routes.set_positions(positions)
-	_sort_by_depth(positions)
+	_sort_by_depth(screen_positions)
 
 
 ## 奥（Y が小さい）の都市を先に描き、手前が上に重なるようにする。
@@ -201,12 +256,17 @@ func _place(city_id: String, point: Vector2) -> void:
 func refresh() -> void:
 	if _session == null or _buttons.is_empty():
 		return
+	# 3D 側の都市にも現在地を伝える（柱の色が変わる）。
+	if is_instance_valid(_world):
+		_world.set_current_city(_session.current_city)
+
 	var over: bool = _session.is_over()
 	for city_id: String in _buttons:
 		var button: Button = _buttons[city_id]
 		if not is_instance_valid(button):
 			continue
 		_refresh_node(button, city_id, over)
+	_update_button_positions()
 
 
 func _refresh_node(button: Button, city_id: String, over: bool) -> void:

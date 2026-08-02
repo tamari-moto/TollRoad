@@ -1,5 +1,8 @@
 extends SceneTree
-## 大陸図の斜め見下ろし表示の検証。楕円配置・地盤・ピン・描画順。
+## 大陸図の 3D 表示の検証。地形・都市・カメラ・投影。
+##
+## 3D の描画結果そのものはヘッドレスで確認できない。ここで見るのは
+## 座標計算とノード構成、そしてカメラ操作の上下限。
 ##
 ## 実行:
 ##   godot --headless --path . --script scripts/systems/scenario_m17.gd
@@ -7,20 +10,17 @@ extends SceneTree
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
-const UiTheme = preload("res://scripts/ui/ui_theme.gd")
-const MapPin = preload("res://scripts/ui/map_pin.gd")
-const MapGround = preload("res://scripts/ui/map_ground.gd")
+const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
+const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
 var _failures: int = 0
 
 
 func _init() -> void:
-	_test_tilt_constant()
-	_test_ellipse_layout()
-	_test_angles_even()
-	_test_depth_order()
-	_test_ground_layer()
-	await _test_pins_render()
+	_test_world_geometry()
+	_test_terrain()
+	_test_camera_limits()
+	await _test_projection()
 
 	print("")
 	if _failures == 0:
@@ -31,16 +31,144 @@ func _init() -> void:
 		quit(1)
 
 
-func _test_tilt_constant() -> void:
-	print("--- 傾きの設定 ---")
-	_check(UiTheme.MAP_TILT > 0.0, "圧縮率が正の値", str(UiTheme.MAP_TILT))
-	_check(UiTheme.MAP_TILT < 1.0, "1未満（真上からではない）", str(UiTheme.MAP_TILT))
-	# 潰しすぎると都市が重なって読めなくなる。
-	_check(UiTheme.MAP_TILT > 0.25, "潰しすぎていない", str(UiTheme.MAP_TILT))
+func _test_world_geometry() -> void:
+	print("--- 3D 空間の配置 ---")
+	var world: MapView3D = MapView3D.new()
+
+	_check(world.positions.size() == 6, "6都市の座標がある", str(world.positions.size()))
+
+	# 5都市が水平面で等距離、72度間隔。移動ルールとの対応の担保。
+	var ring: Array[String] = GameData.royal_city_ids()
+	var angles: Array[float] = []
+	var radii: Array[float] = []
+	for city_id: String in ring:
+		var p: Vector3 = world.positions[city_id]
+		var flat := Vector2(p.x, p.z)
+		radii.append(flat.length())
+		angles.append(flat.angle())
+
+	if radii.size() == 5:
+		_check(radii.max() - radii.min() < 0.01, "5都市が等距離",
+			"差 %.3f" % (radii.max() - radii.min()))
+		_check(is_equal_approx(radii[0], MapView3D.RING_RADIUS), "半径が設定どおり",
+			"%.2f / %.2f" % [radii[0], MapView3D.RING_RADIUS])
+
+	if angles.size() == 5:
+		var even: bool = true
+		for i: int in 5:
+			var diff: float = angles[(i + 1) % 5] - angles[i]
+			while diff < 0.0:
+				diff += TAU
+			if absf(diff - TAU / 5.0) > 0.01:
+				even = false
+		_check(even, "隣り合う都市が72度ずつ離れている", "間隔が不均等")
+
+	# カーレオンは水平面の中央。
+	var c: Vector3 = world.positions[GameData.CAERLEON]
+	_check(Vector2(c.x, c.z).length() < 0.01, "カーレオンは中央",
+		"中心から %.3f" % Vector2(c.x, c.z).length())
+
+	# 都市は地面の上に乗っている（高さが地形と一致する）。
+	for city_id: String in world.positions:
+		var p: Vector3 = world.positions[city_id]
+		var ground_y: float = world.height_at(p.x, p.z)
+		_check(is_equal_approx(p.y, ground_y), "%s が地面に乗っている" % city_id,
+			"%.2f / 地面 %.2f" % [p.y, ground_y])
+
+	# カーレオンは盆地の底。周囲より低い。
+	var caerleon_y: float = world.positions[GameData.CAERLEON].y
+	var ring_average: float = 0.0
+	for city_id: String in ring:
+		ring_average += world.positions[city_id].y
+	ring_average /= float(ring.size())
+	_check(caerleon_y < ring_average, "カーレオンは周囲より低い（盆地の底）",
+		"%.2f vs 平均 %.2f" % [caerleon_y, ring_average])
+
+	world.free()
 
 
-func _test_ellipse_layout() -> void:
-	print("--- 楕円配置 ---")
+func _test_terrain() -> void:
+	print("--- 地形 ---")
+	var world: MapView3D = MapView3D.new()
+
+	var terrain: MeshInstance3D = world.get_node_or_null("Terrain")
+	_check(terrain != null, "地形のメッシュがある", "ない")
+	if terrain != null and terrain.mesh != null:
+		var arrays: Array = terrain.mesh.surface_get_arrays(0)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		_check(vertices.size() > 0, "頂点がある", str(vertices.size()))
+
+		# 起伏がある（すべて同じ高さではない）。
+		var lowest: float = 9999.0
+		var highest: float = -9999.0
+		for v: Vector3 in vertices:
+			lowest = minf(lowest, v.y)
+			highest = maxf(highest, v.y)
+		_check(highest - lowest > 0.5, "地形に起伏がある",
+			"高低差 %.2f" % (highest - lowest))
+		print("     頂点 %d / 高低差 %.2f" % [vertices.size(), highest - lowest])
+
+	# 経路と光源。
+	_check(world.get_node_or_null("Routes") != null, "経路のメッシュがある", "ない")
+	_check(world.get_node_or_null("Sun") != null, "光源がある", "ない")
+
+	# 都市の柱が6本。
+	var pillars: int = 0
+	for city_id: String in GameData.CITIES:
+		if world.get_node_or_null(city_id) != null:
+			pillars += 1
+	_check(pillars == 6, "6都市の柱がある", str(pillars))
+
+	world.free()
+
+
+func _test_camera_limits() -> void:
+	print("--- カメラの上下限 ---")
+	var camera: MapCamera = MapCamera.new()
+
+	# 仰角は制限される。真上・真横まで行くと位置関係が読めなくなる。
+	camera.rotate_by(0.0, 99.0)
+	_check(camera.pitch <= MapCamera.MAX_PITCH, "仰角が上限を超えない",
+		"%.2f / 上限 %.2f" % [camera.pitch, MapCamera.MAX_PITCH])
+	camera.rotate_by(0.0, -99.0)
+	_check(camera.pitch >= MapCamera.MIN_PITCH, "仰角が下限を下回らない",
+		"%.2f / 下限 %.2f" % [camera.pitch, MapCamera.MIN_PITCH])
+
+	# 距離も制限される。
+	camera.zoom_by(-99.0)
+	_check(camera.distance >= MapCamera.MIN_DISTANCE, "近づきすぎない",
+		"%.1f / 下限 %.1f" % [camera.distance, MapCamera.MIN_DISTANCE])
+	camera.zoom_by(999.0)
+	_check(camera.distance <= MapCamera.MAX_DISTANCE, "離れすぎない",
+		"%.1f / 上限 %.1f" % [camera.distance, MapCamera.MAX_DISTANCE])
+
+	# 方位角は一周できる（制限しない）。
+	var before: float = camera.yaw
+	camera.rotate_by(TAU, 0.0)
+	_check(not is_equal_approx(camera.yaw, before), "方位角は回せる", "変わらない")
+
+	# 初期状態に戻せる。
+	camera.reset_view()
+	_check(is_equal_approx(camera.pitch, MapCamera.DEFAULT_PITCH), "視点を戻せる",
+		str(camera.pitch))
+
+	# カメラが中心の方を向いている。
+	# global_transform はツリー外では更新されないため transform を見る。
+	camera.reset_view()
+	var forward: Vector3 = -camera.transform.basis.z
+	var to_center: Vector3 = (MapCamera.FOCUS - camera.position).normalized()
+	_check(forward.dot(to_center) > 0.95, "カメラが中心を向いている",
+		"内積 %.2f" % forward.dot(to_center))
+
+	# 中心より高い位置から見下ろしている。
+	_check(camera.position.y > MapCamera.FOCUS.y, "見下ろす高さにある",
+		"y=%.1f" % camera.position.y)
+
+	camera.free()
+
+
+func _test_projection() -> void:
+	print("--- 3D から画面への投影 ---")
 	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
 	if panel == null:
 		return
@@ -51,208 +179,50 @@ func _test_ellipse_layout() -> void:
 	if area == null:
 		_despawn(panel)
 		return
-	area.size = Vector2(400, 320)
+	area.size = Vector2(420, 340)
 	panel._layout_nodes()
-
-	# 5都市の広がりを測る。横に広く、縦に潰れているのが斜め見下ろし。
-	var min_x: float = 99999.0
-	var max_x: float = -99999.0
-	var min_y: float = 99999.0
-	var max_y: float = -99999.0
-	for city_id: String in GameData.royal_city_ids():
-		var button: Button = panel._buttons.get(city_id)
-		if button == null:
-			continue
-		var c: Vector2 = button.position + button.custom_minimum_size * 0.5
-		min_x = minf(min_x, c.x)
-		max_x = maxf(max_x, c.x)
-		min_y = minf(min_y, c.y)
-		max_y = maxf(max_y, c.y)
-
-	var width: float = max_x - min_x
-	var height: float = max_y - min_y
-	_check(width > height, "横の広がりが縦より大きい（斜めから見た形）",
-		"横 %.0f / 縦 %.0f" % [width, height])
-	print("     広がり: 横 %.0f / 縦 %.0f（比 %.2f）" % [width, height, height / width])
-
-	# 潰れ具合が設定した圧縮率とおおむね一致する。
-	var expected: float = UiTheme.MAP_TILT
-	_check(absf(height / width - expected) < 0.1, "圧縮率が設定どおり",
-		"実測 %.2f / 設定 %.2f" % [height / width, expected])
-
-	_despawn(panel)
-
-
-func _test_angles_even() -> void:
-	print("--- 5都市が等間隔 ---")
-	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
-	if panel == null:
-		return
-	var session: GameSession = GameSession.new(17002)
-	panel.bind(session)
-	var area: Control = UiUtil.find_node(panel, "CityList")
-	if area == null:
-		_despawn(panel)
-		return
-	area.size = Vector2(400, 320)
-	panel._layout_nodes()
-
-	var center: Vector2 = area.size * 0.5
-	var angles: Array[float] = []
-	for city_id: String in GameData.royal_city_ids():
-		var button: Button = panel._buttons.get(city_id)
-		if button == null:
-			continue
-		var offset: Vector2 = button.position + button.custom_minimum_size * 0.5 - center
-		# Y を戻してから角度を求める。
-		offset.y /= UiTheme.MAP_TILT
-		angles.append(offset.angle())
-
-	_check(angles.size() == 5, "5都市ぶんの角度が取れる", str(angles.size()))
-	if angles.size() == 5:
-		# 隣り合う角度の差が 72度（TAU/5）ずつになっている。
-		var expected: float = TAU / 5.0
-		var even: bool = true
-		for i: int in 5:
-			var diff: float = angles[(i + 1) % 5] - angles[i]
-			# 角度の巻き戻りを吸収する。
-			while diff < 0.0:
-				diff += TAU
-			if absf(diff - expected) > 0.05:
-				even = false
-		_check(even, "隣り合う都市が72度ずつ離れている", "間隔が不均等")
-
-	# カーレオンは中央のまま（移動ルールとの対応が崩れていない）。
-	var caerleon: Button = panel._buttons.get(GameData.CAERLEON)
-	if caerleon != null:
-		var c: Vector2 = caerleon.position + caerleon.custom_minimum_size * 0.5
-		_check(c.distance_to(center) < 1.0, "カーレオンは中央のまま",
-			"中心から %.2f" % c.distance_to(center))
-
-	_despawn(panel)
-
-
-func _test_depth_order() -> void:
-	print("--- 奥行きの重なり ---")
-	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
-	if panel == null:
-		return
-	var session: GameSession = GameSession.new(17003)
-	panel.bind(session)
-	var area: Control = UiUtil.find_node(panel, "CityList")
-	if area == null:
-		_despawn(panel)
-		return
-	area.size = Vector2(400, 320)
-	panel._layout_nodes()
-
-	# ボタンの並び順が Y の昇順（奥が先、手前が後）になっている。
-	var previous_y: float = -99999.0
-	var ordered: bool = true
-	var checked: int = 0
-	for child: Node in area.get_children():
-		var button: Button = child as Button
-		if button == null:
-			continue
-		var y: float = button.position.y
-		if y < previous_y - 0.5:
-			ordered = false
-		previous_y = y
-		checked += 1
-
-	_check(checked == 6, "6都市のボタンが並ぶ", str(checked))
-	_check(ordered, "奥の都市ほど先に描かれる（手前が上に重なる）", "順序が逆")
-
-	_despawn(panel)
-
-
-func _test_ground_layer() -> void:
-	print("--- 地盤 ---")
-	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
-	if panel == null:
-		return
-	var session: GameSession = GameSession.new(17004)
-	panel.bind(session)
-	var area: Control = UiUtil.find_node(panel, "CityList")
-	if area == null:
-		_despawn(panel)
-		return
-	area.size = Vector2(400, 320)
-	panel._layout_nodes()
-
-	var ground: Node = area.get_node_or_null("Ground")
-	_check(ground != null, "地盤の層がある", "ない")
-	if ground == null:
-		_despawn(panel)
-		return
-
-	_check(ground.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-		"地盤はクリックを妨げない", str(ground.mouse_filter))
-	_check(ground._positions.size() == 6, "6都市ぶんの地盤がある",
-		str(ground._positions.size()))
-	_check(ground._current_city == session.current_city,
-		"現在地が地盤に伝わる", ground._current_city)
-
-	# 移動すると現在地の地盤が移る。
-	session.move_to("bridgewatch")
-	panel._layout_nodes()
-	_check(ground._current_city == "bridgewatch", "移動で現在地の地盤が移る",
-		ground._current_city)
-
-	_despawn(panel)
-
-
-func _test_pins_render() -> void:
-	print("--- ピンが描画される ---")
-	# M13 の「サイズ 0 で描画されない」罠の再発防止。
-	var pin: MapPin = MapPin.new()
-	root.add_child(pin)
-	pin.size = Vector2(104, 96)
-	await process_frame
-	_check(pin.size.x > 0 and pin.size.y > 0, "ピンに大きさがある", str(pin.size))
-	_check(pin.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-		"ピンはクリックを妨げない", str(pin.mouse_filter))
-	root.remove_child(pin)
-	pin.free()
-
-	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
-	if panel == null:
-		return
-	var session: GameSession = GameSession.new(17005)
-	panel.bind(session)
-	var area: Control = UiUtil.find_node(panel, "CityList")
-	if area != null:
-		area.size = Vector2(400, 320)
-		panel._layout_nodes()
-	await process_frame
 	await process_frame
 
-	# 全都市にピンが入っている。
-	var pin_count: int = 0
+	_check(panel._viewport != null, "SubViewport がある", "ない")
+	if panel._viewport != null:
+		_check(panel._viewport.own_world_3d,
+			"独自の 3D 世界を持つ（本編の 2D を映さない）", "共有している")
+
+	_check(panel._camera != null, "カメラがある", "ない")
+	_check(panel._world != null, "3D の世界がある", "ない")
+
+	# ボタンが投影先に置かれ、重なっていない。
+	var seen: Array[Vector2] = []
+	var distinct: bool = true
 	for city_id: String in panel._buttons:
 		var button: Button = panel._buttons[city_id]
-		if button.find_child("Pin", true, false) != null:
-			pin_count += 1
-	_check(pin_count == 6, "6都市すべてにピンがある", str(pin_count))
+		for previous: Vector2 in seen:
+			if button.position.distance_to(previous) < 1.0:
+				distinct = false
+		seen.append(button.position)
+	_check(distinct, "都市ボタンが重ならない", "同じ位置にある")
 
-	# 現在地のピンが強調される。
-	var current_pin: MapPin = panel._buttons[session.current_city].find_child(
-		"Pin", true, false)
-	if current_pin != null:
-		_check(current_pin.is_current, "現在地のピンが強調される", "されない")
+	# カメラを回すとボタンが追従する。
+	var before: Vector2 = panel._buttons["fort_sterling"].position
+	panel._camera.rotate_by(1.0, 0.0)
+	panel._update_button_positions()
+	var after: Vector2 = panel._buttons["fort_sterling"].position
+	_check(before.distance_to(after) > 1.0, "カメラを回すとボタンが追従する",
+		"%.1f しか動かない" % before.distance_to(after))
 
-	# カーレオンのピンは危険色。
-	var caerleon_pin: MapPin = panel._buttons[GameData.CAERLEON].find_child(
-		"Pin", true, false)
-	if caerleon_pin != null:
-		_check(caerleon_pin.danger, "カーレオンのピンは危険を示す", "示さない")
+	# 拡大でも追従する。
+	var zoom_before: Vector2 = panel._buttons["martlock"].position
+	panel._camera.zoom_by(-6.0)
+	panel._update_button_positions()
+	_check(zoom_before.distance_to(panel._buttons["martlock"].position) > 1.0,
+		"拡大でもボタンが追従する", "動かない")
 
-	# 都市名と経路情報は従来どおり残っている（情報量を減らしていない）。
-	var note: Label = panel._buttons["bridgewatch"].find_child("Note", true, false)
-	if note != null:
-		_check(note.text.contains("ブリッジウォッチ"), "都市名が出る", note.text)
-		_check(note.text.contains("1日") and note.text.contains("250"),
-			"経路情報が残っている", note.text)
+	# 移動しても操作は従来どおり効く（ボタンを残した設計の担保）。
+	session.move_to("bridgewatch")
+	var current_button: Button = panel._buttons["bridgewatch"]
+	_check(current_button.disabled, "現在地のボタンは無効", "押せる")
+	_check(current_button.tooltip_text.contains("現在地"),
+		"現在地がツールチップに出る", current_button.tooltip_text)
 
 	_despawn(panel)
 
