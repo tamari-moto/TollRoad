@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_investment_is_visible()
 	_test_main_scene()
 	_test_scene_headers()
+	await _test_dialog_sizing()
 
 	print("")
 	if _failures == 0:
@@ -208,6 +209,54 @@ func _test_main_scene() -> void:
 		_check(dialog.has_method("show_briefing"), "show_briefing がある", "ない")
 		_check(dialog.has_signal("closed"), "closed シグナルがある", "ない")
 	main.free()
+
+
+## ダイアログの中身が実際に描画されうる大きさになっているか。
+##
+## Window の子に anchors_preset だけ書いて offset を省くとサイズ 0 のまま
+## 描画されず、中身のない黒い矩形だけが出る。ノードを引く検査は通って
+## しまうため、実寸を見て検出する必要がある。
+func _test_dialog_sizing() -> void:
+	print("--- ダイアログの実寸 ---")
+	for path: String in ["res://scenes/ui/BriefingDialog.tscn",
+			"res://scenes/ui/ResultDialog.tscn"]:
+		var window: Window = _spawn(path) as Window
+		if window == null:
+			continue
+		if window.has_method("bind"):
+			window.bind(GameSession.new(13100))
+		if window.has_method("show_briefing"):
+			window.show_briefing()
+		else:
+			window.show_result()
+
+		# レイアウトの確定を待つ。
+		await process_frame
+		await process_frame
+
+		var content: Control = window.get_child(0) as Control
+		var name: String = path.get_file()
+		_check(content != null, "%s に中身がある" % name, "ない")
+		if content == null:
+			_despawn(window)
+			continue
+
+		_check(content.size.x > 0 and content.size.y > 0,
+			"%s の中身に大きさがある" % name, str(content.size))
+
+		# ハーネスでは Window のサイズが実機と一致しないことがあるため、
+		# 「中身が窓に収まるか」ではなく「中身が無制限に膨張していないか」を見る。
+		# autowrap の Label が幅を得られないと数千pxに伸びるので、それを検出する。
+		_check(content.size.y < 2000, "%s の中身が縦に膨張していない" % name,
+			"高さ %.0f" % content.size.y)
+
+		# 文字が実際に幅を持っている（autowrap で潰れていない）。
+		for label_name: String in ["Premise", "Hint", "RankLabel"]:
+			var label: Label = window.find_child(label_name, true, false)
+			if label != null:
+				_check(label.size.x > 10, "%s の %s に幅がある" % [name, label_name],
+					str(label.size))
+		_despawn(window)
 
 
 ## .tscn の load_steps が実際の ext_resource 数と合っているか。

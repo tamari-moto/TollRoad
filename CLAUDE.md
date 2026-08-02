@@ -107,12 +107,22 @@ git ls-files -s | grep -c 100755   # 0 であること
 検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m13.gd` の13本。
 新しい機能を足したら対応するシナリオも足すこと。
 
-**`.tscn` を手書きしたら `load_steps` を必ず合わせる。**
-`ext_resource` と `sub_resource` の合計 ＋ 1 が正しい値。書き忘れると Godot は
-読み込みを成功させるが**中身が展開されず、実行時に空のウィンドウだけが出る**。
-`load()` も `instantiate()` も通ってしまうためシナリオでは気づけない
-（実際に開始画面がこれで真っ黒になった）。`scenario_m13.gd` の
-`_test_scene_headers()` が全 `.tscn` を走査して検出する。
+**`.tscn` を手書きしたら、必ず GUI で1度見ること。**
+ヘッドレスの検査はノードを引けるかしか見ておらず、**描画の破損を検出できない**。
+実際に開始画面が中身のない黒い矩形として表示される不具合を2度見逃した。
+
+特に `Window` の子は要注意:
+
+- `anchors_preset` だけ書いて `offset_right` / `offset_bottom` を省くと
+  **サイズが (0,0) のまま**になり、中身があっても描画されない
+- `autowrap_mode` の `Label` は幅の起点がないと縦に膨張する（実際に高さ
+  6694px になった）。`custom_minimum_size` で幅を与えること
+- `wrap_controls = true` は Window を中身に合わせて広げるため、上記と
+  組み合わさると破綻する
+
+`ui_util.fill_window()` がアンカーとオフセットを確定させる。ダイアログを
+足したら呼ぶこと。`scenario_m13.gd` の `_test_dialog_sizing()` が実寸を検査し、
+`_test_scene_headers()` が `load_steps` の整合を見る。
 
 **目標額は `GameData.GOAL_RANK` 経由で引く。** HUD の進捗バーと開始画面が
 同じ定義を参照しており、`RANKS` の数値を変えれば説明文も追従する。

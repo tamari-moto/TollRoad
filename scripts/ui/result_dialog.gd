@@ -52,7 +52,10 @@ func show_result() -> void:
 		return
 	_resolve()
 	_populate()
-	popup_centered()
+	# 中身をウィンドウいっぱいに広げる（.tscn のアンカーだけでは 0 のまま）。
+	UiUtil.fill_window(self)
+	if is_inside_tree():
+		popup_centered()
 
 
 func _populate() -> void:

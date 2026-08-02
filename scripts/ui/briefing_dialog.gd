@@ -110,6 +110,8 @@ func _populate_ranks() -> void:
 func show_briefing() -> void:
 	_resolve()
 	_populate()
+	# 中身をウィンドウいっぱいに広げる（.tscn のアンカーだけでは 0 のまま）。
+	UiUtil.fill_window(self)
 	# ツリー外（--script のハーネス）では表示できない。文面だけ整えて返す。
 	if is_inside_tree():
 		popup_centered()

@@ -16,6 +16,37 @@ static func find_node(owner_node: Node, node_name: String) -> Node:
 	return owner_node.find_child(node_name, true, false)
 
 
+## ツリー外でサイズが失われた際に使う既定のダイアログサイズ。
+const DEFAULT_DIALOG_SIZE := Vector2i(520, 480)
+
+
+## Window の中身をウィンドウ全体に広げる。
+##
+## 手書きの .tscn で anchors_preset だけ書いても offset が 0 のままだと、
+## 子の Control はサイズ 0 で描画されない（中身はあるのに何も見えない）。
+## エディタを使わずシーンを書く以上、ここはコードで確定させる。
+static func fill_window(window: Window) -> void:
+	if window == null or window.get_child_count() == 0:
+		return
+	var content: Control = window.get_child(0) as Control
+	if content == null:
+		return
+	# ツリー外（--script のハーネス）では Window のサイズが 1x1 に
+	#潰れることがある。その場合だけ既定の大きさへ戻す。
+	if window.size.x <= 1 or window.size.y <= 1:
+		window.size = DEFAULT_DIALOG_SIZE
+	# アンカーとオフセットの両方を明示する。size を直接代入するとアンカーと
+	# 競合して警告になり、しかも子には伝播しない。
+	content.anchor_left = 0.0
+	content.anchor_top = 0.0
+	content.anchor_right = 1.0
+	content.anchor_bottom = 1.0
+	content.offset_left = 0.0
+	content.offset_top = 0.0
+	content.offset_right = 0.0
+	content.offset_bottom = 0.0
+
+
 ## セッションのシグナルに接続する。二重接続と、古いセッションの繋ぎっぱなしを防ぐ。
 ## bind() は再プレイ時にもう一度呼ばれるため、各パネルはこれを使うこと。
 static func rebind(old_session: Object, new_session: Object,
