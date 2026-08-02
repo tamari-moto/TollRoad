@@ -213,8 +213,8 @@ func _layout_nodes() -> void:
 	var area: Vector2 = _map_area.size
 	if area.x <= 0.0 or area.y <= 0.0:
 		return
-	if is_instance_valid(_viewport):
-		_viewport.size = Vector2i(area)
+	# SubViewport の大きさは SubViewportContainer の stretch が合わせるので
+	# ここでは触らない（触ると警告になる）。
 	_update_button_positions()
 
 
