@@ -204,9 +204,50 @@ func _test_selection_ring() -> void:
 			around_new = false
 	_check(around_new, "移動先の都市を囲む", "元の位置に残っている")
 
+	# 脈動。到着直後は 1.0 から始まり、時間とともに上下する。
+	world.set_current_city("martlock")
+	_check(is_equal_approx(world.pulse_scale(), 1.0), "到着直後の倍率は1.0",
+		"%.3f" % world.pulse_scale())
+
+	# 周期の 1/4 で最大、3/4 で最小になる。
+	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.25
+	var peak: float = world.pulse_scale()
+	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.75
+	var trough: float = world.pulse_scale()
+	_check(peak > 1.0 and trough < 1.0, "1.0 を挟んで上下する",
+		"最大 %.3f / 最小 %.3f" % [peak, trough])
+
+	# 控えめであること。大きく動くと地図を見ている間ずっと気が散る。
+	_check(absf(peak - 1.0) <= MapView3D.RING_PULSE_AMOUNT + 0.001,
+		"変化幅が設定を超えない", "%.3f" % absf(peak - 1.0))
+	_check(MapView3D.RING_PULSE_AMOUNT <= 0.15, "脈動が控えめ",
+		"振幅 %.2f" % MapView3D.RING_PULSE_AMOUNT)
+	_check(MapView3D.RING_PULSE_PERIOD >= 1.5, "周期が速すぎない",
+		"%.1f 秒" % MapView3D.RING_PULSE_PERIOD)
+
+	# 一周すると元に戻る。
+	world._pulse_time = MapView3D.RING_PULSE_PERIOD
+	_check(is_equal_approx(world.pulse_scale(), 1.0), "一周で元に戻る",
+		"%.3f" % world.pulse_scale())
+
+	# 脈動しても半径の比は保たれる（内外が入れ替わらない）。
+	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.25
+	world._redraw_selection_ring(world.positions["martlock"])
+	var pulsed: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var center2: Vector3 = world.positions["martlock"]
+	var largest: float = 0.0
+	var smallest: float = 9999.0
+	for v: Vector3 in pulsed:
+		var flat: float = Vector2(v.x - center2.x, v.z - center2.z).length()
+		largest = maxf(largest, flat)
+		smallest = minf(smallest, flat)
+	_check(largest > smallest, "脈動中も二重の円のまま",
+		"内 %.2f / 外 %.2f" % [smallest, largest])
+
 	# 未知の都市を指定しても落ちず、リングを隠す。
 	world.set_current_city("nonexistent")
 	_check(not ring.visible, "未知の都市ではリングを隠す", "出たまま")
+	_check(world._ring_city == "", "脈動の対象も外れる", world._ring_city)
 
 	world.free()
 

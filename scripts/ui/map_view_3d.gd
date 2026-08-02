@@ -38,10 +38,18 @@ const RING_SEGMENTS: int = 48
 ## 地面から浮かせる高さ。埋まらない程度に。
 const RING_LIFT: float = 0.08
 
+## 脈動の周期（秒）。地図を見ている間ずっと動くので、目につかない遅さにする。
+const RING_PULSE_PERIOD: float = 2.8
+## 脈動で半径が変わる割合。控えめに保つ。
+const RING_PULSE_AMOUNT: float = 0.06
+
 var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
 var _selection_ring: MeshInstance3D
+## 脈動のためにリングを引き直し続けるので、現在地を覚えておく。
+var _ring_city: String = ""
+var _pulse_time: float = 0.0
 var _noise: FastNoiseLite
 
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
@@ -243,6 +251,22 @@ func _build_selection_ring() -> void:
 	add_child(_selection_ring)
 
 
+## 脈動させる。地図を見ている間ずっと動くので、変化幅は小さく保つ。
+func _process(delta: float) -> void:
+	if _ring_city == "" or not is_instance_valid(_selection_ring):
+		return
+	if not _selection_ring.visible:
+		return
+	_pulse_time += delta
+	_redraw_selection_ring(positions[_ring_city])
+
+
+## 今この瞬間の半径の倍率。1.0 を中心にゆっくり上下する。
+func pulse_scale() -> float:
+	var phase: float = TAU * _pulse_time / RING_PULSE_PERIOD
+	return 1.0 + sin(phase) * RING_PULSE_AMOUNT
+
+
 ## リングをその都市の足元に描き直す。
 ##
 ## 平らな円を作って位置だけ動かすのでは駄目で、都市ごとに地面の高さが
@@ -258,9 +282,12 @@ func _redraw_selection_ring(center: Vector3) -> void:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.vertex_color_use_as_albedo = true
 
+	# 脈動ぶんの倍率。静止時（検査など）は 1.0 になる。
+	var scale: float = pulse_scale()
+
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
-	_add_ring(mesh, center, RING_INNER_RADIUS, UiTheme.FOCUS)
-	_add_ring(mesh, center, RING_OUTER_RADIUS, UiTheme.FOCUS)
+	_add_ring(mesh, center, RING_INNER_RADIUS * scale, UiTheme.FOCUS)
+	_add_ring(mesh, center, RING_OUTER_RADIUS * scale, UiTheme.FOCUS)
 	mesh.surface_end()
 
 
@@ -307,8 +334,13 @@ func set_current_city(city_id: String) -> void:
 
 	# 足元のリングを現在地へ移す。地面の高さが都市ごとに違うので引き直す。
 	if positions.has(city_id):
+		_ring_city = city_id
+		# 到着のたびに位相を戻し、リングが広がるところから始まるようにする。
+		_pulse_time = 0.0
 		_redraw_selection_ring(positions[city_id])
 		if is_instance_valid(_selection_ring):
 			_selection_ring.visible = true
-	elif is_instance_valid(_selection_ring):
-		_selection_ring.visible = false
+	else:
+		_ring_city = ""
+		if is_instance_valid(_selection_ring):
+			_selection_ring.visible = false
