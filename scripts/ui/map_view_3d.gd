@@ -30,9 +30,18 @@ const BASIN_RADIUS: float = 11.0
 const CITY_HEIGHT: float = 1.5
 const CITY_RADIUS: float = 0.55
 
+## 現在地を囲むリング。内外の二重で描く。
+const RING_INNER_RADIUS: float = 1.5
+const RING_OUTER_RADIUS: float = 2.1
+## 円の分割数。少ないと多角形に見える。
+const RING_SEGMENTS: int = 48
+## 地面から浮かせる高さ。埋まらない程度に。
+const RING_LIFT: float = 0.08
+
 var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
+var _selection_ring: MeshInstance3D
 var _noise: FastNoiseLite
 
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
@@ -58,6 +67,7 @@ func _build() -> void:
 	_build_terrain()
 	_build_cities()
 	_build_routes()
+	_build_selection_ring()
 	_build_light()
 
 
@@ -225,6 +235,53 @@ func _add_route(mesh: ImmediateMesh, from_point: Vector3, to_point: Vector3,
 		mesh.surface_add_vertex(b)
 
 
+## 現在地を囲むリング。入れ物だけ先に作り、中身は到着のたびに引き直す。
+func _build_selection_ring() -> void:
+	_selection_ring = MeshInstance3D.new()
+	_selection_ring.name = "SelectionRing"
+	_selection_ring.mesh = ImmediateMesh.new()
+	add_child(_selection_ring)
+
+
+## リングをその都市の足元に描き直す。
+##
+## 平らな円を作って位置だけ動かすのでは駄目で、都市ごとに地面の高さが
+## 違うため斜面に埋まったり浮いたりする。円周上の各点で地形の高さを
+## 引き直し、地面に寝かせる。
+func _redraw_selection_ring(center: Vector3) -> void:
+	if not is_instance_valid(_selection_ring):
+		return
+	var mesh: ImmediateMesh = _selection_ring.mesh
+	mesh.clear_surfaces()
+
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.vertex_color_use_as_albedo = true
+
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
+	_add_ring(mesh, center, RING_INNER_RADIUS, UiTheme.FOCUS)
+	_add_ring(mesh, center, RING_OUTER_RADIUS, UiTheme.FOCUS)
+	mesh.surface_end()
+
+
+## 地形に沿った円を1本引く。
+func _add_ring(mesh: ImmediateMesh, center: Vector3, radius: float,
+		color: Color) -> void:
+	for i: int in RING_SEGMENTS:
+		var a0: float = TAU * float(i) / float(RING_SEGMENTS)
+		var a1: float = TAU * float(i + 1) / float(RING_SEGMENTS)
+		var p0 := Vector3(center.x + cos(a0) * radius, 0.0,
+			center.z + sin(a0) * radius)
+		var p1 := Vector3(center.x + cos(a1) * radius, 0.0,
+			center.z + sin(a1) * radius)
+		p0.y = height_at(p0.x, p0.z) + RING_LIFT
+		p1.y = height_at(p1.x, p1.z) + RING_LIFT
+		mesh.surface_set_color(color)
+		mesh.surface_add_vertex(p0)
+		mesh.surface_set_color(color)
+		mesh.surface_add_vertex(p1)
+
+
 func _build_light() -> void:
 	var light := DirectionalLight3D.new()
 	light.name = "Sun"
@@ -247,3 +304,11 @@ func set_current_city(city_id: String) -> void:
 		var color: Color = UiTheme.FOCUS if id == city_id else _city_color(id)
 		material.albedo_color = color
 		material.emission = color
+
+	# 足元のリングを現在地へ移す。地面の高さが都市ごとに違うので引き直す。
+	if positions.has(city_id):
+		_redraw_selection_ring(positions[city_id])
+		if is_instance_valid(_selection_ring):
+			_selection_ring.visible = true
+	elif is_instance_valid(_selection_ring):
+		_selection_ring.visible = false

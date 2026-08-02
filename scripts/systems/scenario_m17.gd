@@ -19,6 +19,7 @@ var _failures: int = 0
 func _init() -> void:
 	_test_world_geometry()
 	_test_terrain()
+	_test_selection_ring()
 	_test_camera_limits()
 	await _test_projection()
 
@@ -130,6 +131,82 @@ func _test_terrain() -> void:
 		if world.get_node_or_null(city_id) != null:
 			pillars += 1
 	_check(pillars == 6, "6都市の柱がある", str(pillars))
+
+	world.free()
+
+
+func _test_selection_ring() -> void:
+	print("--- 現在地のリング ---")
+	var world: MapView3D = MapView3D.new()
+
+	var ring: MeshInstance3D = world.get_node_or_null("SelectionRing")
+	_check(ring != null, "リングのメッシュがある", "ない")
+	if ring == null:
+		world.free()
+		return
+
+	world.set_current_city("martlock")
+	var mesh: ImmediateMesh = ring.mesh
+	_check(mesh.get_surface_count() > 0, "リングが描かれている", "空")
+	if mesh.get_surface_count() == 0:
+		world.free()
+		return
+
+	var arrays: Array = mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	# 二重の円。各円が RING_SEGMENTS 本の線分＝2頂点ずつ。
+	var expected: int = MapView3D.RING_SEGMENTS * 2 * 2
+	_check(vertices.size() == expected, "二重の円ぶんの頂点がある",
+		"%d / 期待 %d" % [vertices.size(), expected])
+
+	# 現在地を囲んでいる。中心からの距離が内外の半径に一致する。
+	var center: Vector3 = world.positions["martlock"]
+	var near_inner: int = 0
+	var near_outer: int = 0
+	for v: Vector3 in vertices:
+		var flat: float = Vector2(v.x - center.x, v.z - center.z).length()
+		if absf(flat - MapView3D.RING_INNER_RADIUS) < 0.01:
+			near_inner += 1
+		elif absf(flat - MapView3D.RING_OUTER_RADIUS) < 0.01:
+			near_outer += 1
+	_check(near_inner > 0 and near_outer > 0, "内側と外側の円がある",
+		"内 %d / 外 %d" % [near_inner, near_outer])
+	_check(near_inner + near_outer == vertices.size(),
+		"全頂点が現在地を囲んでいる",
+		"%d / %d" % [near_inner + near_outer, vertices.size()])
+
+	# 地形に沿っている。平らな円だと斜面で埋まる。
+	var on_ground: int = 0
+	for v: Vector3 in vertices:
+		var ground: float = world.height_at(v.x, v.z) + MapView3D.RING_LIFT
+		if absf(v.y - ground) < 0.01:
+			on_ground += 1
+	_check(on_ground == vertices.size(), "リングが地形に沿っている",
+		"沿っている頂点 %d / %d" % [on_ground, vertices.size()])
+
+	# 高さが一定でない＝平らな円ではない（起伏のある場所なら）。
+	var lowest: float = 9999.0
+	var highest: float = -9999.0
+	for v: Vector3 in vertices:
+		lowest = minf(lowest, v.y)
+		highest = maxf(highest, v.y)
+	_check(highest - lowest > 0.001, "リングの高さが地形に応じて変わる",
+		"高低差 %.4f" % (highest - lowest))
+
+	# 移動すると追従する。
+	world.set_current_city("bridgewatch")
+	var moved: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var new_center: Vector3 = world.positions["bridgewatch"]
+	var around_new: bool = true
+	for v: Vector3 in moved:
+		var flat: float = Vector2(v.x - new_center.x, v.z - new_center.z).length()
+		if flat > MapView3D.RING_OUTER_RADIUS + 0.01:
+			around_new = false
+	_check(around_new, "移動先の都市を囲む", "元の位置に残っている")
+
+	# 未知の都市を指定しても落ちず、リングを隠す。
+	world.set_current_city("nonexistent")
+	_check(not ring.visible, "未知の都市ではリングを隠す", "出たまま")
 
 	world.free()
 
