@@ -98,6 +98,26 @@ git ls-files -s | grep -c 100755   # 0 であること
 
 [hud.gd](scripts/ui/hud.gd) の `_resolve_nodes()` / `_is_ready()` がこの形。
 
+## 配布用ビルド
+
+Windows 向けの単一 exe を書き出す:
+
+```bash
+mkdir -p exports   # 出力先が無いとエクスポートは失敗する
+"...Godot_v4.7.1-stable_win64_console.exe" \
+  --headless --path . --export-release "Windows Desktop"
+```
+
+`exports/TollRoad.exe`（約109MB）が出来る。PCK を埋め込んでいるので**1ファイルで完結**し、
+プロジェクトフォルダの外へ持ち出しても動く。
+
+- エクスポートテンプレートは `~/AppData/Roaming/Godot/export_templates/4.7.1.stable/` に必要
+  （約1.28GB。`Godot_v4.7.1-stable_export_templates.tpz` を展開する）
+- [export_presets.cfg](export_presets.cfg) は**追跡している**。別環境でも同じ設定で
+  作れるようにするため。署名鍵など環境固有の値を入れる場合は `.gitignore` へ戻すこと
+- `exclude_filter` で `scenario_*.gd` を除外しているので、検証シナリオは配布物に入らない
+- `exports/` は `.gitignore` 済み（109MB をリポジトリに入れない）
+
 ## 現在の実装状況
 
 **M8 まで完了 = ロードマップ完走**（[roadmap.md](docs/roadmap.md) 参照）。

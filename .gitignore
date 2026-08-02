@@ -2,7 +2,8 @@
 .godot/
 .import/
 export.cfg
-export_presets.cfg
+# export_presets.cfg は追跡する。別環境でも同じ設定で exe を作れるようにするため。
+# 署名鍵のパスなど環境固有の値を入れる場合は、ここに戻して除外すること。
 
 # Imported translations (automatically generated from CSV files)
 *.translation
