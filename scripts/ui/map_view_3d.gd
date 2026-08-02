@@ -129,8 +129,10 @@ func _recalculate_normals(arrays: Array) -> void:
 		var a: int = indices[i]
 		var b: int = indices[i + 1]
 		var c: int = indices[i + 2]
-		var face: Vector3 = (vertices[b] - vertices[a]).cross(
-			vertices[c] - vertices[a])
+		# 外積の順序に注意。逆にすると法線が下を向き、地面が裏返って
+		# 光が当たらず真っ黒になる。
+		var face: Vector3 = (vertices[c] - vertices[a]).cross(
+			vertices[b] - vertices[a])
 		normals[a] += face
 		normals[b] += face
 		normals[c] += face

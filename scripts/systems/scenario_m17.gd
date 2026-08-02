@@ -108,6 +108,18 @@ func _test_terrain() -> void:
 			"高低差 %.2f" % (highest - lowest))
 		print("     頂点 %d / 高低差 %.2f" % [vertices.size(), highest - lowest])
 
+		# 法線が上を向いていること。下向きだと地面が裏返り、光が
+		# 当たらず真っ黒に描画される（実際にそうなった）。
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		_check(normals.size() == vertices.size(), "全頂点に法線がある",
+			"%d / %d" % [normals.size(), vertices.size()])
+		var upward: int = 0
+		for n: Vector3 in normals:
+			if n.y > 0.5:
+				upward += 1
+		_check(upward == normals.size(), "法線が上を向いている（地面が表向き）",
+			"上向き %d / %d" % [upward, normals.size()])
+
 	# 経路と光源。
 	_check(world.get_node_or_null("Routes") != null, "経路のメッシュがある", "ない")
 	_check(world.get_node_or_null("Sun") != null, "光源がある", "ない")
