@@ -81,6 +81,14 @@ func _refresh_icons() -> void:
 			item_id, "×%d" % _session.cargo[item_id]))
 
 
+## 演出の発着点（グローバル座標）。積荷バーの中央を指す。
+func flight_anchor() -> Vector2:
+	_resolve()
+	if is_instance_valid(_bar):
+		return _bar.global_position + _bar.size * 0.5
+	return global_position + size * 0.5
+
+
 ## 重量に比例した幅を持つ色付きの区画。
 func _make_segment(weight: int, color: Color) -> Control:
 	var rect := ColorRect.new()

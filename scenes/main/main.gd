@@ -7,6 +7,7 @@ extends Node2D
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
@@ -27,6 +28,9 @@ var _session: GameSession
 ## bind と refresh を持つ画面パネル。日送り時にまとめて更新する。
 var _panels: Array[Node] = []
 
+## パネルをまたぐ演出を飛ばす層。
+var _fx: FxLayer
+
 
 func _ready() -> void:
 	_panels = [%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備]
@@ -38,6 +42,7 @@ func _ready() -> void:
 	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
+	_setup_fx()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
 	for index: int in _tabs.get_tab_count():
 		_tabs.set_tab_tooltip(index, "%s（%d キー）" % [_tabs.get_tab_title(index), index + 1])
@@ -94,6 +99,35 @@ func _apply_backdrop() -> void:
 	UiTheme.apply_panel_style(_hud)
 	for panel: Node in _panels:
 		UiTheme.apply_panel_style(panel as Control)
+
+
+## 演出層を最前面に置き、市場の売買と繋ぐ。
+func _setup_fx() -> void:
+	var root_control: Control = %HUD.get_parent()
+	if root_control == null:
+		return
+	_fx = FxLayer.new()
+	_fx.name = "FxLayer"
+	root_control.add_child(_fx)
+	# 最前面に置く。手前のパネルに隠れないようにするため。
+	root_control.move_child(_fx, root_control.get_child_count() - 1)
+
+	var market: Node = %MarketPanel
+	if market.has_signal("traded") and not market.traded.is_connected(_on_traded):
+		market.traded.connect(_on_traded)
+
+
+## 売買が成立したら、品目のアイコンを市場と積荷の間で飛ばす。
+## 買いは市場から積荷へ、売りはその逆。向きで何をしたかが分かる。
+func _on_traded(item_id: String, is_buy: bool, origin: Vector2) -> void:
+	if _fx == null or not is_instance_valid(_fx):
+		return
+	var cargo_point: Vector2 = %CargoPanel.flight_anchor()
+	if is_buy:
+		_fx.fly_item(item_id, origin, cargo_point)
+	else:
+		# 売却は積荷から市場へ。入金を示すため緑に寄せる。
+		_fx.fly_item(item_id, cargo_point, origin, UiTheme.GOOD)
 
 
 ## キー操作。_input ではなく _unhandled_input を使うのは、ボタンや

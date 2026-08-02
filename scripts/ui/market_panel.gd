@@ -10,6 +10,10 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
+## 売買が成立した時に、その行の位置とともに知らせる。
+## 演出はパネルをまたぐため、飛ばす先を知っている main.gd に任せる。
+signal traded(item_id: String, is_buy: bool, origin: Vector2)
+
 ## 数量の選び方。half は所持数/購入可能数の半分。
 enum Quantity { ONE, FIVE, HALF, ALL }
 
@@ -158,11 +162,22 @@ func _update_quantity_buttons() -> void:
 
 
 func _on_buy_pressed(item_id: String) -> void:
-	_session.buy(item_id, _buy_amount(item_id))
+	if _session.buy(item_id, _buy_amount(item_id)):
+		traded.emit(item_id, true, _row_origin(item_id))
 
 
 func _on_sell_pressed(item_id: String) -> void:
-	_session.sell(item_id, _sell_amount(item_id))
+	if _session.sell(item_id, _sell_amount(item_id)):
+		traded.emit(item_id, false, _row_origin(item_id))
+
+
+## その品目の行のアイコン位置（グローバル座標）。演出の発着点に使う。
+func _row_origin(item_id: String) -> Vector2:
+	var row: Dictionary = _rows.get(item_id, {})
+	var anchor: Control = row.get("buy")
+	if is_instance_valid(anchor):
+		return anchor.global_position + anchor.size * 0.5
+	return global_position + size * 0.5
 
 
 func _on_state_changed() -> void:
