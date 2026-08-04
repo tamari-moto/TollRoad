@@ -35,8 +35,8 @@ const RING_INNER_RADIUS: float = 1.5
 const RING_OUTER_RADIUS: float = 2.1
 ## 円の分割数。少ないと多角形に見える。
 const RING_SEGMENTS: int = 48
-## 地面から浮かせる高さ。埋まらない程度に。
-const RING_LIFT: float = 0.08
+## 都市の柱の上に架ける高さ。柱（CITY_HEIGHT）より上に出す。
+const RING_LIFT: float = 2.0
 
 ## 脈動の周期（秒）。地図を見ている間ずっと動くので、目につかない遅さにする。
 const RING_PULSE_PERIOD: float = 2.8
@@ -291,22 +291,29 @@ func _redraw_selection_ring(center: Vector3) -> void:
 	mesh.surface_end()
 
 
-## 地形に沿った円を1本引く。
+## 都市の頭上に水平な円を1本引く。
+## 高さは中心の一点で決める。地形をなぞると輪が傾き、
+## 都市に架かっているようには見えなくなる。
 func _add_ring(mesh: ImmediateMesh, center: Vector3, radius: float,
 		color: Color) -> void:
+	var y: float = ring_height(center)
 	for i: int in RING_SEGMENTS:
 		var a0: float = TAU * float(i) / float(RING_SEGMENTS)
 		var a1: float = TAU * float(i + 1) / float(RING_SEGMENTS)
-		var p0 := Vector3(center.x + cos(a0) * radius, 0.0,
+		var p0 := Vector3(center.x + cos(a0) * radius, y,
 			center.z + sin(a0) * radius)
-		var p1 := Vector3(center.x + cos(a1) * radius, 0.0,
+		var p1 := Vector3(center.x + cos(a1) * radius, y,
 			center.z + sin(a1) * radius)
-		p0.y = height_at(p0.x, p0.z) + RING_LIFT
-		p1.y = height_at(p1.x, p1.z) + RING_LIFT
 		mesh.surface_set_color(color)
 		mesh.surface_add_vertex(p0)
 		mesh.surface_set_color(color)
 		mesh.surface_add_vertex(p1)
+
+
+## 輪を架ける高さ。都市の足元を基準にするので、
+## 高地の都市では輪もそのぶん高くなる。
+func ring_height(center: Vector3) -> float:
+	return height_at(center.x, center.z) + RING_LIFT
 
 
 func _build_light() -> void:

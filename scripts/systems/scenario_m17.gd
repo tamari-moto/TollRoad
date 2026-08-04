@@ -175,23 +175,29 @@ func _test_selection_ring() -> void:
 		"全頂点が現在地を囲んでいる",
 		"%d / %d" % [near_inner + near_outer, vertices.size()])
 
-	# 地形に沿っている。平らな円だと斜面で埋まる。
-	var on_ground: int = 0
-	for v: Vector3 in vertices:
-		var ground: float = world.height_at(v.x, v.z) + MapView3D.RING_LIFT
-		if absf(v.y - ground) < 0.01:
-			on_ground += 1
-	_check(on_ground == vertices.size(), "リングが地形に沿っている",
-		"沿っている頂点 %d / %d" % [on_ground, vertices.size()])
-
-	# 高さが一定でない＝平らな円ではない（起伏のある場所なら）。
+	# 平らな輪。全頂点が同じ高さに並ぶ。
 	var lowest: float = 9999.0
 	var highest: float = -9999.0
 	for v: Vector3 in vertices:
 		lowest = minf(lowest, v.y)
 		highest = maxf(highest, v.y)
-	_check(highest - lowest > 0.001, "リングの高さが地形に応じて変わる",
+	_check(highest - lowest < 0.001, "輪が水平",
 		"高低差 %.4f" % (highest - lowest))
+
+	# 都市の柱より上にある。埋まると架かって見えない。
+	_check(lowest > center.y + MapView3D.CITY_HEIGHT, "柱より上に架かる",
+		"輪 %.2f / 柱の先 %.2f" % [lowest, center.y + MapView3D.CITY_HEIGHT])
+
+	# 高さは足元を基準にする。高地の都市では輪もそのぶん高い。
+	var want_y: float = world.ring_height(center)
+	_check(absf(lowest - want_y) < 0.001, "足元からの高さで架かる",
+		"%.3f / 期待 %.3f" % [lowest, want_y])
+
+	# 地形が違えば輪の高さも違う。
+	var other: Vector3 = world.positions["lymhurst"]
+	if absf(world.height_at(other.x, other.z) - world.height_at(center.x, center.z)) > 0.01:
+		_check(not is_equal_approx(world.ring_height(other), want_y),
+			"都市ごとに輪の高さが変わる", "同じ高さ")
 
 	# 移動すると追従する。
 	world.set_current_city("bridgewatch")
