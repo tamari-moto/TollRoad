@@ -259,7 +259,8 @@ func _test_main_scene_has_all_screens() -> void:
 
 	var tabs: TabContainer = main.get_node_or_null("%Tabs")
 	if tabs != null:
-		_check(tabs.get_tab_count() == 4, "タブが4つある", str(tabs.get_tab_count()))
+		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備の5つがタブ。
+		_check(tabs.get_tab_count() == 5, "タブが5つある", str(tabs.get_tab_count()))
 	main.free()
 
 
