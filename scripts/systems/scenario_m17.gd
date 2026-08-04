@@ -283,6 +283,41 @@ func _test_camera_limits() -> void:
 	camera.rotate_by(TAU, 0.0)
 	_check(not is_equal_approx(camera.yaw, before), "方位角は回せる", "変わらない")
 
+	# 注視点を都市へ移せる。ツリー外なので即座に着く。
+	var target := Vector3(6.0, 0.5, -3.0)
+	camera.focus_on(target)
+	_check(is_equal_approx(camera.focus.x, target.x)
+		and is_equal_approx(camera.focus.z, target.z),
+		"注視点が都市へ移る",
+		"(%.1f, %.1f)" % [camera.focus.x, camera.focus.z])
+	_check(camera.is_settled(), "移動後は落ち着いている", "追従中のまま")
+
+	# 見下ろす量は保つ。都市の足元を見ると地平が上に寄る。
+	_check(camera.focus.y < target.y, "足元より下を見る",
+		"%.2f / 足元 %.2f" % [camera.focus.y, target.y])
+
+	# カメラはその都市を向く。位置と向きの両方が移る。
+	var to_focus: Vector3 = (camera.focus - camera.transform.origin).normalized()
+	var facing: Vector3 = -camera.transform.basis.z
+	_check(to_focus.dot(facing) > 0.99, "移した先を向く",
+		"内積 %.3f" % to_focus.dot(facing))
+
+	# 距離は保たれる。中心が移っても寄り引きは変わらない。
+	var eye_gap: float = camera.transform.origin.distance_to(camera.focus)
+	_check(absf(eye_gap - camera.distance) < 0.01, "中心からの距離を保つ",
+		"%.2f / 設定 %.2f" % [eye_gap, camera.distance])
+
+	# 別の都市へ移すと追いかける。
+	camera.focus_on(Vector3(-8.0, 0.0, 4.0))
+	_check(is_equal_approx(camera.focus.x, -8.0), "移動先へ追従する",
+		"%.1f" % camera.focus.x)
+
+	# 視点を戻しても中心は現在地のまま。角度と距離だけ戻る。
+	var held: Vector3 = camera.focus
+	camera.reset_view()
+	_check(camera.focus.is_equal_approx(held), "視点を戻しても中心は残る",
+		"(%.1f, %.1f)" % [camera.focus.x, camera.focus.z])
+
 	# 初期状態に戻せる。
 	camera.reset_view()
 	_check(is_equal_approx(camera.pitch, MapCamera.DEFAULT_PITCH), "視点を戻せる",
@@ -292,12 +327,13 @@ func _test_camera_limits() -> void:
 	# global_transform はツリー外では更新されないため transform を見る。
 	camera.reset_view()
 	var forward: Vector3 = -camera.transform.basis.z
-	var to_center: Vector3 = (MapCamera.FOCUS - camera.position).normalized()
+	# 中心は現在地に移っているので、定数ではなく今の注視点と比べる。
+	var to_center: Vector3 = (camera.focus - camera.position).normalized()
 	_check(forward.dot(to_center) > 0.95, "カメラが中心を向いている",
 		"内積 %.2f" % forward.dot(to_center))
 
 	# 中心より高い位置から見下ろしている。
-	_check(camera.position.y > MapCamera.FOCUS.y, "見下ろす高さにある",
+	_check(camera.position.y > camera.focus.y, "見下ろす高さにある",
 		"y=%.1f" % camera.position.y)
 
 	camera.free()

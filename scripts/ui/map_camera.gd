@@ -21,12 +21,21 @@ const PITCH_SPEED: float = 0.006
 ## ホイール1目盛りで変わる距離。
 const ZOOM_STEP: float = 1.8
 
-## 見る先。盆地の底より少し上を見て、地平が画面中央に来るようにする。
+## 見る先の初期値。盆地の底より少し上を見て、地平が画面中央に来るようにする。
+## 現在地が決まるまでの暫定値で、以降は都市に合わせて動く。
 const FOCUS := Vector3(0.0, -0.4, 0.0)
+
+## 注視点が追いつく速さ（1秒あたりの割合）。移動のたびに瞬間移動すると
+## どこへ跳んだか分からなくなるので、滑らせて経路を見せる。
+const FOCUS_FOLLOW_SPEED: float = 3.5
 
 var yaw: float = DEFAULT_YAW
 var pitch: float = DEFAULT_PITCH
 var distance: float = DEFAULT_DISTANCE
+
+## 今見ている点と、向かっている先。移動直後はこの2つがずれる。
+var focus: Vector3 = FOCUS
+var _focus_target: Vector3 = FOCUS
 
 
 func _init() -> void:
@@ -52,6 +61,31 @@ func zoom_by(amount: float) -> void:
 	_apply()
 
 
+## 見る先を都市へ移す。ツリー外（--script のハーネス）では
+## 補間の刻みが来ないので、その場で移す。
+func focus_on(point: Vector3, immediate: bool = false) -> void:
+	# 高さは元の見下ろし量を保つ。都市の足元を見ると地平が上に寄りすぎる。
+	_focus_target = Vector3(point.x, point.y + FOCUS.y, point.z)
+	if immediate or not is_inside_tree():
+		focus = _focus_target
+	_apply()
+
+
+## 注視点が目標に着いているか。追従中は 2D のボタンも引き直す必要がある。
+func is_settled() -> bool:
+	return focus.is_equal_approx(_focus_target)
+
+
+## 注視点を目標へ寄せる。距離に比例して減速するので、
+## 近づくほどゆっくり止まる。
+func _process(delta: float) -> void:
+	if focus.is_equal_approx(_focus_target):
+		return
+	var t: float = minf(delta * FOCUS_FOLLOW_SPEED, 1.0)
+	focus = focus.lerp(_focus_target, t)
+	_apply()
+
+
 func reset_view() -> void:
 	yaw = DEFAULT_YAW
 	pitch = DEFAULT_PITCH
@@ -65,8 +99,8 @@ func _apply() -> void:
 		cos(yaw) * horizontal,
 		sin(pitch) * distance,
 		sin(yaw) * horizontal)
-	var eye: Vector3 = FOCUS + offset
+	var eye: Vector3 = focus + offset
 
 	# look_at はツリー外で使えないため、位置指定版を使う
 	# （--script のハーネスでも同じ経路が通るようにする）。
-	look_at_from_position(eye, FOCUS, Vector3.UP)
+	look_at_from_position(eye, focus, Vector3.UP)

@@ -219,6 +219,16 @@ func _layout_nodes() -> void:
 
 
 ## 各ボタンを 3D 座標の投影先へ動かす。
+## カメラが現在地へ寄っている間、2D のボタンは 3D の投影で置いているため
+## 毎フレーム引き直さないと取り残される。
+func _process(_delta: float) -> void:
+	if not is_instance_valid(_camera):
+		return
+	if _camera.is_settled():
+		return
+	_update_button_positions()
+
+
 func _update_button_positions() -> void:
 	if _world == null or _camera == null:
 		return
@@ -265,6 +275,9 @@ func refresh() -> void:
 	# 3D 側の都市にも現在地を伝える（柱の色が変わる）。
 	if is_instance_valid(_world):
 		_world.set_current_city(_session.current_city)
+		# カメラの周回もその都市を中心に据える。
+		if is_instance_valid(_camera) and _world.positions.has(_session.current_city):
+			_camera.focus_on(_world.positions[_session.current_city])
 
 	var over: bool = _session.is_over()
 	for city_id: String in _buttons:
