@@ -56,34 +56,34 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Tabs" type="TabContainer" parent="UI/Root/Body/Columns/MainColumn"]
-unique_name_in_owner = true
+[node name="LogPanel" type="PanelContainer" parent="UI/Root/Body/Columns/MainColumn"]
 custom_minimum_size = Vector2(0, 260)
 layout_mode = 2
 
-[node name="MarketPanel" parent="UI/Root/Body/Columns/MainColumn/Tabs" instance=ExtResource("3")]
-unique_name_in_owner = true
+[node name="LogMargin" type="MarginContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel"]
 layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
 
-[node name="CargoPanel" parent="UI/Root/Body/Columns/MainColumn/Tabs" instance=ExtResource("4")]
-unique_name_in_owner = true
-visible = false
+[node name="LogColumn" type="VBoxContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin"]
 layout_mode = 2
+theme_override_constants/separation = 6
 
-[node name="製作所" parent="UI/Root/Body/Columns/MainColumn/Tabs" instance=ExtResource("6")]
-unique_name_in_owner = true
-visible = false
+[node name="LogTitle" type="Label" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn"]
 layout_mode = 2
+text = "航海日誌"
 
-[node name="相場メモ" parent="UI/Root/Body/Columns/MainColumn/Tabs" instance=ExtResource("7")]
+[node name="LogScroll" type="ScrollContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+size_flags_vertical = 3
 
-[node name="島と装備" parent="UI/Root/Body/Columns/MainColumn/Tabs" instance=ExtResource("8")]
+[node name="LogList" type="VBoxContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn/LogScroll"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="RightColumn" type="VBoxContainer" parent="UI/Root/Body/Columns"]
 layout_mode = 2
@@ -91,35 +91,35 @@ size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.0
 theme_override_constants/separation = 10
 
-[node name="LogPanel" type="PanelContainer" parent="UI/Root/Body/Columns/RightColumn"]
+[node name="Tabs" type="TabContainer" parent="UI/Root/Body/Columns/RightColumn"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 160)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LogMargin" type="MarginContainer" parent="UI/Root/Body/Columns/RightColumn/LogPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
-
-[node name="LogColumn" type="VBoxContainer" parent="UI/Root/Body/Columns/RightColumn/LogPanel/LogMargin"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="LogTitle" type="Label" parent="UI/Root/Body/Columns/RightColumn/LogPanel/LogMargin/LogColumn"]
-layout_mode = 2
-text = "航海日誌"
-
-[node name="LogScroll" type="ScrollContainer" parent="UI/Root/Body/Columns/RightColumn/LogPanel/LogMargin/LogColumn"]
+[node name="MarketPanel" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("3")]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
 
-[node name="LogList" type="VBoxContainer" parent="UI/Root/Body/Columns/RightColumn/LogPanel/LogMargin/LogColumn/LogScroll"]
+[node name="CargoPanel" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("4")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-size_flags_horizontal = 3
+
+[node name="製作所" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("6")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="相場メモ" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("7")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="島と装備" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("8")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
 
 [node name="Actions" type="VBoxContainer" parent="UI/Root/Body/Columns/RightColumn"]
 layout_mode = 2
