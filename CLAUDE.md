@@ -131,10 +131,24 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 地形・都市・経路を描き、`Camera3D` で周回する。`own_world_3d = true` は必須
 （付けないと本編の 2D 世界を映す）。
 
-**都市ボタンは 2D のまま。** `unproject_position()` で 3D 座標を画面座標に変換し、
-そこに `Button` を重ねている。クリック判定・`disabled`・ツールチップが従来の
-ままなので、操作の検査（`scenario_m6.gd`）は 3D 化の影響を受けない。
-カメラを動かしたら `_update_button_positions()` を呼ぶこと。
+**都市の選択は Button ではなくレイキャスト。** `SubViewportContainer` の
+`gui_input` 内で `Camera3D.project_ray_origin/normal()` からレイを作り、
+都市の柱（`map_view_3d.gd` の `positions`）との最短距離が `PICK_RADIUS`
+以内でカメラに最も近いものを選ぶ（`map_panel.gd` の `pick_city_at()`）。
+固定サイズの `Button` を画面座標に重ねる方式は、地図領域が狭いとボタンが
+領域外へはみ出し他のパネルに被さる問題があったため廃止した。クリック可能
+領域は常に `SubViewportContainer` 自身の矩形内に収まる。
+
+都市の見た目（ピンと都市名ラベル）は `mouse_filter = IGNORE` の素の
+`Control`（旧 `Button`）で、入力は下の `SubViewportContainer` へ透過する。
+ホバー中のツールチップは `_tooltip` として手動で表示・追従させている
+（Godot標準の `tooltip_text` は使わない）。
+
+`pick_city_at()` / `select_city()` / `is_selectable()` / `screen_position_for()` /
+`tooltip_text_for()` はいずれも公開関数で、`--script` からそのまま呼べる。
+操作の検査（`scenario_m6.gd`, `scenario_m17.gd`）はこれらを直接呼ぶ形で行う。
+カメラを動かしたら `_update_button_positions()` を呼ぶこと（ピンの追従。
+当たり判定はレイキャストが毎回その場で計算するので追従処理は不要）。
 
 幾何の検査は **3D の `Vector3` で行う**（投影後の画面座標はカメラ次第で変わる）。
 `gl_compatibility` でも基本的な 3D は動くが、SSAO・VoxelGI・高度な影は使えない。

@@ -1,8 +1,9 @@
 extends Control
 ## 都市マーカーのピン。菱形の枠・軸・都市名の下線を描く。
 ##
-## Button の中に重ねて使う。クリック判定は Button 側が持つので、
-## ここは見た目だけを担当し、入力は透過させる。
+## 都市ノード（Control）の中に重ねて使う。クリック判定は
+## SubViewportContainer 側のレイキャストが持つので、ここは見た目だけを
+## 担当し、入力は透過させる。
 
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
