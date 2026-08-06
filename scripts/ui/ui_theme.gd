@@ -156,6 +156,12 @@ static func make_backdrop_style() -> StyleBoxFlat:
 	return style
 
 
+## 完全に透明なスタイル。大陸図を全画面背景として敷く際、パネルの地色で
+## 3D世界の外側（空）を覆い隠してしまわないようにするために使う。
+static func make_transparent_style() -> StyleBoxEmpty:
+	return StyleBoxEmpty.new()
+
+
 ## 対象のパネルに地色を適用する。すでに指定があれば上書きしない。
 static func apply_panel_style(panel: Control) -> void:
 	if panel == null or panel.has_theme_stylebox_override("panel"):

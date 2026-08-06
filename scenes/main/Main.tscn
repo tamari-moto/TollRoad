@@ -24,132 +24,199 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="HUD" parent="UI/Root" instance=ExtResource("2")]
+[node name="大陸図" parent="UI/Root" instance=ExtResource("5")]
 unique_name_in_owner = true
-layout_mode = 1
-
-[node name="Body" type="MarginContainer" parent="UI/Root"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = 72.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
 
-[node name="Columns" type="HBoxContainer" parent="UI/Root/Body"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="MainColumn" type="VBoxContainer" parent="UI/Root/Body/Columns"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 2.3
-theme_override_constants/separation = 10
-
-[node name="大陸図" parent="UI/Root/Body/Columns/MainColumn" instance=ExtResource("5")]
+[node name="TabStrip" type="PanelContainer" parent="UI/Root"]
 unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -122.0
+offset_top = 72.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="TabStripMargin" type="MarginContainer" parent="UI/Root/TabStrip"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 8
+
+[node name="TabStripColumn" type="VBoxContainer" parent="UI/Root/TabStrip/TabStripMargin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="MarketTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "市場"
+
+[node name="CargoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "積荷"
+
+[node name="WorkshopTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "製作所"
+
+[node name="MemoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "相場メモ"
+
+[node name="IslandTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "島と装備"
+
+[node name="SidePanel" type="PanelContainer" parent="UI/Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -122.0
+offset_top = 72.0
+offset_right = -122.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 2
+clip_contents = true
+
+[node name="SidePanelMargin" type="MarginContainer" parent="UI/Root/SidePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Tabs" type="TabContainer" parent="UI/Root/SidePanel/SidePanelMargin"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 size_flags_vertical = 3
+tabs_visible = false
 
-[node name="LogPanel" type="PanelContainer" parent="UI/Root/Body/Columns/MainColumn"]
-custom_minimum_size = Vector2(0, 260)
+[node name="MarketPanel" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("3")]
+unique_name_in_owner = true
 layout_mode = 2
 
-[node name="LogMargin" type="MarginContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel"]
+[node name="CargoPanel" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("4")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="製作所" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("6")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="相場メモ" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("7")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="島と装備" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("8")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="LogActions" type="PanelContainer" parent="UI/Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -272.0
+offset_right = 432.0
+offset_bottom = -12.0
+grow_vertical = 0
+
+[node name="LogMargin" type="MarginContainer" parent="UI/Root/LogActions"]
 layout_mode = 2
 theme_override_constants/margin_left = 12
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
-[node name="LogColumn" type="VBoxContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin"]
+[node name="LogColumn" type="VBoxContainer" parent="UI/Root/LogActions/LogMargin"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="LogTitle" type="Label" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn"]
+[node name="LogTitle" type="Label" parent="UI/Root/LogActions/LogMargin/LogColumn"]
 layout_mode = 2
 text = "航海日誌"
 
-[node name="LogScroll" type="ScrollContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn"]
+[node name="LogScroll" type="ScrollContainer" parent="UI/Root/LogActions/LogMargin/LogColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LogList" type="VBoxContainer" parent="UI/Root/Body/Columns/MainColumn/LogPanel/LogMargin/LogColumn/LogScroll"]
+[node name="LogList" type="VBoxContainer" parent="UI/Root/LogActions/LogMargin/LogColumn/LogScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="RightColumn" type="VBoxContainer" parent="UI/Root/Body/Columns"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.0
-theme_override_constants/separation = 10
-
-[node name="Tabs" type="TabContainer" parent="UI/Root/Body/Columns/RightColumn"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 160)
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="MarketPanel" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("3")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="CargoPanel" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("4")]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="製作所" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("6")]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="相場メモ" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("7")]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="島と装備" parent="UI/Root/Body/Columns/RightColumn/Tabs" instance=ExtResource("8")]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="Actions" type="VBoxContainer" parent="UI/Root/Body/Columns/RightColumn"]
+[node name="Actions" type="VBoxContainer" parent="UI/Root/LogActions/LogMargin/LogColumn"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="RestButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+[node name="RestButton" type="Button" parent="UI/Root/LogActions/LogMargin/LogColumn/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 40)
 layout_mode = 2
 text = "休息する（1日）"
 
-[node name="BriefingButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+[node name="BriefingButton" type="Button" parent="UI/Root/LogActions/LogMargin/LogColumn/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(90, 40)
 layout_mode = 2
 text = "目標"
 
-[node name="ResultButton" type="Button" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+[node name="ResultButton" type="Button" parent="UI/Root/LogActions/LogMargin/LogColumn/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(110, 40)
 layout_mode = 2
 visible = false
 text = "結果を見る"
 
-[node name="StatusLabel" type="Label" parent="UI/Root/Body/Columns/RightColumn/Actions"]
+[node name="StatusLabel" type="Label" parent="UI/Root/LogActions/LogMargin/LogColumn/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 autowrap_mode = 3
+
+[node name="HUD" parent="UI/Root" instance=ExtResource("2")]
+unique_name_in_owner = true
+layout_mode = 1
 
 [node name="ResultDialog" parent="UI/Root" instance=ExtResource("9")]
 unique_name_in_owner = true

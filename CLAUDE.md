@@ -231,17 +231,39 @@ UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解�
 `_apply_backdrop()` がまとめて適用する（パネル側には書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
+**大陸図は画面全体の背景。** `Main.tscn` の `%大陸図` は `Root` 直下に
+`PRESET_FULL_RECT` で敷き、他の画面はその上に浮かぶオーバーレイとして
+配置する。`_apply_backdrop()` は `%大陸図` だけ `apply_panel_style()` を
+かけず、代わりに `UiTheme.make_transparent_style()`（`StyleBoxEmpty`）を
+与える。他パネルと同じ不透明な地色を敷くと、3D世界の外側（空）を覆い
+隠して背景として機能しなくなるため。
+
 **Tween はツリー外では作れない。** `--script` のハーネスは
 `root.add_child()` してもツリー外扱いなので、`is_inside_tree()` が false の
 場合はアニメーションを挟まず即座に反映する分岐を必ず用意する
-（[hud.gd](scripts/ui/hud.gd) の `_animate_silver()` が例）。
+（[hud.gd](scripts/ui/hud.gd) の `_animate_silver()`、
+[main.gd](scenes/main/main.gd) の `_animate_side_panel()` が例）。
 
-キー操作は `[input]` の `tr_rest`（Space）と `tr_tab_1`〜`4`（1〜4）。
+キー操作は `[input]` の `tr_rest`（Space）と `tr_tab_1`〜`5`（1〜5）。
 `_input` ではなく `_unhandled_input` で処理し、フォーカス中のコントロールから
 キーを奪わないようにしている。
-右側の4画面は `Main.tscn` の `%Tabs`（TabContainer）配下にあり、**ノード名が
-そのままタブ名になる**ため日本語（`%大陸図` など）。名前を変えると
-シナリオの参照も壊れるので注意。
+
+**市場・積荷・製作所・相場メモ・島と装備の5画面はスライド式サイドパネル。**
+常時表示は右端の `%TabStrip`（5つのボタン）のみで、押すと `%SidePanel`
+（中身は従来どおり `%Tabs` という `TabContainer`）が画面右からスライドで
+出てくる。閉じている間は幅0まで畳まれる（`SidePanel` の `offset_left` を
+Tween で動かす。`clip_contents = true` なので畳まれている間は中身が
+見えない）。**開いている状態でどのボタンを押しても閉じる**（別のタブへの
+切り替えではない）。キーボードの `tr_tab_1`〜`5` も `main.gd` の
+`_on_tab_strip_pressed()` を経由するため同じ挙動になる。`Tabs` 自体の
+タブバーは `tabs_visible = false` で隠している（選択は `TabStrip` 側が
+持つため、二重に出さない）。`is_side_panel_open()` が公開関数で、
+検査から開閉状態を直接確認できる。
+
+航海日誌と操作ボタン（休息する/目標/結果を見る）は `%LogActions` として
+左下に常時表示のオーバーレイでまとめている。中身（`LogPanel` 相当の
+`LogTitle`/`LogScroll`/`LogList` と `Actions` の各ボタン）は以前の構成から
+そのまま持ってきているだけで、ロジックの変更はない。
 
 未着手: リザルト画面と調整（M8）。
 

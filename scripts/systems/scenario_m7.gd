@@ -254,6 +254,9 @@ func _test_main_scene_has_all_screens() -> void:
 	var main: Node = scene.instantiate()
 	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%Tabs",
 			"%大陸図", "%製作所", "%相場メモ", "%島と装備",
+			"%TabStrip", "%SidePanel",
+			"%MarketTabButton", "%CargoTabButton", "%WorkshopTabButton",
+			"%MemoTabButton", "%IslandTabButton",
 			"%LogScroll", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 
@@ -261,6 +264,17 @@ func _test_main_scene_has_all_screens() -> void:
 	if tabs != null:
 		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備の5つがタブ。
 		_check(tabs.get_tab_count() == 5, "タブが5つある", str(tabs.get_tab_count()))
+		_check(not tabs.tabs_visible, "Tabsのタブバー自体は隠れている（TabStripが選択を持つ）",
+			"見えている")
+
+	# SidePanel は既定で閉じている（幅0、非表示）。main.gd の _ready() は
+	# GameState オートロードに依存するため、--script では main をツリーに
+	# 入れず構造だけを検査する（他の Main シナリオと同じ方針）。
+	var side_panel: Control = main.get_node_or_null("%SidePanel")
+	if side_panel != null:
+		_check(not side_panel.visible, "サイドパネルは既定で閉じている", "開いている")
+		_check(side_panel.offset_left == side_panel.offset_right,
+			"閉状態では幅が0", "%.1f" % (side_panel.offset_right - side_panel.offset_left))
 	main.free()
 
 
