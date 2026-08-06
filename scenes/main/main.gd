@@ -7,14 +7,21 @@ extends Node2D
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
-const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
 
+## サイドパネルが開いた時の幅（px）。閉じた時のオフセットからこの幅ぶん
+## 左へ広げる。Main.tscn の SidePanel の初期状態（閉）と合わせること。
+const SIDE_PANEL_WIDTH: float = 380.0
+
 @onready var _hud: PanelContainer = %HUD
 @onready var _tabs: TabContainer = %Tabs
+@onready var _side_panel: PanelContainer = %SidePanel
+@onready var _tab_strip_buttons: Array[Button] = [
+	%MarketTabButton, %CargoTabButton, %WorkshopTabButton, %MemoTabButton, %IslandTabButton,
+]
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _rest_button: Button = %RestButton
@@ -29,15 +36,18 @@ var _session: GameSession
 ## bind と refresh を持つ画面パネル。日送り時にまとめて更新する。
 var _panels: Array[Node] = []
 
-## パネルをまたぐ演出を飛ばす層。
-var _fx: FxLayer
-
 ## 効果音。
 var _sfx: Sfx
 
+## サイドパネルが開いているか。
+var _side_panel_open: bool = false
+## サイドパネルの「閉」状態での offset_left。Main.tscn の初期値をそのまま覚える。
+var _side_panel_closed_offset: float = 0.0
+var _side_panel_tween: Tween
+
 
 func _ready() -> void:
-	_panels = [%MarketPanel, %CargoPanel, %大陸図, %製作所, %相場メモ, %島と装備]
+	_panels = [%大陸図, %MarketPanel, %CargoPanel, %製作所, %相場メモ, %島と装備]
 
 	_rest_button.pressed.connect(_on_rest_pressed)
 	_result_button.pressed.connect(_show_result)
@@ -46,11 +56,16 @@ func _ready() -> void:
 	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
-	_setup_fx()
+	_setup_trade_sfx()
 	_setup_sfx()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
-	for index: int in _tabs.get_tab_count():
-		_tabs.set_tab_tooltip(index, "%s（%d キー）" % [_tabs.get_tab_title(index), index + 1])
+
+	_side_panel_closed_offset = _side_panel.offset_left
+	for index: int in _tab_strip_buttons.size():
+		var button: Button = _tab_strip_buttons[index]
+		button.pressed.connect(_on_tab_strip_pressed.bind(index))
+		button.tooltip_text = "%s（%d キー）" % [button.text, index + 1]
+	_refresh_tab_strip_highlight()
 
 	_bind_session(GameState.session)
 
@@ -93,7 +108,7 @@ func _apply_backdrop() -> void:
 	if root_control == null:
 		return
 
-	# 下地は最背面に敷く。
+	# 下地は最背面に敷く。大陸図の外側（空）はここが透けて見える。
 	var backdrop := Panel.new()
 	backdrop.name = "Backdrop"
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -102,22 +117,75 @@ func _apply_backdrop() -> void:
 	root_control.add_child(backdrop)
 	root_control.move_child(backdrop, 0)
 
+	# 大陸図は画面全体の背景として敷くため、他パネルと同じ不透明な地色は
+	# 与えない（3D世界がそのまま背景として見えるようにする）。
+	var map_panel: Control = %大陸図
+	map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
+
 	UiTheme.apply_panel_style(_hud)
+	UiTheme.apply_panel_style(%TabStrip as Control)
+	UiTheme.apply_panel_style(_side_panel)
+	UiTheme.apply_panel_style(%LogActions as Control)
 	for panel: Node in _panels:
+		if panel == map_panel:
+			continue
 		UiTheme.apply_panel_style(panel as Control)
 
 
-## 演出層を最前面に置き、市場の売買と繋ぐ。
-func _setup_fx() -> void:
-	var root_control: Control = %HUD.get_parent()
-	if root_control == null:
+## タブボタン帯のボタンが押された。閉じていれば該当タブを開き、
+## 開いていれば（同じボタンでも別のボタンでも）閉じる。
+func _on_tab_strip_pressed(index: int) -> void:
+	if _side_panel_open:
+		_close_side_panel()
 		return
-	_fx = FxLayer.new()
-	_fx.name = "FxLayer"
-	root_control.add_child(_fx)
-	# 最前面に置く。手前のパネルに隠れないようにするため。
-	root_control.move_child(_fx, root_control.get_child_count() - 1)
+	_tabs.current_tab = index
+	_open_side_panel()
 
+
+func _open_side_panel() -> void:
+	_side_panel_open = true
+	_side_panel.visible = true
+	_animate_side_panel(_side_panel_closed_offset - SIDE_PANEL_WIDTH)
+	_refresh_tab_strip_highlight()
+
+
+func _close_side_panel() -> void:
+	_side_panel_open = false
+	_animate_side_panel(_side_panel_closed_offset)
+	if not is_inside_tree():
+		_side_panel.visible = false
+	_refresh_tab_strip_highlight()
+
+
+## サイドパネルの左端をスライドさせる。ツリー外（--script のハーネス）
+## では Tween が作れないため即座に反映する（hud.gd の _animate_silver()
+## と同じ形）。
+func _animate_side_panel(target_offset: float) -> void:
+	if not is_inside_tree():
+		_side_panel.offset_left = target_offset
+		return
+	if _side_panel_tween != null and _side_panel_tween.is_valid():
+		_side_panel_tween.kill()
+	_side_panel_tween = create_tween()
+	_side_panel_tween.tween_property(_side_panel, "offset_left", target_offset, UiTheme.TWEEN_DURATION)
+	if target_offset == _side_panel_closed_offset:
+		_side_panel_tween.tween_callback(func() -> void: _side_panel.visible = false)
+
+
+## どのタブが開いているかをボタンの押下状態で示す。閉じていれば全て非押下。
+func _refresh_tab_strip_highlight() -> void:
+	for index: int in _tab_strip_buttons.size():
+		_tab_strip_buttons[index].button_pressed = _side_panel_open and _tabs.current_tab == index
+
+
+## サイドパネルが開いているか。検査から直接呼べるよう公開している。
+func is_side_panel_open() -> bool:
+	return _side_panel_open
+
+
+## 市場の売買成立を効果音に繋ぐ。市場と積荷は別タブで同時には映らないため、
+## アイコンを飛ばす演出はせず、即座に反映して音だけ鳴らす。
+func _setup_trade_sfx() -> void:
 	var market: Node = %MarketPanel
 	if market.has_signal("traded") and not market.traded.is_connected(_on_traded):
 		market.traded.connect(_on_traded)
@@ -129,18 +197,8 @@ func _setup_sfx() -> void:
 	add_child(_sfx)
 
 
-## 売買が成立したら、品目のアイコンを市場と積荷の間で飛ばす。
-## 買いは市場から積荷へ、売りはその逆。向きで何をしたかが分かる。
-func _on_traded(item_id: String, is_buy: bool, origin: Vector2) -> void:
+func _on_traded(_item_id: String, is_buy: bool, _origin: Vector2) -> void:
 	_play(Sfx.Kind.BUY if is_buy else Sfx.Kind.SELL)
-	if _fx == null or not is_instance_valid(_fx):
-		return
-	var cargo_point: Vector2 = %CargoPanel.flight_anchor()
-	if is_buy:
-		_fx.fly_item(item_id, origin, cargo_point)
-	else:
-		# 売却は積荷から市場へ。入金を示すため緑に寄せる。
-		_fx.fly_item(item_id, cargo_point, origin, UiTheme.GOOD)
 
 
 func _play(kind: Sfx.Kind) -> void:
@@ -175,9 +233,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	for index: int in _tabs.get_tab_count():
+	for index: int in _tab_strip_buttons.size():
 		if event.is_action("tr_tab_%d" % (index + 1)):
-			_tabs.current_tab = index
+			_on_tab_strip_pressed(index)
 			get_viewport().set_input_as_handled()
 			return
 

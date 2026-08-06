@@ -88,7 +88,7 @@ func _test_palette_shared() -> void:
 
 func _test_input_map() -> void:
 	print("--- 入力マップ ---")
-	for action: String in ["tr_rest", "tr_tab_1", "tr_tab_2", "tr_tab_3", "tr_tab_4"]:
+	for action: String in ["tr_rest", "tr_tab_1", "tr_tab_2", "tr_tab_3", "tr_tab_4", "tr_tab_5"]:
 		_check(InputMap.has_action(action), "%s が登録されている" % action, "ない")
 
 	# キー割り当てを確認する。
@@ -98,6 +98,7 @@ func _test_input_map() -> void:
 		"tr_tab_2": KEY_2,
 		"tr_tab_3": KEY_3,
 		"tr_tab_4": KEY_4,
+		"tr_tab_5": KEY_5,
 	}
 	for action: String in expected:
 		if not InputMap.has_action(action):
