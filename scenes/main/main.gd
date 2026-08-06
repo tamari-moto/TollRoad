@@ -14,7 +14,9 @@ const LOG_DISPLAY_LIMIT: int = 200
 
 ## サイドパネルが開いた時の幅（px）。閉じた時のオフセットからこの幅ぶん
 ## 左へ広げる。Main.tscn の SidePanel の初期状態（閉）と合わせること。
-const SIDE_PANEL_WIDTH: float = 380.0
+## 市場画面を大きくタップしやすくするため拡大した。5画面共有のため
+## 全タブに影響する（Main.tscn の Tabs.custom_minimum_size.x も合わせて拡げてある）。
+const SIDE_PANEL_WIDTH: float = 480.0
 
 @onready var _hud: PanelContainer = %HUD
 @onready var _tabs: TabContainer = %Tabs

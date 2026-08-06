@@ -117,11 +117,11 @@ func _test_panels_keep_layout() -> void:
 		var session: GameSession = GameSession.new(10001)
 		market.bind(session)
 		var grid: GridContainer = UiUtil.find_node(market, "ItemGrid")
-		_check(grid.columns == 7, "市場の列数は7のまま", str(grid.columns))
-		_check(grid.get_child_count() == 7 + GameData.ITEMS.size() * 7,
+		_check(grid.columns == 6, "市場の列数は6のまま", str(grid.columns))
+		_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
 			"市場の要素数は従来どおり", str(grid.get_child_count()))
 		# 品目セルにアイコンが入っている。
-		var first_cell: Node = grid.get_child(7)
+		var first_cell: Node = grid.get_child(6)
 		_check(first_cell is HBoxContainer, "品目セルはアイコン付き", str(first_cell.get_class()))
 		_despawn(market)
 

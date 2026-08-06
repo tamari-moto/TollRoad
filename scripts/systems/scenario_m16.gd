@@ -93,9 +93,9 @@ func _test_bar_in_market() -> void:
 	panel.bind(session)
 
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
-	# 数量ステッパー列を追加したので6→7列になった。
-	_check(grid.columns == 7, "列数は7", str(grid.columns))
-	_check(grid.get_child_count() == 7 + GameData.ITEMS.size() * 7,
+	# 個数指定UIを撤去したので列数は6のまま。
+	_check(grid.columns == 6, "列数は6のまま", str(grid.columns))
+	_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
 		"要素数は従来どおり", str(grid.get_child_count()))
 
 	# 各行にバーがある。

@@ -1,9 +1,8 @@
 extends PanelContainer
 ## 市場画面。現在地の全品目について相場と売買を行う。
 ##
-## 各行は「品目名 / 価格 / 基準比 / 所持数 / 数量ステッパー / 買うボタン / 売るボタン」
-## で構成する。数量は行ごとに ±1 ボタンとマウスホイールで1個ずつ調整し、
-## 「全部」ボタンで一気に上限まで持っていける。
+## 各行は「品目名 / 価格 / 基準比 / 所持数 / 買うボタン / 売るボタン」で構成する。
+## 数量は指定しない。ボタンを押すたびに1個だけ取引する（連打で数量を調整する）。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
@@ -20,14 +19,20 @@ const BADGE_BONUS: String = "生産地"
 const BADGE_BEST_BUY: String = "◎最安"
 const BADGE_BEST_SELL: String = "◎高値"
 
+## 画面を大きく・タップしやすくするためのサイズ。既定のGodotテーマは
+## 16px相当で、プロジェクト全体を上書きするテーマは無いため、ここで
+## 品目行だけ個別に拡大する。
+const ROW_FONT_SIZE: int = 20
+const HEADER_FONT_SIZE: int = 15
+const ROW_ICON_SIZE: int = 28
+const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(64, 44)
+
 ## 売買が成立した時に、その行の位置とともに知らせる。
 ## 演出はパネルをまたぐため、飛ばす先を知っている main.gd に任せる。
 signal traded(item_id: String, is_buy: bool, origin: Vector2)
 
 var _session: GameSession
 var _rows: Dictionary = {}
-## 品目ごとの希望数量（買う/売るどちらにも使う。実行時に各上限へ丸める）。
-var _row_quantity: Dictionary = {}
 var _displayed_held: Dictionary = {}
 var _held_tweens: Dictionary = {}
 
@@ -61,26 +66,29 @@ func _build() -> void:
 		add_child(_fx)
 
 	# ヘッダ行。
-	for heading: String in ["品目", "価格", "基準比", "所持", "数量", "", ""]:
+	for heading: String in ["品目", "価格", "基準比", "所持", "", ""]:
 		var label := Label.new()
 		label.text = heading
 		label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+		label.add_theme_font_size_override("font_size", HEADER_FONT_SIZE)
 		_grid.add_child(label)
 
 	for item_id: String in GameData.ITEMS:
 		_rows[item_id] = _build_row(item_id)
-		_row_quantity[item_id] = 1
 	_apply_row_stripes()
 
 
 func _build_row(item_id: String) -> Dictionary:
 	# アイコンと名前を1セルに収める。列を増やすと行数の検査が壊れるため。
 	var name_cell: HBoxContainer = UiIcons.make_labeled_item(
-		item_id, GameData.ITEMS[item_id]["name"])
+		item_id, GameData.ITEMS[item_id]["name"], ROW_ICON_SIZE)
+	for child: Node in name_cell.get_children():
+		if child is Label:
+			(child as Label).add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	# 基準比に応じた色帯。数字を読まなくても安い/高いが一目で分かる。
 	var accent := ColorRect.new()
 	accent.name = "RatioAccent"
-	accent.custom_minimum_size = Vector2(3, 0)
+	accent.custom_minimum_size = Vector2(4, 0)
 	accent.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_cell.add_child(accent)
@@ -88,7 +96,7 @@ func _build_row(item_id: String) -> Dictionary:
 	# その都市で安い理由や「今お得」を示すバッジ。都市/相場が変わると付け替える。
 	var badge := Label.new()
 	badge.name = "Badge"
-	badge.add_theme_font_size_override("font_size", 10)
+	badge.add_theme_font_size_override("font_size", 12)
 	badge.add_theme_color_override("font_color", UiTheme.GOOD)
 	badge.visible = false
 	name_cell.add_child(badge)
@@ -96,11 +104,12 @@ func _build_row(item_id: String) -> Dictionary:
 
 	# 価格の数字とバーを縦に重ねる。列は増やさない。
 	var price_cell := VBoxContainer.new()
-	price_cell.add_theme_constant_override("separation", 1)
-	price_cell.custom_minimum_size = Vector2(74, 0)
+	price_cell.add_theme_constant_override("separation", 2)
+	price_cell.custom_minimum_size = Vector2(96, 0)
 
 	var price_label := Label.new()
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	price_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	price_cell.add_child(price_label)
 
 	var bar: PriceBar = PriceBar.new()
@@ -110,50 +119,25 @@ func _build_row(item_id: String) -> Dictionary:
 
 	var ratio_label := Label.new()
 	ratio_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ratio_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	_grid.add_child(ratio_label)
 
 	var held_label := Label.new()
 	held_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	held_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	_grid.add_child(held_label)
-
-	# 数量ステッパー。±ボタンとホイールで1個ずつ、全部ボタンで上限まで一気に。
-	var qty_cell := HBoxContainer.new()
-	qty_cell.name = "QtyStepper"
-	qty_cell.add_theme_constant_override("separation", 2)
-	qty_cell.gui_input.connect(_on_qty_wheel.bind(item_id))
-
-	var minus_button := Button.new()
-	minus_button.text = "－"
-	minus_button.custom_minimum_size = Vector2(26, 0)
-	minus_button.pressed.connect(step_quantity.bind(item_id, -1))
-	qty_cell.add_child(minus_button)
-
-	var qty_label := Label.new()
-	qty_label.name = "QtyValue"
-	qty_label.custom_minimum_size = Vector2(20, 0)
-	qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	qty_cell.add_child(qty_label)
-
-	var plus_button := Button.new()
-	plus_button.text = "＋"
-	plus_button.custom_minimum_size = Vector2(26, 0)
-	plus_button.pressed.connect(step_quantity.bind(item_id, 1))
-	qty_cell.add_child(plus_button)
-
-	var max_button := Button.new()
-	max_button.text = "全部"
-	max_button.pressed.connect(set_quantity_to_max.bind(item_id))
-	qty_cell.add_child(max_button)
-
-	_grid.add_child(qty_cell)
 
 	var buy_button := Button.new()
 	buy_button.text = "買う"
+	buy_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
+	buy_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	buy_button.pressed.connect(_on_buy_pressed.bind(item_id))
 	_grid.add_child(buy_button)
 
 	var sell_button := Button.new()
 	sell_button.text = "売る"
+	sell_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
+	sell_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	sell_button.pressed.connect(_on_sell_pressed.bind(item_id))
 	_grid.add_child(sell_button)
 
@@ -164,8 +148,6 @@ func _build_row(item_id: String) -> Dictionary:
 		"accent": accent,
 		"ratio": ratio_label,
 		"held": held_label,
-		"qty_stepper": qty_cell,
-		"qty_label": qty_label,
 		"buy": buy_button,
 		"sell": sell_button,
 	}
@@ -222,10 +204,6 @@ func refresh() -> void:
 
 		_refresh_badge(row["badge"], item_id, item_id == best_buy_item, item_id == best_sell_item)
 
-		var quantity: int = _clamp_row_quantity(item_id)
-		if is_instance_valid(row["qty_label"]):
-			row["qty_label"].text = str(quantity)
-
 		row["buy"].disabled = over or _buy_amount(item_id) <= 0
 		row["sell"].disabled = over or _sell_amount(item_id) <= 0
 
@@ -235,9 +213,8 @@ func refresh() -> void:
 func _apply_row_stripes() -> void:
 	if _grid == null:
 		return
-	# 色そのものが情報を持つセル（比率の色帯・数量の値）には重ねない。
-	var striped_keys: Array[String] = [
-		"price", "bar", "badge", "ratio", "held", "qty_stepper"]
+	# 色そのものが情報を持つセル（比率の色帯）には重ねない。
+	var striped_keys: Array[String] = ["price", "bar", "badge", "ratio", "held"]
 	var index: int = 0
 	for item_id: String in _rows:
 		if index % 2 == 1:
@@ -300,85 +277,14 @@ func _refresh_badge(badge: Label, item_id: String,
 		badge.visible = true
 
 
-## 行ごとの希望数量を、その時点の上限（購入可能数と所持数の大きい方）に丸める。
-func _clamp_row_quantity(item_id: String) -> int:
-	var ceiling: int = maxi(1, maxi(_session.max_buyable(item_id), _session.cargo_count(item_id)))
-	var clamped: int = clampi(_row_quantity.get(item_id, 1), 1, ceiling)
-	_row_quantity[item_id] = clamped
-	return clamped
-
-
-## 希望数量に基づく実際の購入数（購入可能数を超えない）。
+## 買うボタンを押すと常に1個だけ購入する（購入可能数が0ならボタンは無効）。
 func _buy_amount(item_id: String) -> int:
-	return mini(_row_quantity.get(item_id, 1), _session.max_buyable(item_id))
+	return mini(1, _session.max_buyable(item_id))
 
 
-## 希望数量に基づく実際の売却数（所持数を超えない）。
+## 売るボタンを押すと常に1個だけ売却する（所持数が0ならボタンは無効）。
 func _sell_amount(item_id: String) -> int:
-	return mini(_row_quantity.get(item_id, 1), _session.cargo_count(item_id))
-
-
-## 品目の行に設定されている希望数量。--script からの検査用にも公開する。
-func quantity_for(item_id: String) -> int:
-	return _row_quantity.get(item_id, 1)
-
-
-## 希望数量を1個ずつ増減する。±ボタンのクリック連打とホイールの両方から呼ばれる。
-func step_quantity(item_id: String, delta: int) -> void:
-	if not _rows.has(item_id):
-		return
-	var ceiling: int = maxi(1, maxi(_session.max_buyable(item_id), _session.cargo_count(item_id)))
-	var before: int = _row_quantity.get(item_id, 1)
-	var after: int = clampi(before + delta, 1, ceiling)
-	if after == before:
-		return
-	_row_quantity[item_id] = after
-	refresh()
-	_animate_qty_pop(item_id)
-
-
-## 希望数量を一気に上限まで引き上げる（「全部」ボタン）。
-func set_quantity_to_max(item_id: String) -> void:
-	if not _rows.has(item_id):
-		return
-	var ceiling: int = maxi(1, maxi(_session.max_buyable(item_id), _session.cargo_count(item_id)))
-	var before: int = _row_quantity.get(item_id, 1)
-	_row_quantity[item_id] = ceiling
-	refresh()
-	if ceiling != before:
-		_animate_qty_pop(item_id)
-
-
-## 数量ステッパー上でのマウスホイール操作。1ノッチ = ±1。
-func _on_qty_wheel(event: InputEvent, item_id: String) -> void:
-	var button: InputEventMouseButton = event as InputEventMouseButton
-	if button == null or not button.pressed:
-		return
-	if button.button_index == MOUSE_BUTTON_WHEEL_UP:
-		step_quantity(item_id, 1)
-	elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-		step_quantity(item_id, -1)
-
-
-## 数量が変わったことを一瞬の拡大とフラッシュで伝える。
-## ツリー外（--script のハーネス）では Tween が作れないため何もしない。
-func _animate_qty_pop(item_id: String) -> void:
-	if not is_inside_tree():
-		return
-	var row: Dictionary = _rows.get(item_id, {})
-	var label: Label = row.get("qty_label")
-	if not is_instance_valid(label):
-		return
-
-	label.pivot_offset = label.size * 0.5
-	label.scale = Vector2.ONE * 1.3
-	label.add_theme_color_override("font_color", UiTheme.FOCUS)
-
-	var tween: Tween = create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(label, "scale", Vector2.ONE, UiTheme.TWEEN_DURATION)
-	tween.tween_property(label, "theme_override_colors/font_color",
-		UiTheme.TEXT, UiTheme.FLASH_DURATION)
+	return mini(1, _session.cargo_count(item_id))
 
 
 ## 所持数の変化を短くカウントアップ／ダウンさせ、増減を色で示す。
