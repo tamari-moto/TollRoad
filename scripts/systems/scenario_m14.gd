@@ -113,8 +113,8 @@ func _test_market_signal() -> void:
 
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var buy_button: Button = grid.get_child(6 + 4) as Button
-	var sell_button: Button = grid.get_child(6 + 5) as Button
+	var buy_button: Button = grid.get_child(7 + 5) as Button
+	var sell_button: Button = grid.get_child(7 + 6) as Button
 
 	buy_button.pressed.emit()
 	_check(events.size() == 1, "購入で1件通知される", str(events.size()))

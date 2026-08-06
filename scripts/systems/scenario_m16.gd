@@ -19,6 +19,8 @@ func _init() -> void:
 	_test_bar_in_market()
 	_test_arrows()
 	_test_badges()
+	_test_best_deal_badge()
+	_test_ratio_accent()
 	await _test_bar_renders()
 
 	print("")
@@ -91,9 +93,9 @@ func _test_bar_in_market() -> void:
 	panel.bind(session)
 
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
-	# 列数は増やしていない（既存の検査と整合する）。
-	_check(grid.columns == 6, "列数は6のまま", str(grid.columns))
-	_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
+	# 数量ステッパー列を追加したので6→7列になった。
+	_check(grid.columns == 7, "列数は7", str(grid.columns))
+	_check(grid.get_child_count() == 7 + GameData.ITEMS.size() * 7,
 		"要素数は従来どおり", str(grid.get_child_count()))
 
 	# 各行にバーがある。
@@ -169,16 +171,75 @@ func _test_badges() -> void:
 	var sword_badge: Label = panel._rows["sword"]["badge"]
 	var wood_badge: Label = panel._rows["wood"]["badge"]
 
-	_check(ore_badge.visible and ore_badge.text == "特産", "鉱石に特産バッジ",
+	# 「今お得」の指標（◎最安/◎高値）と併記されうるので contains で見る。
+	_check(ore_badge.visible and ore_badge.text.contains("特産"), "鉱石に特産バッジ",
 		"%s / %s" % [str(ore_badge.visible), ore_badge.text])
-	_check(sword_badge.visible and sword_badge.text == "生産地", "剣に生産地バッジ",
+	_check(sword_badge.visible and sword_badge.text.contains("生産地"), "剣に生産地バッジ",
 		"%s / %s" % [str(sword_badge.visible), sword_badge.text])
-	_check(not wood_badge.visible, "木材にはバッジが出ない", "出ている")
+	_check(not wood_badge.text.contains("特産") and not wood_badge.text.contains("生産地"),
+		"木材には特産・生産地バッジが出ない", wood_badge.text)
 
 	# 移動するとバッジが付け替わる。ブリッジウォッチの特産は石材。
 	session.move_to("bridgewatch")
-	_check(not panel._rows["ore"]["badge"].visible, "移動で鉱石のバッジが消える", "残っている")
-	_check(panel._rows["stone"]["badge"].visible, "移動先の特産にバッジが出る", "出ない")
+	_check(not panel._rows["ore"]["badge"].text.contains("特産"),
+		"移動で鉱石の特産バッジが消える", panel._rows["ore"]["badge"].text)
+	_check(panel._rows["stone"]["badge"].text.contains("特産"),
+		"移動先の特産にバッジが出る", panel._rows["stone"]["badge"].text)
+
+	_despawn(panel)
+
+
+func _test_best_deal_badge() -> void:
+	print("--- 最安・高値バッジ ---")
+	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
+	if panel == null:
+		return
+	var session: GameSession = GameSession.new(16005)
+	panel.bind(session)
+
+	# 実際に全品目の比率を計算し、最も安い品目を特定する。
+	var best_item: String = ""
+	var best_ratio: float = 99.0
+	for item_id: String in GameData.ITEMS:
+		var price: int = session.prices.get_price(session.current_city, item_id)
+		var ratio: float = float(price) / float(GameData.ITEMS[item_id]["base_price"])
+		if ratio < best_ratio:
+			best_ratio = ratio
+			best_item = item_id
+
+	_check(panel._rows[best_item]["badge"].text.contains("◎最安"),
+		"最も安い品目に◎最安が付く", panel._rows[best_item]["badge"].text)
+
+	# 何も所持していなければ◎高値はどこにも出ない。
+	var any_best_sell: bool = false
+	for item_id: String in GameData.ITEMS:
+		if panel._rows[item_id]["badge"].text.contains("◎高値"):
+			any_best_sell = true
+	_check(not any_best_sell, "所持していなければ◎高値は出ない", "出ている")
+
+	# 買うと、唯一の所持品として◎高値の対象になる。
+	session.buy(best_item, 1)
+	panel.refresh()
+	_check(panel._rows[best_item]["badge"].text.contains("◎高値"),
+		"唯一の所持品には◎高値が付く", panel._rows[best_item]["badge"].text)
+
+	_despawn(panel)
+
+
+func _test_ratio_accent() -> void:
+	print("--- 行の色帯 ---")
+	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
+	if panel == null:
+		return
+	var session: GameSession = GameSession.new(16006)
+	panel.bind(session)
+
+	for item_id: String in GameData.ITEMS:
+		var price: int = session.prices.get_price(session.current_city, item_id)
+		var ratio: float = float(price) / float(GameData.ITEMS[item_id]["base_price"])
+		var accent: ColorRect = panel._rows[item_id]["accent"]
+		_check(accent.color == UiTheme.ratio_color(ratio),
+			"%s の色帯が基準比の色と一致する" % item_id, str(accent.color))
 
 	_despawn(panel)
 
