@@ -363,38 +363,45 @@ func _test_projection() -> void:
 	_check(panel._camera != null, "カメラがある", "ない")
 	_check(panel._world != null, "3D の世界がある", "ない")
 
-	# ボタンが投影先に置かれ、重なっていない。
+	# 都市が投影先に置かれ、重なっていない。
 	var seen: Array[Vector2] = []
 	var distinct: bool = true
-	for city_id: String in panel._buttons:
-		var button: Button = panel._buttons[city_id]
+	for city_id: String in panel._world.positions:
+		var pos: Vector2 = panel.screen_position_for(city_id)
 		for previous: Vector2 in seen:
-			if button.position.distance_to(previous) < 1.0:
+			if pos.distance_to(previous) < 1.0:
 				distinct = false
-		seen.append(button.position)
-	_check(distinct, "都市ボタンが重ならない", "同じ位置にある")
+		seen.append(pos)
+	_check(distinct, "都市が重ならない", "同じ位置にある")
 
-	# カメラを回すとボタンが追従する。
-	var before: Vector2 = panel._buttons["fort_sterling"].position
+	# 自分の投影位置をクリックすれば自分が当たる（レイキャストの往復確認）。
+	var pick_ok: bool = true
+	for city_id: String in panel._world.positions:
+		var picked: String = panel.pick_city_at(panel.screen_position_for(city_id))
+		if picked != city_id:
+			pick_ok = false
+	_check(pick_ok, "投影位置をクリックすると同じ都市が当たる", "食い違いがある")
+
+	# カメラを回すと投影位置が追従する。
+	var before: Vector2 = panel.screen_position_for("fort_sterling")
 	panel._camera.rotate_by(1.0, 0.0)
 	panel._update_button_positions()
-	var after: Vector2 = panel._buttons["fort_sterling"].position
-	_check(before.distance_to(after) > 1.0, "カメラを回すとボタンが追従する",
+	var after: Vector2 = panel.screen_position_for("fort_sterling")
+	_check(before.distance_to(after) > 1.0, "カメラを回すと投影位置が追従する",
 		"%.1f しか動かない" % before.distance_to(after))
 
 	# 拡大でも追従する。
-	var zoom_before: Vector2 = panel._buttons["martlock"].position
+	var zoom_before: Vector2 = panel.screen_position_for("martlock")
 	panel._camera.zoom_by(-6.0)
 	panel._update_button_positions()
-	_check(zoom_before.distance_to(panel._buttons["martlock"].position) > 1.0,
-		"拡大でもボタンが追従する", "動かない")
+	_check(zoom_before.distance_to(panel.screen_position_for("martlock")) > 1.0,
+		"拡大でも投影位置が追従する", "動かない")
 
-	# 移動しても操作は従来どおり効く（ボタンを残した設計の担保）。
+	# 移動しても操作は従来どおり効く（レイキャストへ移行した設計の担保）。
 	session.move_to("bridgewatch")
-	var current_button: Button = panel._buttons["bridgewatch"]
-	_check(current_button.disabled, "現在地のボタンは無効", "押せる")
-	_check(current_button.tooltip_text.contains("現在地"),
-		"現在地がツールチップに出る", current_button.tooltip_text)
+	_check(not panel.is_selectable("bridgewatch"), "現在地は選択できない", "選択できる")
+	_check(panel.tooltip_text_for("bridgewatch").contains("現在地"),
+		"現在地がツールチップに出る", panel.tooltip_text_for("bridgewatch"))
 
 	_despawn(panel)
 

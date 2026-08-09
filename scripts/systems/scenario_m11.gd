@@ -72,7 +72,7 @@ func _test_map_layout() -> void:
 
 	var ring: Array[String] = GameData.royal_city_ids()
 	for city_id: String in ring:
-		_check(panel._buttons.has(city_id), "%s のノードがある" % city_id, "ない")
+		_check(panel._nodes.has(city_id), "%s のノードがある" % city_id, "ない")
 		_check(world.positions.has(city_id), "%s の3D座標がある" % city_id, "ない")
 
 	# 水平面（X-Z）で中心からの距離を測る。高さは地形に沿うので除く。
@@ -155,10 +155,10 @@ func _test_node_contents() -> void:
 	panel.bind(session)
 
 	# 現在地（マートロック）のノード。
-	var current: Button = panel._buttons.get("martlock")
+	var current: Control = panel._nodes.get("martlock")
 	_check(current != null, "現在地のノードがある", "ない")
 	if current != null:
-		_check(current.disabled, "現在地は押せない", "押せる")
+		_check(not panel.is_selectable("martlock"), "現在地は選択できない", "選択できる")
 		var note: Label = current.find_child("Note", true, false)
 		_check(note != null, "ラベルがある", "ない")
 		if note != null:
@@ -166,7 +166,7 @@ func _test_node_contents() -> void:
 			_check(note.text.contains("マートロック"), "都市名が出る", note.text)
 
 	# 隣接都市には日数と費用。
-	var neighbour: Button = panel._buttons.get("bridgewatch")
+	var neighbour: Control = panel._nodes.get("bridgewatch")
 	if neighbour != null:
 		var note: Label = neighbour.find_child("Note", true, false)
 		if note != null:
@@ -174,7 +174,7 @@ func _test_node_contents() -> void:
 			_check(note.text.contains("250"), "隣接は250と出る", note.text)
 
 	# カーレオンには襲撃率。
-	var caerleon: Button = panel._buttons.get(GameData.CAERLEON)
+	var caerleon: Control = panel._nodes.get(GameData.CAERLEON)
 	if caerleon != null:
 		var note: Label = caerleon.find_child("Note", true, false)
 		if note != null:
@@ -182,18 +182,18 @@ func _test_node_contents() -> void:
 
 	# 紋章が入っている。
 	var crest_count: int = 0
-	for city_id: String in panel._buttons:
-		var button: Button = panel._buttons[city_id]
-		for child: Node in button.find_children("*", "TextureRect", true, false):
+	for city_id: String in panel._nodes:
+		var node: Control = panel._nodes[city_id]
+		for child: Node in node.find_children("*", "TextureRect", true, false):
 			crest_count += 1
 	_check(crest_count == 6, "6都市に紋章が入る", str(crest_count))
 
 	# 移動すると現在地の表示が移る。
 	session.move_to("bridgewatch")
-	var moved_note: Label = panel._buttons["bridgewatch"].find_child("Note", true, false)
+	var moved_note: Label = panel._nodes["bridgewatch"].find_child("Note", true, false)
 	if moved_note != null:
 		_check(moved_note.text.contains("現在地"), "移動先が現在地になる", moved_note.text)
-	var old_note: Label = panel._buttons["martlock"].find_child("Note", true, false)
+	var old_note: Label = panel._nodes["martlock"].find_child("Note", true, false)
 	if old_note != null:
 		_check(not old_note.text.contains("現在地"), "元の都市は現在地でなくなる", old_note.text)
 

@@ -199,22 +199,24 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 地形・都市・経路を描き、`Camera3D` で周回する。`own_world_3d = true` は必須
 （付けないと本編の 2D 世界を映す）。
 
-**都市ボタンは 2D のまま。** `unproject_position()` で 3D 座標を画面座標に変換し、
-そこに `Button` を重ねている。クリック判定・`disabled`・ツールチップが従来の
-ままなので、操作の検査（`scenario_m6.gd`）は 3D 化の影響を受けない。
-カメラを動かしたら `_update_button_positions()` を呼ぶこと。
-**カメラが動いている最中は毎フレーム呼ぶ**（`map_panel.gd` の `_process`）。
-1回では追従の途中でボタンだけ取り残される。
+**都市の選択は Button ではなくレイキャスト。** `SubViewportContainer` の
+`gui_input` 内で `Camera3D.project_ray_origin/normal()` からレイを作り、
+都市の柱（`map_view_3d.gd` の `positions`）との最短距離が `PICK_RADIUS`
+以内でカメラに最も近いものを選ぶ（`map_panel.gd` の `pick_city_at()`）。
+固定サイズの `Button` を画面座標に重ねる方式は、地図領域が狭いとボタンが
+領域外へはみ出し他のパネルに被さる問題があったため廃止した。クリック可能
+領域は常に `SubViewportContainer` 自身の矩形内に収まる。
 
-**カメラは現在地の都市を中心に周回する。** 移動時は `focus_on()` が注視点を
-滑らせる（`FOCUS_FOLLOW_SPEED`）。`reset_view()` は角度と距離だけ戻し、
-**中心は現在地に残す** — 原点に戻すと現在地中心にした意味がなくなる。
-定数 `MapCamera.FOCUS` は初期値でしかないので、検査では現在の
-`camera.focus` を見ること。
+都市の見た目（ピンと都市名ラベル）は `mouse_filter = IGNORE` の素の
+`Control`（旧 `Button`）で、入力は下の `SubViewportContainer` へ透過する。
+ホバー中のツールチップは `_tooltip` として手動で表示・追従させている
+（Godot標準の `tooltip_text` は使わない）。
 
-**現在地の輪は水平**（`map_view_3d.gd` の `_add_ring`）。高さは都市の足元＋
-`RING_LIFT` で、地形をなぞらせると輪が傾いて都市に架かって見えない。
-`RING_PULSE_*` でゆっくり脈動する。
+`pick_city_at()` / `select_city()` / `is_selectable()` / `screen_position_for()` /
+`tooltip_text_for()` はいずれも公開関数で、`--script` からそのまま呼べる。
+操作の検査（`scenario_m6.gd`, `scenario_m17.gd`）はこれらを直接呼ぶ形で行う。
+カメラを動かしたら `_update_button_positions()` を呼ぶこと（ピンの追従。
+当たり判定はレイキャストが毎回その場で計算するので追従処理は不要）。
 
 幾何の検査は **3D の `Vector3` で行う**（投影後の画面座標はカメラ次第で変わる）。
 `gl_compatibility` でも基本的な 3D は動くが、SSAO・VoxelGI・高度な影は使えない。
@@ -297,17 +299,39 @@ UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解�
 `_apply_backdrop()` がまとめて適用する（パネル側には書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
+**大陸図は画面全体の背景。** `Main.tscn` の `%大陸図` は `Root` 直下に
+`PRESET_FULL_RECT` で敷き、他の画面はその上に浮かぶオーバーレイとして
+配置する。`_apply_backdrop()` は `%大陸図` だけ `apply_panel_style()` を
+かけず、代わりに `UiTheme.make_transparent_style()`（`StyleBoxEmpty`）を
+与える。他パネルと同じ不透明な地色を敷くと、3D世界の外側（空）を覆い
+隠して背景として機能しなくなるため。
+
 **Tween はツリー外では作れない。** `--script` のハーネスは
 `root.add_child()` してもツリー外扱いなので、`is_inside_tree()` が false の
 場合はアニメーションを挟まず即座に反映する分岐を必ず用意する
-（[hud.gd](scripts/ui/hud.gd) の `_animate_silver()` が例）。
+（[hud.gd](scripts/ui/hud.gd) の `_animate_silver()`、
+[main.gd](scenes/main/main.gd) の `_animate_side_panel()` が例）。
 
-キー操作は `[input]` の `tr_rest`（Space）と `tr_tab_1`〜`4`（1〜4）。
+キー操作は `[input]` の `tr_rest`（Space）と `tr_tab_1`〜`5`（1〜5）。
 `_input` ではなく `_unhandled_input` で処理し、フォーカス中のコントロールから
 キーを奪わないようにしている。
-右側の4画面は `Main.tscn` の `%Tabs`（TabContainer）配下にあり、**ノード名が
-そのままタブ名になる**ため日本語（`%大陸図` など）。名前を変えると
-シナリオの参照も壊れるので注意。
+
+**市場・積荷・製作所・相場メモ・島と装備の5画面はスライド式サイドパネル。**
+常時表示は右端の `%TabStrip`（5つのボタン）のみで、押すと `%SidePanel`
+（中身は従来どおり `%Tabs` という `TabContainer`）が画面右からスライドで
+出てくる。閉じている間は幅0まで畳まれる（`SidePanel` の `offset_left` を
+Tween で動かす。`clip_contents = true` なので畳まれている間は中身が
+見えない）。**開いている状態でどのボタンを押しても閉じる**（別のタブへの
+切り替えではない）。キーボードの `tr_tab_1`〜`5` も `main.gd` の
+`_on_tab_strip_pressed()` を経由するため同じ挙動になる。`Tabs` 自体の
+タブバーは `tabs_visible = false` で隠している（選択は `TabStrip` 側が
+持つため、二重に出さない）。`is_side_panel_open()` が公開関数で、
+検査から開閉状態を直接確認できる。
+
+航海日誌と操作ボタン（休息する/目標/結果を見る）は `%LogActions` として
+左下に常時表示のオーバーレイでまとめている。中身（`LogPanel` 相当の
+`LogTitle`/`LogScroll`/`LogList` と `Actions` の各ボタン）は以前の構成から
+そのまま持ってきているだけで、ロジックの変更はない。
 
 **バランスは検証済み。数値を調整しないこと。** 実測（各20〜30回の通しプレイ）:
 

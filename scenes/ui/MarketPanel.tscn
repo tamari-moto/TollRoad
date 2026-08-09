@@ -21,40 +21,6 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "市場"
 
-[node name="QuantityRow" type="HBoxContainer" parent="Margin/Column"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="QtyHint" type="Label" parent="Margin/Column/QuantityRow"]
-layout_mode = 2
-size_flags_vertical = 4
-text = "数量:"
-
-[node name="Qty0" type="Button" parent="Margin/Column/QuantityRow"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-button_pressed = true
-text = "1"
-
-[node name="Qty1" type="Button" parent="Margin/Column/QuantityRow"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-text = "5"
-
-[node name="Qty2" type="Button" parent="Margin/Column/QuantityRow"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-text = "半分"
-
-[node name="Qty3" type="Button" parent="Margin/Column/QuantityRow"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-text = "全部"
-
 [node name="ItemScroll" type="ScrollContainer" parent="Margin/Column"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -63,6 +29,6 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/h_separation = 12
-theme_override_constants/v_separation = 4
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 8
 columns = 6

@@ -1,8 +1,8 @@
 extends PanelContainer
 ## 市場画面。現在地の全品目について相場と売買を行う。
 ##
-## 各行は「品目名 / 価格 / 基準比 / 所持数 / 買うボタン / 売るボタン」で構成し、
-## 数量は 1 / 5 / 半分 / 全部 から選ぶ（仕様 6.1）。
+## 各行は「品目名 / 価格 / 基準比 / 所持数 / 買うボタン / 売るボタン」で構成する。
+## 数量は指定しない。ボタンを押すたびに1個だけ取引する（連打で数量を調整する）。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
@@ -10,25 +10,35 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 const PriceBar = preload("res://scripts/ui/price_bar.gd")
+const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 
 ## 安い理由を示すバッジの文言。
 const BADGE_SPECIALTY: String = "特産"
 const BADGE_BONUS: String = "生産地"
+## 全品目中で最も条件が良い行に添える指標。
+const BADGE_BEST_BUY: String = "◎最安"
+const BADGE_BEST_SELL: String = "◎高値"
+
+## 画面を大きく・タップしやすくするためのサイズ。既定のGodotテーマは
+## 16px相当で、プロジェクト全体を上書きするテーマは無いため、ここで
+## 品目行だけ個別に拡大する。
+const ROW_FONT_SIZE: int = 20
+const HEADER_FONT_SIZE: int = 15
+const ROW_ICON_SIZE: int = 28
+const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(64, 44)
 
 ## 売買が成立した時に、その行の位置とともに知らせる。
 ## 演出はパネルをまたぐため、飛ばす先を知っている main.gd に任せる。
 signal traded(item_id: String, is_buy: bool, origin: Vector2)
 
-## 数量の選び方。half は所持数/購入可能数の半分。
-enum Quantity { ONE, FIVE, HALF, ALL }
-
 var _session: GameSession
 var _rows: Dictionary = {}
-var _quantity: Quantity = Quantity.ONE
+var _displayed_held: Dictionary = {}
+var _held_tweens: Dictionary = {}
 
 var _grid: GridContainer
 var _title: Label
-var _quantity_buttons: Dictionary = {}
+var _fx: FxLayer
 
 
 func bind(session: GameSession) -> void:
@@ -51,18 +61,16 @@ func _build() -> void:
 	if _grid == null:
 		return
 
-	for quantity: Quantity in [Quantity.ONE, Quantity.FIVE, Quantity.HALF, Quantity.ALL]:
-		var button: Button = UiUtil.find_node(self, "Qty%d" % quantity)
-		if button != null:
-			_quantity_buttons[quantity] = button
-			button.pressed.connect(_on_quantity_selected.bind(quantity))
-	_update_quantity_buttons()
+	if _fx == null:
+		_fx = FxLayer.new()
+		add_child(_fx)
 
 	# ヘッダ行。
 	for heading: String in ["品目", "価格", "基準比", "所持", "", ""]:
 		var label := Label.new()
 		label.text = heading
 		label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+		label.add_theme_font_size_override("font_size", HEADER_FONT_SIZE)
 		_grid.add_child(label)
 
 	for item_id: String in GameData.ITEMS:
@@ -73,11 +81,22 @@ func _build() -> void:
 func _build_row(item_id: String) -> Dictionary:
 	# アイコンと名前を1セルに収める。列を増やすと行数の検査が壊れるため。
 	var name_cell: HBoxContainer = UiIcons.make_labeled_item(
-		item_id, GameData.ITEMS[item_id]["name"])
-	# その都市で安い理由を示すバッジ。都市が変わると付け替える。
+		item_id, GameData.ITEMS[item_id]["name"], ROW_ICON_SIZE)
+	for child: Node in name_cell.get_children():
+		if child is Label:
+			(child as Label).add_theme_font_size_override("font_size", ROW_FONT_SIZE)
+	# 基準比に応じた色帯。数字を読まなくても安い/高いが一目で分かる。
+	var accent := ColorRect.new()
+	accent.name = "RatioAccent"
+	accent.custom_minimum_size = Vector2(4, 0)
+	accent.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_cell.add_child(accent)
+	name_cell.move_child(accent, 0)
+	# その都市で安い理由や「今お得」を示すバッジ。都市/相場が変わると付け替える。
 	var badge := Label.new()
 	badge.name = "Badge"
-	badge.add_theme_font_size_override("font_size", 10)
+	badge.add_theme_font_size_override("font_size", 12)
 	badge.add_theme_color_override("font_color", UiTheme.GOOD)
 	badge.visible = false
 	name_cell.add_child(badge)
@@ -85,11 +104,12 @@ func _build_row(item_id: String) -> Dictionary:
 
 	# 価格の数字とバーを縦に重ねる。列は増やさない。
 	var price_cell := VBoxContainer.new()
-	price_cell.add_theme_constant_override("separation", 1)
-	price_cell.custom_minimum_size = Vector2(74, 0)
+	price_cell.add_theme_constant_override("separation", 2)
+	price_cell.custom_minimum_size = Vector2(96, 0)
 
 	var price_label := Label.new()
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	price_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	price_cell.add_child(price_label)
 
 	var bar: PriceBar = PriceBar.new()
@@ -99,19 +119,25 @@ func _build_row(item_id: String) -> Dictionary:
 
 	var ratio_label := Label.new()
 	ratio_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ratio_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	_grid.add_child(ratio_label)
 
 	var held_label := Label.new()
 	held_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	held_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	_grid.add_child(held_label)
 
 	var buy_button := Button.new()
 	buy_button.text = "買う"
+	buy_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
+	buy_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	buy_button.pressed.connect(_on_buy_pressed.bind(item_id))
 	_grid.add_child(buy_button)
 
 	var sell_button := Button.new()
 	sell_button.text = "売る"
+	sell_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
+	sell_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	sell_button.pressed.connect(_on_sell_pressed.bind(item_id))
 	_grid.add_child(sell_button)
 
@@ -119,6 +145,7 @@ func _build_row(item_id: String) -> Dictionary:
 		"price": price_label,
 		"bar": bar,
 		"badge": badge,
+		"accent": accent,
 		"ratio": ratio_label,
 		"held": held_label,
 		"buy": buy_button,
@@ -133,13 +160,31 @@ func refresh() -> void:
 		_title.text = "市場 — %s" % GameData.CITIES[_session.current_city]["name"]
 
 	var over: bool = _session.is_over()
+
+	# 「今いちばんお得」な行を決めるため、先に全品目の比率と所持数を集める。
+	var ratios: Dictionary = {}
+	var held_counts: Dictionary = {}
+	var best_buy_item: String = ""
+	var best_sell_item: String = ""
+	for item_id: String in _rows:
+		var price: int = _session.prices.get_price(_session.current_city, item_id)
+		var base: int = GameData.ITEMS[item_id]["base_price"]
+		var ratio: float = float(price) / float(base)
+		var held: int = _session.cargo_count(item_id)
+		ratios[item_id] = ratio
+		held_counts[item_id] = held
+		if best_buy_item == "" or ratio < ratios[best_buy_item]:
+			best_buy_item = item_id
+		if held > 0 and (best_sell_item == "" or ratio > ratios[best_sell_item]):
+			best_sell_item = item_id
+
 	for item_id: String in _rows:
 		var row: Dictionary = _rows[item_id]
 		if not is_instance_valid(row["price"]):
 			continue
 		var price: int = _session.prices.get_price(_session.current_city, item_id)
-		var base: int = GameData.ITEMS[item_id]["base_price"]
-		var ratio: float = float(price) / float(base)
+		var ratio: float = ratios[item_id]
+		var held: int = held_counts[item_id]
 
 		row["price"].text = UiUtil.format_number(price)
 		if is_instance_valid(row["bar"]):
@@ -148,8 +193,16 @@ func refresh() -> void:
 		# 色に頼らず向きが分かるよう記号を添える。
 		row["ratio"].text = "%s%d%%" % [_arrow(ratio), int(round(ratio * 100.0))]
 		row["ratio"].add_theme_color_override("font_color", UiTheme.ratio_color(ratio))
-		row["held"].text = str(_session.cargo_count(item_id))
-		_refresh_badge(row["badge"], item_id)
+		if is_instance_valid(row["accent"]):
+			row["accent"].color = UiTheme.ratio_color(ratio)
+
+		if _displayed_held.has(item_id) and _displayed_held[item_id] != held:
+			_animate_held(item_id, _displayed_held[item_id], held)
+		elif is_instance_valid(row["held"]):
+			row["held"].text = str(held)
+		_displayed_held[item_id] = held
+
+		_refresh_badge(row["badge"], item_id, item_id == best_buy_item, item_id == best_sell_item)
 
 		row["buy"].disabled = over or _buy_amount(item_id) <= 0
 		row["sell"].disabled = over or _sell_amount(item_id) <= 0
@@ -160,15 +213,15 @@ func refresh() -> void:
 func _apply_row_stripes() -> void:
 	if _grid == null:
 		return
+	# 色そのものが情報を持つセル（比率の色帯）には重ねない。
+	var striped_keys: Array[String] = ["price", "bar", "badge", "ratio", "held"]
 	var index: int = 0
 	for item_id: String in _rows:
 		if index % 2 == 1:
-			for cell: Node in _rows[item_id].values():
-				var control: Control = cell as Control
+			var row: Dictionary = _rows[item_id]
+			for key: String in striped_keys:
+				var control: Control = row.get(key) as Control
 				if control == null or not is_instance_valid(control):
-					continue
-				# ボタンは自前の見た目を持つので触らない。
-				if control is Button:
 					continue
 				_add_stripe(control)
 		index += 1
@@ -199,67 +252,92 @@ static func _arrow(ratio: float) -> String:
 	return "　"
 
 
-## その品目がこの都市で安い理由を示す。特産でもボーナスでもなければ隠す。
-func _refresh_badge(badge: Label, item_id: String) -> void:
+## その品目がこの都市で安い理由や、今お得であることを示す。
+## 何も無ければ隠す。特産・生産地・最安・高値は共存しうるので併記する。
+func _refresh_badge(badge: Label, item_id: String,
+		is_best_buy: bool, is_best_sell: bool) -> void:
 	if not is_instance_valid(badge):
 		return
 	var city: Dictionary = GameData.CITIES[_session.current_city]
+	var reasons: PackedStringArray = []
 	if city["specialty"] == item_id:
-		badge.text = BADGE_SPECIALTY
-		badge.visible = true
+		reasons.append(BADGE_SPECIALTY)
 	elif city["bonus"] == item_id:
-		badge.text = BADGE_BONUS
-		badge.visible = true
-	else:
+		reasons.append(BADGE_BONUS)
+	if is_best_buy:
+		reasons.append(BADGE_BEST_BUY)
+	if is_best_sell:
+		reasons.append(BADGE_BEST_SELL)
+
+	if reasons.is_empty():
 		badge.text = ""
 		badge.visible = false
+	else:
+		badge.text = "・".join(reasons)
+		badge.visible = true
 
 
-## 選択中の数量指定に基づく実際の購入数。
+## 買うボタンを押すと常に1個だけ購入する（購入可能数が0ならボタンは無効）。
 func _buy_amount(item_id: String) -> int:
-	var maximum: int = _session.max_buyable(item_id)
-	return _apply_quantity(maximum)
+	return mini(1, _session.max_buyable(item_id))
 
 
+## 売るボタンを押すと常に1個だけ売却する（所持数が0ならボタンは無効）。
 func _sell_amount(item_id: String) -> int:
-	var held: int = _session.cargo_count(item_id)
-	return _apply_quantity(held)
+	return mini(1, _session.cargo_count(item_id))
 
 
-func _apply_quantity(maximum: int) -> int:
-	if maximum <= 0:
-		return 0
-	match _quantity:
-		Quantity.ONE:
-			return 1
-		Quantity.FIVE:
-			return mini(5, maximum)
-		Quantity.HALF:
-			return maxi(1, maximum / 2)
-		_:
-			return maximum
+## 所持数の変化を短くカウントアップ／ダウンさせ、増減を色で示す。
+## hud.gd の _animate_silver と同じ手法。ツリー外では即座に反映する。
+func _animate_held(item_id: String, from: int, to: int) -> void:
+	var row: Dictionary = _rows.get(item_id, {})
+	var label: Label = row.get("held")
+	if not is_instance_valid(label):
+		return
+	if not is_inside_tree():
+		label.text = str(to)
+		return
+
+	if _held_tweens.has(item_id) and _held_tweens[item_id].is_valid():
+		_held_tweens[item_id].kill()
+
+	label.add_theme_color_override("font_color", UiTheme.GOOD if to > from else UiTheme.WARN)
+
+	var tween: Tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_method(func(value: int) -> void: label.text = str(value),
+		from, to, UiTheme.TWEEN_DURATION)
+	tween.tween_property(label, "theme_override_colors/font_color",
+		UiTheme.TEXT, UiTheme.FLASH_DURATION)
+	tween.chain().tween_callback(func() -> void: label.text = str(to))
+	_held_tweens[item_id] = tween
 
 
-func _on_quantity_selected(quantity: Quantity) -> void:
-	_quantity = quantity
-	_update_quantity_buttons()
-	refresh()
-
-
-func _update_quantity_buttons() -> void:
-	for quantity: Quantity in _quantity_buttons:
-		var button: Button = _quantity_buttons[quantity]
-		if is_instance_valid(button):
-			button.button_pressed = quantity == _quantity
+## 買う/売るボタンから所持数ラベルへアイコンを飛ばす。同一パネル内で完結する演出。
+func _play_trade_fx(item_id: String, is_buy: bool) -> void:
+	if not is_instance_valid(_fx) or not is_inside_tree():
+		return
+	var row: Dictionary = _rows.get(item_id, {})
+	var from_control: Control = row.get("buy") if is_buy else row.get("sell")
+	var to_control: Control = row.get("held")
+	if not is_instance_valid(from_control) or not is_instance_valid(to_control):
+		return
+	var from_point: Vector2 = from_control.global_position + from_control.size * 0.5
+	var to_point: Vector2 = to_control.global_position + to_control.size * 0.5
+	_fx.fly_item(item_id, from_point, to_point, UiTheme.item_color(item_id))
 
 
 func _on_buy_pressed(item_id: String) -> void:
-	if _session.buy(item_id, _buy_amount(item_id)):
+	var amount: int = _buy_amount(item_id)
+	if _session.buy(item_id, amount):
+		_play_trade_fx(item_id, true)
 		traded.emit(item_id, true, _row_origin(item_id))
 
 
 func _on_sell_pressed(item_id: String) -> void:
-	if _session.sell(item_id, _sell_amount(item_id)):
+	var amount: int = _sell_amount(item_id)
+	if _session.sell(item_id, amount):
+		_play_trade_fx(item_id, false)
 		traded.emit(item_id, false, _row_origin(item_id))
 
 

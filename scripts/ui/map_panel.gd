@@ -5,7 +5,9 @@ extends PanelContainer
 ## そのまま画面にすることで、「中央へ渡るには黒ゾーンを通るしかない」
 ## という構造が一目で分かる。
 ##
-## 各ノードは押せるボタンで、日数・費用・襲撃率をラベルに併記する。
+## 都市の選択は SubViewportContainer 上のクリックをレイキャストで
+## 3D の柱と判定する（Button は使わない）。クリック可能領域が常に
+## 地図領域自身の矩形内に収まるため、周囲のパネルへはみ出さない。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
@@ -31,15 +33,28 @@ const NODE_SIZE := Vector2(104, 96)
 ## 斜め見下ろしで縦が潰れるぶん、横は大きめに取る。
 const RADIUS_RATIO: float = 0.40
 
+## クリック判定の半径（3D空間の単位）。都市の柱（半径0.55・高さ1.5、
+## map_view_3d.gd 参照）より一回り大きく取り、狙いやすくする。
+const PICK_RADIUS: float = 1.3
+## この距離（px）以上動かしてから離したらカメラ操作とみなし、
+## 都市の選択はしない。
+const CLICK_TOLERANCE: float = 6.0
+
 var _session: GameSession
 var _map_area: Control
 var _viewport: SubViewport
 var _world: MapView3D
 var _camera: MapCamera
 var _dragging: bool = false
-var _buttons: Dictionary = {}
+var _press_point: Vector2 = Vector2.ZERO
+## city_id -> 見た目だけを担当する Control（ピンと都市名）。
+var _nodes: Dictionary = {}
 var _confirm: ConfirmationDialog
 var _pending_city: String = ""
+var _tooltip: PanelContainer
+var _tooltip_label: Label
+## ホバー中の都市。無ければ空文字列。
+var _hovered_city: String = ""
 
 
 func bind(session: GameSession) -> void:
@@ -53,12 +68,15 @@ func bind(session: GameSession) -> void:
 
 
 func _build() -> void:
-	if not _buttons.is_empty():
+	if not _nodes.is_empty():
 		return
 	_map_area = UiUtil.find_node(self, "CityList")
 	if _map_area == null:
 		return
 	_map_area.custom_minimum_size = Vector2(0, MAP_MIN_HEIGHT)
+	# 見た目のはみ出しに対する最後の防衛線。クリック判定は
+	# SubViewportContainer 側にしか無いので、操作性には影響しない。
+	_map_area.clip_contents = true
 	_map_area.resized.connect(_layout_nodes)
 
 	_build_viewport()
@@ -67,6 +85,8 @@ func _build() -> void:
 	ordered.append(GameData.CAERLEON)
 	for city_id: String in ordered:
 		_map_area.add_child(_build_node(city_id))
+
+	_build_tooltip()
 
 	_confirm = ConfirmationDialog.new()
 	_confirm.title = "移動の確認"
@@ -79,7 +99,7 @@ func _build() -> void:
 
 
 ## 3D の地図を SubViewport に描き、地図領域いっぱいに敷く。
-## 都市ボタンはこの上に重ねるので、ここには入れない。
+## 都市の当たり判定・ドラッグ・ホイールもこの上でまとめて拾う。
 func _build_viewport() -> void:
 	var container := SubViewportContainer.new()
 	container.name = "MapViewport"
@@ -89,9 +109,10 @@ func _build_viewport() -> void:
 	container.anchor_bottom = 1.0
 	container.offset_right = 0.0
 	container.offset_bottom = 0.0
-	# 3D の上でドラッグとホイールを拾う。
+	# 3D の上でドラッグ・ホイール・クリックを拾う。
 	container.mouse_filter = Control.MOUSE_FILTER_STOP
 	container.gui_input.connect(_on_map_input)
+	container.mouse_exited.connect(_on_map_mouse_exited)
 	_map_area.add_child(container)
 
 	_viewport = SubViewport.new()
@@ -111,7 +132,33 @@ func _build_viewport() -> void:
 	_viewport.add_child(_camera)
 
 
+## ホバー中の都市を示すツールチップ。マウス追従で位置と文言を差し替える。
+## 地図領域の最後の子として足し、常に一番上に描く。
+func _build_tooltip() -> void:
+	_tooltip = PanelContainer.new()
+	_tooltip.name = "MapTooltip"
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.add_theme_stylebox_override("panel", UiTheme.make_panel_style())
+	_tooltip.visible = false
+
+	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 4)
+
+	_tooltip_label = Label.new()
+	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_label.add_theme_font_size_override("font_size", 13)
+	margin.add_child(_tooltip_label)
+	_tooltip.add_child(margin)
+
+	_map_area.add_child(_tooltip)
+
+
 ## 地図の上でのマウス操作。左ドラッグで回し、ホイールで寄る。
+## 動かした距離が小さいまま離した左クリックは都市の選択として扱う。
 ## SubViewportContainer の中でだけ拾うので、外のタブには影響しない。
 func _on_map_input(event: InputEvent) -> void:
 	if _camera == null or not is_instance_valid(_camera):
@@ -120,7 +167,15 @@ func _on_map_input(event: InputEvent) -> void:
 	var button: InputEventMouseButton = event as InputEventMouseButton
 	if button != null:
 		if button.button_index == MOUSE_BUTTON_LEFT:
-			_dragging = button.pressed
+			if button.pressed:
+				_dragging = true
+				_press_point = button.position
+			else:
+				_dragging = false
+				if button.position.distance_to(_press_point) <= CLICK_TOLERANCE:
+					var city_id: String = pick_city_at(button.position)
+					if city_id != "":
+						select_city(city_id)
 		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_camera.zoom_by(-MapCamera.ZOOM_STEP)
 			_update_button_positions()
@@ -130,27 +185,54 @@ func _on_map_input(event: InputEvent) -> void:
 		return
 
 	var motion: InputEventMouseMotion = event as InputEventMouseMotion
-	if motion != null and _dragging:
-		_camera.rotate_by(
-			-motion.relative.x * MapCamera.YAW_SPEED,
-			motion.relative.y * MapCamera.PITCH_SPEED)
-		_update_button_positions()
+	if motion != null:
+		if _dragging:
+			_camera.rotate_by(
+				-motion.relative.x * MapCamera.YAW_SPEED,
+				motion.relative.y * MapCamera.PITCH_SPEED)
+			_update_button_positions()
+			_set_hovered_city("")
+		else:
+			_set_hovered_city(pick_city_at(motion.position))
 
 
-## 紋章とラベルを持つ都市ノード。ボタン自体が押下対象。
-func _build_node(city_id: String) -> Button:
-	var button := Button.new()
-	button.name = city_id
-	button.custom_minimum_size = NODE_SIZE
-	button.size = NODE_SIZE
-	button.clip_text = false
-	# 背景を消して地形の上に直接ピンが立って見えるようにする。
-	# flat だけでは押下時やフォーカス時の枠が残るため、状態ごとに
-	# 空のスタイルを与える。
-	button.flat = true
-	for state: String in ["normal", "hover", "pressed", "disabled", "focus"]:
-		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
-	button.pressed.connect(_on_city_pressed.bind(city_id))
+func _on_map_mouse_exited() -> void:
+	_set_hovered_city("")
+
+
+## ホバー中の都市を切り替え、ツールチップの表示を更新する。
+func _set_hovered_city(city_id: String) -> void:
+	if city_id == _hovered_city:
+		return
+	_hovered_city = city_id
+	if city_id == "" or _session == null:
+		_tooltip.visible = false
+		return
+	_tooltip_label.text = tooltip_text_for(city_id)
+	_tooltip.visible = true
+	_position_tooltip(city_id)
+
+
+## ツールチップを都市の投影位置の近くへ置く。地図領域の内側に収める。
+func _position_tooltip(city_id: String) -> void:
+	if _map_area == null or not is_instance_valid(_tooltip):
+		return
+	var anchor: Vector2 = screen_position_for(city_id) + Vector2(0.0, -NODE_SIZE.y * 0.5 - 8.0)
+	var tooltip_size: Vector2 = _tooltip.size
+	var max_pos: Vector2 = _map_area.size - tooltip_size
+	_tooltip.position = Vector2(
+		clampf(anchor.x - tooltip_size.x * 0.5, 0.0, maxf(max_pos.x, 0.0)),
+		clampf(anchor.y - tooltip_size.y, 0.0, maxf(max_pos.y, 0.0)))
+
+
+## 紋章とラベルを持つ都市ノード。クリックは受けず見た目だけを担当する
+## （入力は SubViewportContainer 側のレイキャストで判定する）。
+func _build_node(city_id: String) -> Control:
+	var node := Control.new()
+	node.name = city_id
+	node.custom_minimum_size = NODE_SIZE
+	node.size = NODE_SIZE
+	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# 枠と軸を描くピン。中身より先に足して背面に置く。
 	var pin: MapPin = MapPin.new()
@@ -161,7 +243,7 @@ func _build_node(city_id: String) -> Button:
 	pin.offset_right = 0.0
 	pin.offset_bottom = 0.0
 	pin.danger = city_id == GameData.CAERLEON
-	button.add_child(pin)
+	node.add_child(pin)
 
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -197,18 +279,18 @@ func _build_node(city_id: String) -> Button:
 	note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(note)
 
-	button.add_child(column)
-	_buttons[city_id] = button
-	return button
+	node.add_child(column)
+	_nodes[city_id] = node
+	return node
 
 
-## 3D の都市座標を画面へ投影し、その位置にボタンを置く。
+## 3D の都市座標を画面へ投影し、その位置にノードを置く。
 ##
-## ボタンを 3D 化せず 2D のまま重ねるのは、クリック判定・disabled・
-## ツールチップという既存の仕組みをそのまま使うため。カメラを動かすと
-## ここが呼ばれてボタンが追従する。
+## クリック判定は SubViewportContainer 側のレイキャストで行うため、
+## ここは見た目（ピンとラベル）の追従だけを担当する。カメラを動かすと
+## ここが呼ばれてノードが追従する。
 func _layout_nodes() -> void:
-	if _map_area == null or _buttons.is_empty():
+	if _map_area == null or _nodes.is_empty():
 		return
 	var area: Vector2 = _map_area.size
 	if area.x <= 0.0 or area.y <= 0.0:
@@ -218,8 +300,7 @@ func _layout_nodes() -> void:
 	_update_button_positions()
 
 
-## 各ボタンを 3D 座標の投影先へ動かす。
-## カメラが現在地へ寄っている間、2D のボタンは 3D の投影で置いているため
+## カメラが現在地へ寄っている間、2D のノードは 3D の投影で置いているため
 ## 毎フレーム引き直さないと取り残される。
 func _process(_delta: float) -> void:
 	if not is_instance_valid(_camera):
@@ -237,40 +318,81 @@ func _update_button_positions() -> void:
 
 	var screen_positions: Dictionary = {}
 	for city_id: String in _world.positions:
-		var world_point: Vector3 = _world.positions[city_id]
-		# 柱の頭あたりを狙う。地面すれすれだとラベルが埋もれる。
-		world_point.y += MapView3D.CITY_HEIGHT
-		var screen: Vector2 = _camera.unproject_position(world_point)
+		var screen: Vector2 = screen_position_for(city_id)
 		screen_positions[city_id] = screen
 		_place(city_id, screen)
 
 	_sort_by_depth(screen_positions)
+	if is_instance_valid(_tooltip):
+		_map_area.move_child(_tooltip, _map_area.get_child_count() - 1)
+	if _hovered_city != "":
+		_position_tooltip(_hovered_city)
+
+
+## 都市の3D座標（柱の頭あたり）を画面座標へ投影する。
+## ラベルの追従・ツールチップの位置決め・当たり判定の検査に共用する。
+func screen_position_for(city_id: String) -> Vector2:
+	var world_point: Vector3 = _world.positions[city_id]
+	# 柱の頭あたりを狙う。地面すれすれだとラベルが埋もれる。
+	world_point.y += MapView3D.CITY_HEIGHT
+	return _camera.unproject_position(world_point)
+
+
+## クリック/ホバー位置が当たる都市を返す。3D 空間でレイと各都市の柱の
+## 中心との最短距離を比べ、PICK_RADIUS 以内でカメラに最も近いものを選ぶ。
+## ノードの重なり順に頼らない、純粋な幾何判定なので --script からも
+## そのまま呼べる。
+func pick_city_at(local_point: Vector2) -> String:
+	if _camera == null or _world == null:
+		return ""
+	if not is_instance_valid(_camera) or not is_instance_valid(_world):
+		return ""
+
+	var origin: Vector3 = _camera.project_ray_origin(local_point)
+	var direction: Vector3 = _camera.project_ray_normal(local_point)
+
+	var best_city: String = ""
+	var best_t: float = INF
+	for city_id: String in _world.positions:
+		var pillar_center: Vector3 = _world.positions[city_id] \
+			+ Vector3(0.0, MapView3D.CITY_HEIGHT * 0.5, 0.0)
+		var t: float = (pillar_center - origin).dot(direction)
+		if t < 0.0:
+			continue
+		var closest: Vector3 = origin + direction * t
+		if closest.distance_to(pillar_center) > PICK_RADIUS:
+			continue
+		if t < best_t:
+			best_t = t
+			best_city = city_id
+	return best_city
 
 
 ## 奥（Y が小さい）の都市を先に描き、手前が上に重なるようにする。
-## 奥行きの感覚はこの重なり順から生まれる。
+## 奥行きの感覚はこの重なり順から生まれる（見た目だけの話。当たり判定は
+## pick_city_at のレイキャストが持つので影響しない）。
 func _sort_by_depth(positions: Dictionary) -> void:
 	var ordered: Array[String] = []
 	for city_id: String in positions:
-		if _buttons.has(city_id):
+		if _nodes.has(city_id):
 			ordered.append(city_id)
 	ordered.sort_custom(func(a: String, b: String) -> bool:
 		return positions[a].y < positions[b].y)
 
 	for city_id: String in ordered:
-		var button: Button = _buttons[city_id]
-		if is_instance_valid(button):
-			_map_area.move_child(button, _map_area.get_child_count() - 1)
+		var node: Control = _nodes[city_id]
+		if is_instance_valid(node):
+			_map_area.move_child(node, _map_area.get_child_count() - 1)
 
 
 func _place(city_id: String, point: Vector2) -> void:
-	var button: Button = _buttons.get(city_id)
-	if is_instance_valid(button):
-		button.position = point - NODE_SIZE * 0.5
+	var node: Control = _nodes.get(city_id)
+	if is_instance_valid(node):
+		node.position = point - NODE_SIZE * 0.5
 
 
 func refresh() -> void:
-	if _session == null or _buttons.is_empty():
+	if _session == null or _nodes.is_empty():
 		return
 	# 3D 側の都市にも現在地を伝える（柱の色が変わる）。
 	if is_instance_valid(_world):
@@ -279,21 +401,24 @@ func refresh() -> void:
 		if is_instance_valid(_camera) and _world.positions.has(_session.current_city):
 			_camera.focus_on(_world.positions[_session.current_city])
 
-	var over: bool = _session.is_over()
-	for city_id: String in _buttons:
-		var button: Button = _buttons[city_id]
-		if not is_instance_valid(button):
+	for city_id: String in _nodes:
+		var node: Control = _nodes[city_id]
+		if not is_instance_valid(node):
 			continue
-		_refresh_node(button, city_id, over)
+		_refresh_node(node, city_id)
 	_update_button_positions()
 
+	# ホバー中に相場や資金が変わっても、ツールチップの文言を古いままにしない。
+	if _hovered_city != "":
+		_tooltip_label.text = tooltip_text_for(_hovered_city)
 
-func _refresh_node(button: Button, city_id: String, over: bool) -> void:
+
+func _refresh_node(node: Control, city_id: String) -> void:
 	var city_name: String = GameData.CITIES[city_id]["name"]
-	var note: Label = button.find_child("Note", true, false)
+	var note: Label = node.find_child("Note", true, false)
 
 	# ピンの見た目を状態に合わせる。
-	var pin: MapPin = button.find_child("Pin", true, false)
+	var pin: MapPin = node.find_child("Pin", true, false)
 	if pin != null:
 		pin.is_current = city_id == _session.current_city
 		pin.danger = city_id == GameData.CAERLEON
@@ -303,11 +428,7 @@ func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 			pin.underline_width = minf(note.size.x, NODE_SIZE.x - 8.0)
 
 	if city_id == _session.current_city:
-		button.text = ""
-		button.tooltip_text = "%s（現在地）" % city_name
-		button.disabled = true
-		# 現在地は押せないが、居場所を示すので薄くしない。
-		button.modulate.a = 1.0
+		node.modulate.a = 1.0
 		if note != null:
 			note.text = "%s\n現在地" % city_name
 			note.add_theme_color_override("font_color", COLOR_CURRENT)
@@ -315,24 +436,15 @@ func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 
 	var route: Dictionary = _session.route_to(city_id)
 	if route.is_empty():
-		button.text = ""
-		button.tooltip_text = city_name
-		button.disabled = true
+		node.modulate.a = 1.0
 		if note != null:
 			note.text = city_name
 			note.remove_theme_color_override("font_color")
 		return
 
-	var detail: String = "%d日 / %d" % [route["days"], route["cost"]]
-	if route["raid_chance"] > 0.0:
-		detail += "\n襲撃%d%%" % int(round(route["raid_chance"] * 100.0))
-
-	# 検査や読み上げのため、テキスト情報はツールチップにも持たせる。
-	button.text = ""
-	button.tooltip_text = "%s　%s" % [city_name, detail.replace("\n", " / ")]
-	button.disabled = over or not _session.can_move_to(city_id)
-	# 背景を消しているぶん、行けない都市は文字を薄くして見分ける。
-	button.modulate.a = 0.45 if button.disabled else 1.0
+	var detail: String = _route_detail(route)
+	# 背景を持たないぶん、行けない都市は文字を薄くして見分ける。
+	node.modulate.a = 1.0 if is_selectable(city_id) else 0.45
 
 	if note != null:
 		note.text = "%s\n%s" % [city_name, detail]
@@ -342,7 +454,42 @@ func _refresh_node(button: Button, city_id: String, over: bool) -> void:
 			note.remove_theme_color_override("font_color")
 
 
-func _on_city_pressed(city_id: String) -> void:
+## 日数・費用・襲撃率の説明文（複数行）。Note ラベルとツールチップで共用する。
+func _route_detail(route: Dictionary) -> String:
+	var detail: String = "%d日 / %d" % [route["days"], route["cost"]]
+	if route["raid_chance"] > 0.0:
+		detail += "\n襲撃%d%%" % int(round(route["raid_chance"] * 100.0))
+	return detail
+
+
+## ホバー時に表示する説明文。Note ラベルと同じ内容を1行にまとめたもの。
+func tooltip_text_for(city_id: String) -> String:
+	var city_name: String = GameData.CITIES[city_id]["name"]
+	if city_id == _session.current_city:
+		return "%s（現在地）" % city_name
+	var route: Dictionary = _session.route_to(city_id)
+	if route.is_empty():
+		return city_name
+	return "%s　%s" % [city_name, _route_detail(route).replace("\n", " / ")]
+
+
+## その都市へ今クリックで移動できるか。ホバー表示の選択可否と
+## select_city() の入口ガードの両方がこれを参照する単一の判定源。
+func is_selectable(city_id: String) -> bool:
+	if _session == null:
+		return false
+	if city_id == _session.current_city:
+		return false
+	if _session.is_over():
+		return false
+	return _session.can_move_to(city_id)
+
+
+## 都市を選ぶ。クリック判定（pick_city_at）からも検査からも同じ経路で
+## 呼べるよう公開している。
+func select_city(city_id: String) -> void:
+	if not is_selectable(city_id):
+		return
 	var route: Dictionary = _session.route_to(city_id)
 	if route.is_empty():
 		return

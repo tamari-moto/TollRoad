@@ -73,13 +73,13 @@ func _test_market_panel() -> void:
 	_check(price_label.text == UiUtil.format_number(actual_price),
 		"価格が相場と一致する", "%s vs %d" % [price_label.text, actual_price])
 
-	# 買うボタンで実際に購入できる。
+	# 買うボタンで実際に購入できる。個数指定は無く、常に1個。
 	var buy_button: Button = grid.get_child(6 + 4) as Button
 	_check(not buy_button.disabled, "買うボタンが押せる", "無効")
 	var silver_before: int = session.silver
 	buy_button.pressed.emit()
 	_check(session.silver < silver_before, "買うボタンで購入される", "変化なし")
-	_check(session.cargo_count(first_item) == 1, "数量1で1個買える", str(session.cargo_count(first_item)))
+	_check(session.cargo_count(first_item) == 1, "1回押すと1個買える", str(session.cargo_count(first_item)))
 
 	# 所持数の表示が追従する。
 	var held_label: Label = grid.get_child(6 + 3) as Label
@@ -101,7 +101,7 @@ func _test_market_panel() -> void:
 
 
 func _test_quantity_selection() -> void:
-	print("--- 数量選択 ---")
+	print("--- クリック連打で数量を調整する ---")
 	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
 	if panel == null:
 		return
@@ -111,27 +111,26 @@ func _test_quantity_selection() -> void:
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var first_item: String = GameData.ITEMS.keys()[0]
 	var buy_button: Button = grid.get_child(6 + 4) as Button
-
-	# 「5」を選ぶと5個買う。
-	var qty5: Button = UiUtil.find_node(panel, "Qty1")
-	qty5.pressed.emit()
-	buy_button.pressed.emit()
-	_check(session.cargo_count(first_item) == 5, "数量5で5個買える", str(session.cargo_count(first_item)))
-
-	# 「全部」を選ぶと売れるだけ売る。
-	var qty_all: Button = UiUtil.find_node(panel, "Qty3")
-	qty_all.pressed.emit()
 	var sell_button: Button = grid.get_child(6 + 5) as Button
-	sell_button.pressed.emit()
-	_check(session.cargo_count(first_item) == 0, "全部で全て売れる", str(session.cargo_count(first_item)))
 
-	# 「半分」は購入可能数の半分。
-	var qty_half: Button = UiUtil.find_node(panel, "Qty2")
-	qty_half.pressed.emit()
-	var maximum: int = session.max_buyable(first_item)
-	buy_button.pressed.emit()
-	_check(session.cargo_count(first_item) == maxi(1, maximum / 2), "半分で約半量買える",
-		"%d / 上限 %d" % [session.cargo_count(first_item), maximum])
+	# 個数指定のUIは無い。買うボタンを5回連打すると5個買える。
+	for i in range(5):
+		buy_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 5, "買うボタンを5回押すと5個買える",
+		str(session.cargo_count(first_item)))
+
+	# 売るボタンも同様に、押した回数だけ売れる。
+	for i in range(3):
+		sell_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 2, "売るボタンを3回押すと3個売れる",
+		str(session.cargo_count(first_item)))
+
+	# 所持数を超えて売ろうとしても、無効になった時点で止まる（過剰売却しない）。
+	for i in range(10):
+		sell_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 0, "押し続けても所持数以下で止まる",
+		str(session.cargo_count(first_item)))
+	_check(sell_button.disabled, "所持が無くなると売るボタンが無効になる", "押せてしまう")
 
 	_despawn(panel)
 
@@ -184,23 +183,19 @@ func _test_map_panel() -> void:
 		_despawn(panel)
 		return
 
-	# 地図化以降、CityList には経路線の層とボタンが混在する。
-	var buttons: Array[Button] = []
-	for child: Node in list.get_children():
-		var button: Button = child as Button
-		if button != null:
-			buttons.append(button)
-	_check(buttons.size() == 6, "6都市のボタンがある", str(buttons.size()))
+	# 都市の選択は Button ではなくレイキャストで判定する（CLAUDE.md参照）。
+	# 見た目のノードは _nodes に city_id -> Control で保持している。
+	_check(panel._nodes.size() == 6, "6都市のノードがある", str(panel._nodes.size()))
 
-	# 表示テキストはノード内のラベルとツールチップに入る。
+	# 表示テキストはツールチップの文言に入る。
 	var found_current: bool = false
 	var found_raid: bool = false
 	var found_adjacent: bool = false
-	for button: Button in buttons:
-		var tip: String = button.tooltip_text
+	for city_id: String in GameData.CITIES:
+		var tip: String = panel.tooltip_text_for(city_id)
 		if tip.contains("現在地"):
 			found_current = true
-			_check(button.disabled, "現在地のボタンは無効", "押せる")
+			_check(not panel.is_selectable(city_id), "現在地は選択できない", "選択できる")
 		if tip.contains("襲撃22%"):
 			found_raid = true
 		if tip.contains("1日 / 250"):
@@ -210,35 +205,29 @@ func _test_map_panel() -> void:
 	_check(found_adjacent, "隣接都市に1日/250と出る", "ない")
 
 	# 移動確認ダイアログが出る。
-	var caerleon_button: Button = null
-	for button: Button in buttons:
-		if button.tooltip_text.contains("カーレオン"):
-			caerleon_button = button
-	_check(caerleon_button != null, "カーレオンのボタンがある", "ない")
-	if caerleon_button != null:
-		caerleon_button.pressed.emit()
-		var dialog: ConfirmationDialog = null
-		for child: Node in panel.get_children():
-			if child is ConfirmationDialog:
-				dialog = child
-		_check(dialog != null, "確認ダイアログが生成される", "ない")
-		if dialog != null:
-			_check(dialog.dialog_text.contains("黒ゾーン"), "黒ゾーンの警告が出る", dialog.dialog_text)
-			_check(dialog.dialog_text.contains("22%"), "襲撃率が出る", dialog.dialog_text)
-			# 確認すると実際に移動する。
-			var before_city: String = session.current_city
-			dialog.confirmed.emit()
-			_check(session.current_city == "caerleon", "確認で移動する",
-				"%s -> %s" % [before_city, session.current_city])
+	panel.select_city("caerleon")
+	var dialog: ConfirmationDialog = null
+	for child: Node in panel.get_children():
+		if child is ConfirmationDialog:
+			dialog = child
+	_check(dialog != null, "確認ダイアログが生成される", "ない")
+	if dialog != null:
+		_check(dialog.dialog_text.contains("黒ゾーン"), "黒ゾーンの警告が出る", dialog.dialog_text)
+		_check(dialog.dialog_text.contains("22%"), "襲撃率が出る", dialog.dialog_text)
+		# 確認すると実際に移動する。
+		var before_city: String = session.current_city
+		dialog.confirmed.emit()
+		_check(session.current_city == "caerleon", "確認で移動する",
+			"%s -> %s" % [before_city, session.current_city])
 
-	# 資金が尽きると移動ボタンが無効になる。
+	# 資金が尽きると移動先が全て選択できなくなる。
 	session.silver = 10
 	panel.refresh()
-	var all_disabled: bool = true
-	for button: Button in buttons:
-		if not button.disabled:
-			all_disabled = false
-	_check(all_disabled, "資金不足で全移動先が無効", "押せるものがある")
+	var all_unselectable: bool = true
+	for city_id: String in GameData.CITIES:
+		if panel.is_selectable(city_id):
+			all_unselectable = false
+	_check(all_unselectable, "資金不足で全移動先が選択不可", "選択できるものがある")
 
 	_despawn(panel)
 
@@ -250,7 +239,7 @@ func _test_main_scene_structure() -> void:
 	if scene == null:
 		return
 	var main: Node = scene.instantiate()
-	# 大陸図は M7 でタブ化した際にノード名を「大陸図」に変えている。
+	# 大陸図はタブに属さず常時表示。ノード名は「大陸図」のまま。
 	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%大陸図",
 			"%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
