@@ -93,8 +93,12 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 		panel.bind(_session)
 	_result_dialog.bind(_session)
 
-	_session.logged.connect(_append_log)
-	_session.day_advanced.connect(_on_day_advanced)
+	# 二重接続を防ぐ。Godot は重複を拒否するが、そのたびに赤いエラーを出す。
+	# 同ファイルの他の接続はどれもガード付きで、ここだけが例外だった。
+	if not _session.logged.is_connected(_append_log):
+		_session.logged.connect(_append_log)
+	if not _session.day_advanced.is_connected(_on_day_advanced):
+		_session.day_advanced.connect(_on_day_advanced)
 
 	_clear_log()
 	# 過去ログの復元では音を鳴らさない（全件が一斉に鳴ってしまう）。
