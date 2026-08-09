@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 売買エフェクトの検証。
 ##
 ## 実行:
@@ -10,7 +10,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -19,14 +18,7 @@ func _init() -> void:
 	_test_missing_icon_fallback()
 	_test_market_signal()
 	await _test_flight_path()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_layer_basics() -> void:
@@ -179,26 +171,3 @@ func _test_flight_path() -> void:
 func _despawn_layer(fx: FxLayer) -> void:
 	root.remove_child(fx)
 	fx.free()
-
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

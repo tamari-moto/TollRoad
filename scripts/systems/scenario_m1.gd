@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M1 の検証シナリオ。シード固定で交易ループを一周し、不変条件を検査する。
 ##
 ## 実行:
@@ -6,11 +6,10 @@ extends SceneTree
 ##
 ## テストフレームワークは使わない。--script は autoload を初期化しないため、
 ## ロジックは load() + .new() で直接駆動できる形に保っている。
+## _check() と _finish() は scenario_base.gd にある。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
-
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -20,14 +19,7 @@ func _init() -> void:
 	_test_determinism()
 	_test_trade_arithmetic()
 	_test_trade_loop()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 # --- 検査 ---
@@ -206,13 +198,3 @@ func _test_trade_loop() -> void:
 	_check(s3.net_worth() == expected, "純資産に積荷が基準価格×0.9で算入される",
 		"期待 %d, 実際 %d" % [expected, s3.net_worth()])
 	_check(cash > s3.silver, "購入でシルバーは減っている", "減っていない")
-
-
-# --- ヘルパ ---
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

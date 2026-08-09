@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M4 の検証シナリオ。60日通しの進行・純資産・ランク判定を検査し、
 ## 単純な戦略で複数回プレイしてバランスを測る。
 ##
@@ -8,7 +8,6 @@ extends SceneTree
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -17,14 +16,7 @@ func _init() -> void:
 	_test_rank_boundaries()
 	_test_full_playthrough()
 	_run_balance_batch()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_game_end() -> void:
@@ -225,11 +217,3 @@ func _play(s: GameSession) -> Dictionary:
 			s.rest()
 
 	return {"actions": actions}
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])
