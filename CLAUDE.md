@@ -21,11 +21,33 @@ TollRoad（Godot 4.7.1 / GL Compatibility）で作業する際の Godot 固有�
 "...Godot_v4.7.1-stable_win64_console.exe" --headless --path . --import
 ```
 
-### `--check-only --script` は検証に使わない
+### autoload を識別子として書かない
 
-このモードは autoload を初期化しないため、`main.gd` を単体でコンパイルすると
-`Identifier not found: GameState` という**偽のエラー**を出す。実際のゲームは正常に動く。
-スクリプトの検証は上記のヘッドレス実行で行うこと。
+`GameState.session` のように**識別子で書くとコンパイル時に autoload
+レジストリを引く**。`--script` のハーネスは autoload を初期化しないため、
+そのスクリプト自体がロードできなくなる（`Identifier not found: GameState`）。
+
+かつて `main.gd` がこれに当たり、**UI ハンドラを実行する検査が一切書けなかった**。
+セーブ関連のバグを1件、そのせいで検査できずレビューでしか見つけられていない。
+
+autoload は実行時に引き、検査が差し込める入口を用意する:
+
+```gdscript
+## 型注釈のための preload。パスからの読み込みなので autoload レジストリを
+## 引かず、--script でも解決できる（識別子との違いはここ）。
+const GameStateScript = preload("res://scripts/autoload/game_state.gd")
+
+func _resolve_state() -> void:
+	if _state != null:
+		return
+	_state = get_node_or_null("/root/GameState") as GameStateScript
+
+
+## 検査から差し込む入口。本編では呼ばれない。
+func bind_state(state: GameStateScript) -> void:
+```
+
+`scenario_m19.gd` がこの形で `Main.tscn` を立て、実物のハンドラを走らせている。
 
 ## Godot ファイルの扱い
 
@@ -281,7 +303,7 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 構造の説明は [architecture.md](docs/architecture.md) にある。
 CLAUDE.md は作業時の規約、architecture.md は構造の説明という分担。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m18.gd` の18本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m19.gd` の19本。
 新しい機能を足したら対応するシナリオも足し、`scenario_all.gd` の
 `SCENARIO_COUNT` を更新すること（忘れてもランナーが本数を照合して止める）。
 
@@ -333,10 +355,18 @@ CLAUDE.md は作業時の規約、architecture.md は構造の説明という分
 音を足すときは `Kind` に追加し、`_build()` で周波数・長さ・ノイズ量を指定、
 `VOLUMES` に音量を書く。頻度の高い音ほど小さくすること。
 
-**`_ready()` に初期化を置かない。** `--script` のハーネスでは走らないことが
-あり、未初期化のまま検査を通してしまう。`_init()` と `_ready()` の両方から
-呼べる `_configure()` のような形にする（[fx_layer.gd](scripts/ui/fx_layer.gd)
-が例）。同じ理由で `is_inside_tree()` も判定に使わない — 親の有無を見る。
+**`_ready()` に初期化を置かない。** `--script` のハーネスでは
+**`root.add_child()` しても走らない**（実測: `is_node_ready()` が false のまま）。
+`@onready` も代入されないので、そこで結線していると**まるごと失敗する**。
+`_init()` と `_ready()` の両方から呼べる `_configure()` のような形にすること
+（[fx_layer.gd](scripts/ui/fx_layer.gd) と
+[main.gd](scenes/main/main.gd) が例）。二度呼ばれても害が無いよう、
+接続は `is_connected` でガードする。
+同じ理由で `is_inside_tree()` も判定に使わない — 親の有無を見る。
+
+**ツリー外では `get_tree()` が null。** `await get_tree().process_frame` は
+そのまま書くと落ちる。待たずに戻る分岐を用意すること
+（`main.gd` の `_append_log()` が例。そもそもフレームが進まない）。
 
 **`.tscn` を手書きしたら、必ず GUI で1度見ること。**
 ヘッドレスの検査はノードを引けるかしか見ておらず、**描画の破損を検出できない**。

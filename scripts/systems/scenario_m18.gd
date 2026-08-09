@@ -542,11 +542,9 @@ func _test_save_lifetime() -> void:
 
 ## 開始画面を閉じたときの2つの経路。
 ##
-## main.gd は autoload の GameState を参照するため --script では
-## コンパイルできない（Identifier not found: GameState）。そのため
-## `_on_briefing_closed()` の**判断の順序**をここで再現して検査する。
-## 実物のハンドラを通していないので、main.gd 側の分岐を変えたら
-## こちらも合わせること。
+## ここで見るのは **save_manager.gd の契約**（消す／書くの順序が
+## セーブの寿命に与える影響）。main.gd のハンドラそのものは
+## scenario_m19.gd が実物を通して検査している。
 ##
 ## 守りたいのは「読み返しただけでセーブが変わらない」こと。
 ## 以前は読み返しでも delete_save() + save_game() が走り、進行中の記録を
@@ -596,24 +594,5 @@ func _test_briefing_close_paths() -> void:
 	_check(untouched != null, "保存を試みなければセーブはそのまま残る",
 		SaveManager.last_error())
 
-
-	# 上の検査は判断を写しただけなので、main.gd 側が変わっても気づけない。
-	# 実物の分岐が保たれているかをソースで確かめる（本来は実行して見たいが、
-	# autoload を要するため --script では動かせない）。
-	var source: String = ""
-	var file: FileAccess = FileAccess.open("res://scenes/main/main.gd", FileAccess.READ)
-	if file != null:
-		source = file.get_as_text()
-		file.close()
-	_check(source != "", "main.gd を読める", "読めない")
-	_check(source.contains("if not _briefing_starts_play:"),
-		"読み返しでは早期に戻る分岐がある", "分岐が見当たらない")
-	_check(not source.contains("SaveManager.delete_save()"),
-		"開始画面の経路で delete_save() を呼んでいない",
-		"delete_save() が残っている")
-	_check(source.contains("_show_briefing.bind(false)"),
-		"目標ボタンは読み返しとして繋がれている", "bind(false) が無い")
-	_check(source.contains("_show_briefing(true)"),
-		"新規開始の入口は starts_play=true で開く", "true で開いていない")
 
 	SaveManager.delete_save(TEST_PATH)

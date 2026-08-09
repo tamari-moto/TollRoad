@@ -21,6 +21,13 @@ signal session_started(session: GameSession)
 
 var session: GameSession
 
+## セーブの保存先。既定は SaveManager.SAVE_PATH。
+##
+## **検査だけが差し替える。** シナリオがこの autoload をそのまま駆動しても
+## プレイヤーの実セーブを壊さないようにするため。代役（fake）を作らずに
+## 済むので、実装とのずれが生まれない。
+var _save_path: String = SaveManager.SAVE_PATH
+
 
 func _ready() -> void:
 	# 起動時のセッションはセーブを消さない。開始画面で「続きから」を
@@ -36,13 +43,13 @@ func _ready() -> void:
 func start_new_game(rng_seed: int = 0) -> void:
 	if rng_seed == 0:
 		rng_seed = randi()
-	SaveManager.delete_save()
+	SaveManager.delete_save(_save_path)
 	_use_session(GameSession.new(rng_seed))
 
 
 ## セーブから再開する。読めなければ false（呼び出し側が新規開始を選ぶ）。
 func continue_game() -> bool:
-	var loaded: GameSession = SaveManager.load_game()
+	var loaded: GameSession = SaveManager.load_game(_save_path)
 	if loaded == null:
 		return false
 	_use_session(loaded)
@@ -54,12 +61,26 @@ func continue_game() -> bool:
 func save_game() -> bool:
 	if session == null or session.is_over():
 		return false
-	return SaveManager.save_game(session)
+	return SaveManager.save_game(session, _save_path)
 
 
 ## 続きから始められるセーブがあるか。開始画面のボタンの出し分けに使う。
 func has_save() -> bool:
-	return SaveManager.has_save()
+	return SaveManager.has_save(_save_path)
+
+
+## セーブの保存先を差し替える。**検査から呼ぶための入口。**
+## 本編では呼ばれない（既定の SaveManager.SAVE_PATH をそのまま使う）。
+##
+## start_new_game() より**前**に呼ぶこと。あちらは delete_save() を通るため、
+## 差し替えが後だとプレイヤーの実セーブを消してしまう。
+func use_save_path(path: String) -> void:
+	_save_path = path
+
+
+## 現在の保存先。検査が後始末に使う。
+func save_path() -> String:
+	return _save_path
 
 
 ## セッションを差し替え、日送りのたびに自動保存するよう繋ぐ。
@@ -78,7 +99,7 @@ func _use_session(new_session: GameSession) -> void:
 ## 残り、結果を見た後に「続きから」で最終日をやり直せてしまう。
 func _on_day_advanced(_day: int) -> void:
 	if session != null and session.is_over():
-		SaveManager.delete_save()
+		SaveManager.delete_save(_save_path)
 		return
 	save_game()
 

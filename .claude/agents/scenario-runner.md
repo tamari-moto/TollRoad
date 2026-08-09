@@ -54,8 +54,13 @@ GODOT_GUI=$(find /c/Users/*/Downloads /c/Users/*/scoop/apps "/c/Program Files" \
   | grep -vi "_console" | sort -V | tail -1)
 ```
 
-`--check-only --script` は**使わない**。autoload を初期化しないため
-`Identifier not found: GameState` という偽のエラーを出す。
+`--check-only --script` は**使わない**。autoload を初期化しないため、
+autoload を識別子で参照するスクリプトがあると偽のエラーを出す。
+検証はシナリオの実行で行うこと。
+
+（`main.gd` はこれに当たっていたが、autoload を実行時に引く形へ直したので
+現在は `--script` からロードできる。`scenario_m19.gd` が実物のハンドラを
+走らせている。）
 
 ## 手順
 

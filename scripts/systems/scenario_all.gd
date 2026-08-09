@@ -28,12 +28,15 @@ const SCENARIO_DIR: String = "res://scripts/systems"
 
 ## 実行するシナリオの本数。新しいシナリオを足したらここも更新する。
 ## 更新を忘れても本数の照合が気づいて失敗させる。
-const SCENARIO_COUNT: int = 18
+const SCENARIO_COUNT: int = 19
 
 ## await を含むシナリオの番号。別プロセスで走らせる（上記の理由）。
 ## シナリオに await を足したらここへ番号を加えること。
 ## 追加を忘れても _verify_await_list() が検出する。
-const AWAIT_SCENARIOS: Array[int] = [13, 14, 16, 17]
+## 19 は自身に await を書かないが、main.gd の _append_log() が await を含み
+## _bind_session() から必ず呼ばれる。_verify_await_list() はシナリオ自身の
+## ソースしか見ないため、この事情は検出できない。外さないこと。
+const AWAIT_SCENARIOS: Array[int] = [13, 14, 16, 17, 19]
 
 var _results: Array[Dictionary] = []
 
