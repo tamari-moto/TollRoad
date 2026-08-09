@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_file_io()
 	_test_version_mismatch()
 	_test_corrupt_file()
+	_test_briefing_continue()
 	_finish()
 
 
@@ -450,3 +451,37 @@ func _write_text(text: String) -> void:
 		return
 	file.store_string(text)
 	file.close()
+
+
+## 開始画面の「続きから」。セーブの有無で出し分ける。
+func _test_briefing_continue() -> void:
+	print("--- 開始画面の「続きから」 ---")
+	var dialog: Node = _spawn("res://scenes/ui/BriefingDialog.tscn")
+	if dialog == null:
+		return
+
+	# セーブが無ければ出さない。
+	dialog.show_briefing(false)
+	_check(not dialog.is_continue_available(), "セーブが無ければ出さない", "出ている")
+
+	# あれば出す。
+	dialog.show_briefing(true)
+	_check(dialog.is_continue_available(), "セーブがあれば出す", "出ない")
+
+	# 押すと continue_requested が飛び、画面が閉じる。
+	var fired: Array[bool] = []
+	dialog.continue_requested.connect(func() -> void: fired.append(true))
+	var button: Button = dialog.find_child("ContinueButton", true, false)
+	_check(button != null, "ボタンのノードがある", "ない")
+	if button != null:
+		button.pressed.emit()
+		_check(fired.size() == 1, "押すと continue_requested が飛ぶ", str(fired.size()))
+		_check(not dialog.visible, "押すと閉じる", "開いたまま")
+
+	# 開始ボタンは continue_requested を飛ばさない（別の入口）。
+	var start: Button = dialog.find_child("StartButton", true, false)
+	if start != null:
+		start.pressed.emit()
+		_check(fired.size() == 1, "開始ボタンでは飛ばない", str(fired.size()))
+
+	_despawn(dialog)
