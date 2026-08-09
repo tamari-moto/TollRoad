@@ -10,6 +10,13 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const SaveManager = preload("res://scripts/systems/save_manager.gd")
 
+## セッションが差し替わった。
+##
+## **main.gd はこれを購読していない。意図的にそうしている。**
+## 購読すると `_use_session()` から emit された時点で `_bind_session()` が
+## 走り、`_on_continue_requested()` が古いセッションを切る前に新しい接続が
+## 張られてしまう。main.gd は `continue_game()` の戻り値で成否を見て、
+## 自分のタイミングで配り直す。
 signal session_started(session: GameSession)
 
 var session: GameSession

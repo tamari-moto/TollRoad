@@ -36,6 +36,9 @@ const SIDE_PANEL_WIDTH: float = 480.0
 
 var _session: GameSession
 
+## 今開いている開始画面が新規開始の入口か。閉じたときの扱いを分ける。
+var _briefing_starts_play: bool = false
+
 ## bind と refresh を持つ画面パネル。日送り時にまとめて更新する。
 var _panels: Array[Node] = []
 
@@ -54,7 +57,8 @@ func _ready() -> void:
 
 	_rest_button.pressed.connect(_on_rest_pressed)
 	_result_button.pressed.connect(_show_result)
-	_briefing_button.pressed.connect(_show_briefing)
+	# 目標の読み返し。新規開始ではないので、閉じてもセーブに触らない。
+	_briefing_button.pressed.connect(_show_briefing.bind(false))
 	_result_dialog.restart_requested.connect(_on_restart_requested)
 	_briefing_dialog.continue_requested.connect(_on_continue_requested)
 	_briefing_dialog.closed.connect(_on_briefing_closed)
@@ -89,8 +93,12 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 		panel.bind(_session)
 	_result_dialog.bind(_session)
 
-	_session.logged.connect(_append_log)
-	_session.day_advanced.connect(_on_day_advanced)
+	# 二重接続を防ぐ。Godot は重複を拒否するが、そのたびに赤いエラーを出す。
+	# 同ファイルの他の接続はどれもガード付きで、ここだけが例外だった。
+	if not _session.logged.is_connected(_append_log):
+		_session.logged.connect(_append_log)
+	if not _session.day_advanced.is_connected(_on_day_advanced):
+		_session.day_advanced.connect(_on_day_advanced)
 
 	_clear_log()
 	# 過去ログの復元では音を鳴らさない（全件が一斉に鳴ってしまう）。
@@ -102,22 +110,33 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 	_refresh_status()
 
 	# 1日目に何を目指すのかを伝える。再プレイでも同様に出す。
+	# これは新規開始の入口なので、閉じた時点でそのセッションを保存する。
 	if with_briefing:
-		_show_briefing()
+		_show_briefing(true)
 
 
 ## 開始画面を出す。続きから始められるセーブがあれば、その選択肢も出す。
-func _show_briefing() -> void:
+##
+## starts_play は「これが新規開始の入口か」。起動直後の1回だけ true で、
+## HUD の「目標」ボタンから読み返すときは false。閉じたときにセーブへ
+## 触ってよいかを、画面ではなく呼び出し側が決める（開始画面は保存の
+## 仕組みを知らないままにしておく）。
+func _show_briefing(starts_play: bool = false) -> void:
+	_briefing_starts_play = starts_play
 	_briefing_dialog.show_briefing(GameState.has_save())
 
 
-## 開始画面を閉じた＝このセッションで始めると決まった。
+## 開始画面を閉じた。新規開始の入口だったときだけ、そのセッションを保存する。
 ##
-## 前のプレイのセーブはここで**捨てる**。save_game() で上書きすると、
-## 起動直後のセッションは1日目なので、進行中のセーブが1日目に化けて
-## 消えたのと同じことになる（実際にそうなっていた）。
+## **読み返しでは何もしない。** 「目標」ボタンから開き直して閉じただけで
+## セーブを作り直すと、進行中の記録を壊す道が増えるため。
+##
+## delete_save() は呼ばない。save_game() は同じパスへ上書きするので古い
+## 記録は残らず、消す工程が無ければ「消したが書けなかった」窓も生まれない。
 func _on_briefing_closed() -> void:
-	SaveManager.delete_save()
+	if not _briefing_starts_play:
+		return
+	_briefing_starts_play = false
 	GameState.save_game()
 
 
