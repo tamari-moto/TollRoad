@@ -15,6 +15,7 @@ const SaveManager = preload("res://scripts/systems/save_manager.gd")
 ## preload はパスからの読み込みで autoload レジストリを引かないため、
 ## 識別子と違って --script でも解決できる（型注釈のために使う）。
 const GameStateScript = preload("res://scripts/autoload/game_state.gd")
+const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
@@ -27,20 +28,22 @@ const LOG_DISPLAY_LIMIT: int = 200
 ## 全タブに影響する（Main.tscn の Tabs.custom_minimum_size.x も合わせて拡げてある）。
 const SIDE_PANEL_WIDTH: float = 480.0
 
-@onready var _hud: PanelContainer = %HUD
-@onready var _tabs: TabContainer = %Tabs
-@onready var _side_panel: PanelContainer = %SidePanel
-@onready var _tab_strip_buttons: Array[Button] = [
-	%MarketTabButton, %CargoTabButton, %WorkshopTabButton, %MemoTabButton, %IslandTabButton,
-]
-@onready var _log_scroll: ScrollContainer = %LogScroll
-@onready var _log_list: VBoxContainer = %LogList
-@onready var _rest_button: Button = %RestButton
-@onready var _briefing_button: Button = %BriefingButton
-@onready var _result_button: Button = %ResultButton
-@onready var _status_label: Label = %StatusLabel
-@onready var _result_dialog: Window = %ResultDialog
-@onready var _briefing_dialog: Window = %BriefingDialog
+## ノードは @onready ではなく _resolve_nodes() で引く。
+## @onready はツリー投入の次フレームにエンジンが代入するため、--script の
+## ハーネスから add_child() した直後の _ready() では**まだ null**になり、
+## 接続がまるごと失敗する（実測）。hud.gd と同じ形に揃えてある。
+var _hud: PanelContainer
+var _tabs: TabContainer
+var _side_panel: PanelContainer
+var _tab_strip_buttons: Array[Button] = []
+var _log_scroll: ScrollContainer
+var _log_list: VBoxContainer
+var _rest_button: Button
+var _briefing_button: Button
+var _result_button: Button
+var _status_label: Label
+var _result_dialog: Window
+var _briefing_dialog: Window
 
 var _session: GameSession
 
@@ -65,15 +68,32 @@ var _side_panel_tween: Tween
 
 
 func _ready() -> void:
-	_panels = [%大陸図, %MarketPanel, %CargoPanel, %製作所, %相場メモ, %島と装備]
+	_configure()
+	_bind_session(_state_session())
 
-	_rest_button.pressed.connect(_on_rest_pressed)
-	_result_button.pressed.connect(_show_result)
+
+## 画面の結線とスタイル適用。**_ready() と bind_state() の両方から呼べる。**
+##
+## --script のハーネスでは add_child() しても _ready() が走らない
+## （実測: is_node_ready() は false のまま）。初期化を _ready() に閉じ込めると
+## 検査からは未結線のまま触ることになるため、こちらへ切り出してある
+## （fx_layer.gd の _configure() と同じ形）。二度呼ばれても害が無いよう、
+## 接続はすべて is_connected でガードする。
+func _configure() -> void:
+	_resolve_nodes()
+	if _rest_button == null:
+		return
+
+	_connect_once(_rest_button.pressed, _on_rest_pressed)
+	_connect_once(_result_button.pressed, _show_result)
+	_connect_once(_result_dialog.restart_requested, _on_restart_requested)
+	_connect_once(_briefing_dialog.continue_requested, _on_continue_requested)
+	_connect_once(_briefing_dialog.closed, _on_briefing_closed)
+
 	# 目標の読み返し。新規開始ではないので、閉じてもセーブに触らない。
-	_briefing_button.pressed.connect(_show_briefing.bind(false))
-	_result_dialog.restart_requested.connect(_on_restart_requested)
-	_briefing_dialog.continue_requested.connect(_on_continue_requested)
-	_briefing_dialog.closed.connect(_on_briefing_closed)
+	var reread: Callable = _show_briefing.bind(false)
+	if not _briefing_button.pressed.is_connected(reread):
+		_briefing_button.pressed.connect(reread)
 	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
@@ -84,11 +104,48 @@ func _ready() -> void:
 	_side_panel_closed_offset = _side_panel.offset_left
 	for index: int in _tab_strip_buttons.size():
 		var button: Button = _tab_strip_buttons[index]
-		button.pressed.connect(_on_tab_strip_pressed.bind(index))
+		var handler: Callable = _on_tab_strip_pressed.bind(index)
+		if not button.pressed.is_connected(handler):
+			button.pressed.connect(handler)
 		button.tooltip_text = "%s（%d キー）" % [button.text, index + 1]
 	_refresh_tab_strip_highlight()
 
-	_bind_session(_state_session())
+
+func _connect_once(sig: Signal, handler: Callable) -> void:
+	if not sig.is_connected(handler):
+		sig.connect(handler)
+
+
+## 画面のノードを名前で引く。@onready を使わない理由は宣言のところに書いた。
+## %記法はツリー外で引けないことがあるため UiUtil.find_node() を通す。
+func _resolve_nodes() -> void:
+	if is_instance_valid(_hud):
+		return
+	_hud = UiUtil.find_node(self, "HUD")
+	_tabs = UiUtil.find_node(self, "Tabs")
+	_side_panel = UiUtil.find_node(self, "SidePanel")
+	_log_scroll = UiUtil.find_node(self, "LogScroll")
+	_log_list = UiUtil.find_node(self, "LogList")
+	_rest_button = UiUtil.find_node(self, "RestButton")
+	_briefing_button = UiUtil.find_node(self, "BriefingButton")
+	_result_button = UiUtil.find_node(self, "ResultButton")
+	_status_label = UiUtil.find_node(self, "StatusLabel")
+	_result_dialog = UiUtil.find_node(self, "ResultDialog")
+	_briefing_dialog = UiUtil.find_node(self, "BriefingDialog")
+
+	_tab_strip_buttons.clear()
+	for node_name: String in ["MarketTabButton", "CargoTabButton",
+			"WorkshopTabButton", "MemoTabButton", "IslandTabButton"]:
+		var button: Button = UiUtil.find_node(self, node_name)
+		if button != null:
+			_tab_strip_buttons.append(button)
+
+	_panels = []
+	for node_name: String in ["大陸図", "MarketPanel", "CargoPanel",
+			"製作所", "相場メモ", "島と装備"]:
+		var panel: Node = UiUtil.find_node(self, node_name)
+		if panel != null:
+			_panels.append(panel)
 
 
 ## セッションの供給元を確定する。既に持っていれば何もしない。
@@ -108,7 +165,12 @@ func _resolve_state() -> void:
 ## --script のハーネスでは autoload が初期化されないため /root/GameState を
 ## 引けない。実物の game_state.gd を .new() してここへ渡せば、UI ハンドラを
 ## 実物のまま走らせられる。本編では呼ばれない。
+## 検査は add_child() しても _ready() が走らない（実測: is_node_ready() は
+## false のまま）。ノードの解決をここでも通しておかないと、_hud などが
+## null のまま配布に入って落ちる。_ready() と両方から呼べる形にしてある
+## （CLAUDE.md の「_ready() に初期化を置かない」と同じ考え方）。
 func bind_state(state: GameStateScript, with_session: bool = true) -> void:
+	_configure()
 	_state = state
 	if with_session and _state != null and _state.session != null:
 		_bind_session(_state.session)
@@ -226,7 +288,7 @@ func _on_continue_requested() -> void:
 ## 画面全体の下地を敷き、各パネルに共通の地色を与える。
 ## パネルごとに書かず、ここでまとめて適用する。
 func _apply_backdrop() -> void:
-	var root_control: Control = %HUD.get_parent()
+	var root_control: Control = _hud.get_parent() if is_instance_valid(_hud) else null
 	if root_control == null:
 		return
 
@@ -241,13 +303,13 @@ func _apply_backdrop() -> void:
 
 	# 大陸図は画面全体の背景として敷くため、他パネルと同じ不透明な地色は
 	# 与えない（3D世界がそのまま背景として見えるようにする）。
-	var map_panel: Control = %大陸図
+	var map_panel: Control = UiUtil.find_node(self, "大陸図")
 	map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
 
 	UiTheme.apply_panel_style(_hud)
-	UiTheme.apply_panel_style(%TabStrip as Control)
+	UiTheme.apply_panel_style(UiUtil.find_node(self, "TabStrip") as Control)
 	UiTheme.apply_panel_style(_side_panel)
-	UiTheme.apply_panel_style(%LogActions as Control)
+	UiTheme.apply_panel_style(UiUtil.find_node(self, "LogActions") as Control)
 	for panel: Node in _panels:
 		if panel == map_panel:
 			continue
@@ -308,7 +370,7 @@ func is_side_panel_open() -> bool:
 ## 市場の売買成立を効果音に繋ぐ。市場と積荷は別タブで同時には映らないため、
 ## アイコンを飛ばす演出はせず、即座に反映して音だけ鳴らす。
 func _setup_trade_sfx() -> void:
-	var market: Node = %MarketPanel
+	var market: Node = UiUtil.find_node(self, "MarketPanel")
 	if market.has_signal("traded") and not market.traded.is_connected(_on_traded):
 		market.traded.connect(_on_traded)
 
@@ -432,6 +494,10 @@ func _append_log(message: String, with_sound: bool = true) -> void:
 		oldest.queue_free()
 
 	# 追加直後はまだレイアウトが確定していないので、1フレーム待ってから最下部へ。
+	# ツリー外（--script のハーネス）では get_tree() が null で、そもそも
+	# フレームが進まない。待たずに戻る（スクロール位置は本編でしか意味がない）。
+	if get_tree() == null:
+		return
 	await get_tree().process_frame
 	if is_instance_valid(_log_scroll):
 		_log_scroll.scroll_vertical = int(_log_scroll.get_v_scroll_bar().max_value)
