@@ -73,13 +73,13 @@ func _test_market_panel() -> void:
 	_check(price_label.text == UiUtil.format_number(actual_price),
 		"価格が相場と一致する", "%s vs %d" % [price_label.text, actual_price])
 
-	# 買うボタンで実際に購入できる。
+	# 買うボタンで実際に購入できる。個数指定は無く、常に1個。
 	var buy_button: Button = grid.get_child(6 + 4) as Button
 	_check(not buy_button.disabled, "買うボタンが押せる", "無効")
 	var silver_before: int = session.silver
 	buy_button.pressed.emit()
 	_check(session.silver < silver_before, "買うボタンで購入される", "変化なし")
-	_check(session.cargo_count(first_item) == 1, "数量1で1個買える", str(session.cargo_count(first_item)))
+	_check(session.cargo_count(first_item) == 1, "1回押すと1個買える", str(session.cargo_count(first_item)))
 
 	# 所持数の表示が追従する。
 	var held_label: Label = grid.get_child(6 + 3) as Label
@@ -101,7 +101,7 @@ func _test_market_panel() -> void:
 
 
 func _test_quantity_selection() -> void:
-	print("--- 数量選択 ---")
+	print("--- クリック連打で数量を調整する ---")
 	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
 	if panel == null:
 		return
@@ -111,27 +111,26 @@ func _test_quantity_selection() -> void:
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var first_item: String = GameData.ITEMS.keys()[0]
 	var buy_button: Button = grid.get_child(6 + 4) as Button
-
-	# 「5」を選ぶと5個買う。
-	var qty5: Button = UiUtil.find_node(panel, "Qty1")
-	qty5.pressed.emit()
-	buy_button.pressed.emit()
-	_check(session.cargo_count(first_item) == 5, "数量5で5個買える", str(session.cargo_count(first_item)))
-
-	# 「全部」を選ぶと売れるだけ売る。
-	var qty_all: Button = UiUtil.find_node(panel, "Qty3")
-	qty_all.pressed.emit()
 	var sell_button: Button = grid.get_child(6 + 5) as Button
-	sell_button.pressed.emit()
-	_check(session.cargo_count(first_item) == 0, "全部で全て売れる", str(session.cargo_count(first_item)))
 
-	# 「半分」は購入可能数の半分。
-	var qty_half: Button = UiUtil.find_node(panel, "Qty2")
-	qty_half.pressed.emit()
-	var maximum: int = session.max_buyable(first_item)
-	buy_button.pressed.emit()
-	_check(session.cargo_count(first_item) == maxi(1, maximum / 2), "半分で約半量買える",
-		"%d / 上限 %d" % [session.cargo_count(first_item), maximum])
+	# 個数指定のUIは無い。買うボタンを5回連打すると5個買える。
+	for i in range(5):
+		buy_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 5, "買うボタンを5回押すと5個買える",
+		str(session.cargo_count(first_item)))
+
+	# 売るボタンも同様に、押した回数だけ売れる。
+	for i in range(3):
+		sell_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 2, "売るボタンを3回押すと3個売れる",
+		str(session.cargo_count(first_item)))
+
+	# 所持数を超えて売ろうとしても、無効になった時点で止まる（過剰売却しない）。
+	for i in range(10):
+		sell_button.pressed.emit()
+	_check(session.cargo_count(first_item) == 0, "押し続けても所持数以下で止まる",
+		str(session.cargo_count(first_item)))
+	_check(sell_button.disabled, "所持が無くなると売るボタンが無効になる", "押せてしまう")
 
 	_despawn(panel)
 
