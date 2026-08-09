@@ -18,7 +18,9 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 ## 品目や都市を足しただけなら上げない（欠損キーの補完で吸収できる）。
 const SAVE_VERSION: int = 1
 
-## これより古い版は読まない。移行を書いたらここを上げる。
+## これより古い版は読まない。
+## **移行を書いたときはここを上げない**（上げると古いセーブが読めなくなり、
+## せっかく書いた移行が死ぬ）。上げるのは移行を捨てるときだけ。
 const MIN_SUPPORTED_VERSION: int = 1
 
 const SAVE_PATH: String = "user://savegame.json"
@@ -101,7 +103,9 @@ static func has_save(path: String = SAVE_PATH) -> bool:
 static func delete_save(path: String = SAVE_PATH) -> bool:
 	if not FileAccess.file_exists(path):
 		return false
-	return DirAccess.remove_absolute(ProjectSettings.globalize_path(path)) == OK
+	# user:// をそのまま渡す。globalize_path() は書き出したビルドで
+	# user:// を解決しないことがあり、変換を挟む利点が無い。
+	return DirAccess.remove_absolute(path) == OK
 
 
 ## 直前の load_game() が失敗した理由。成功時は空文字。

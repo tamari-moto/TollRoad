@@ -112,20 +112,25 @@ func _show_briefing() -> void:
 
 
 ## 開始画面を閉じた＝このセッションで始めると決まった。
-## 前のプレイのセーブはここで捨てる（残すと後で「続きから」に出てしまう）。
-## 現在地から保存し直し、閉じた直後に落ちても今の状態から再開できるようにする。
+##
+## 前のプレイのセーブはここで**捨てる**。save_game() で上書きすると、
+## 起動直後のセッションは1日目なので、進行中のセーブが1日目に化けて
+## 消えたのと同じことになる（実際にそうなっていた）。
 func _on_briefing_closed() -> void:
+	SaveManager.delete_save()
 	GameState.save_game()
 
 
 ## 「続きから」。セーブを読み、各画面へ配り直す。
-## 読めなければ今のセッションのまま続ける（開始画面は閉じている）。
+##
+## 切断は読み込みが成功してからにする。先に切ると、失敗したときに
+## 日誌もパネル更新も止まったまま復帰できない。
 func _on_continue_requested() -> void:
-	_disconnect_session()
-	if GameState.continue_game():
-		_bind_session(GameState.session, false)
-	else:
+	if not GameState.continue_game():
 		_append_log("セーブデータを読み込めなかった。%s" % SaveManager.last_error())
+		return
+	_disconnect_session()
+	_bind_session(GameState.session, false)
 
 
 ## 画面全体の下地を敷き、各パネルに共通の地色を与える。

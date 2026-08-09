@@ -66,7 +66,13 @@ func _use_session(new_session: GameSession) -> void:
 
 ## 自動保存は日が進んだ時だけ。売買のたびに書くと頻度が高すぎる一方、
 ## 日送りは1日1回で、失っても直前の取引だけで済む。
+##
+## 60日を終えたらセーブを**消す**。保存しないだけだと最終日の1つ前の記録が
+## 残り、結果を見た後に「続きから」で最終日をやり直せてしまう。
 func _on_day_advanced(_day: int) -> void:
+	if session != null and session.is_over():
+		SaveManager.delete_save()
+		return
 	save_game()
 
 

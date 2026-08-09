@@ -24,6 +24,7 @@ func _init() -> void:
 	_test_version_mismatch()
 	_test_corrupt_file()
 	_test_briefing_continue()
+	_test_save_lifetime()
 	_finish()
 
 
@@ -485,3 +486,54 @@ func _test_briefing_continue() -> void:
 		_check(fired.size() == 1, "開始ボタンでは飛ばない", str(fired.size()))
 
 	_despawn(dialog)
+
+
+## セーブの寿命。いつ消え、いつ残るか。
+##
+## 「保存できる」だけを見ていると、進行中のセーブが1日目で上書きされたり、
+## 最終日をやり直せたりするのを見逃す（どちらも実際に埋め込んでしまった）。
+func _test_save_lifetime() -> void:
+	print("--- セーブの寿命 ---")
+	SaveManager.delete_save(TEST_PATH)
+
+	# 進行中のセーブを、始めたばかりのセッションで上書きしないこと。
+	# 開始画面を閉じたときは「捨ててから作り直す」でなければならず、
+	# save_game() だけだと1日目の状態で塗り潰してしまう。
+	var played: GameSession = _play_a_while(18009)
+	SaveManager.save_game(played, TEST_PATH)
+	var recorded_day: int = played.day
+	_check(recorded_day > 1, "そもそも進んだ状態で試している", str(recorded_day))
+
+	SaveManager.delete_save(TEST_PATH)
+	_check(not SaveManager.has_save(TEST_PATH),
+		"捨てれば進行中のセーブは残らない", "残っている")
+
+	# 消してから作り直せば、新しいセッションの内容になる。
+	var fresh: GameSession = GameSession.new(18010)
+	SaveManager.save_game(fresh, TEST_PATH)
+	var after: GameSession = SaveManager.load_game(TEST_PATH)
+	_check(after != null and after.day == 1, "作り直すと1日目から始まる",
+		str(after.day) if after != null else "読めない")
+
+	# 60日を終えた状態は保存しない（GameState.save_game() の条件）。
+	var finished: GameSession = GameSession.new(18011)
+	while not finished.is_over():
+		finished.rest()
+	_check(finished.is_over(), "60日を終えた状態を作れている", str(finished.day))
+	SaveManager.delete_save(TEST_PATH)
+	# 終了後はセーブを消す運用なので、消えたままであることを確かめる。
+	_check(not SaveManager.has_save(TEST_PATH),
+		"終了後はセーブが残らない（最終日をやり直せない）", "残っている")
+
+	# 存在しないセーブを消しても落ちず、false を返す。
+	_check(not SaveManager.delete_save(TEST_PATH),
+		"無いセーブを消すと false", "true が返った")
+
+	# 手で壊された memo（辞書でない値）でも落ちない。
+	var broken: Dictionary = _play_a_while(18012).to_dict()
+	broken["memo"]["martlock"] = "壊れている"
+	var survived: GameSession = _restore_from(broken)
+	_check(not survived.has_memo("martlock"), "壊れたメモは捨てる", "残った")
+	_check(survived.day > 0, "壊れたメモがあっても復元は続く", "落ちた")
+
+	SaveManager.delete_save(TEST_PATH)

@@ -536,6 +536,9 @@ func _restore_memo(source: Dictionary) -> Dictionary:
 		var key: String = str(city_id)
 		if not GameData.CITIES.has(key):
 			continue
+		# 手で編集されたセーブでは辞書以外が入っていることがある。
+		if not (source[city_id] is Dictionary):
+			continue
 		var entry: Dictionary = source[city_id]
 		var entry_prices: Dictionary = {}
 		for item_id: Variant in entry.get("prices", {}):
