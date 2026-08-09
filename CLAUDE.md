@@ -342,8 +342,9 @@ CLAUDE.md は作業時の規約、architecture.md は構造の説明という分
 カメラの向きを見るときは `transform` を使う。`look_at()` も使えないので
 `look_at_from_position()` を使うこと。
 
-2D 版の地図（`map_ground.gd` / `map_pin.gd` / `map_routes.gd`）は戻せるよう
-残してあるが、現在は未使用。
+3D 化で不要になった 2D の描画層（`map_ground.gd` / `map_routes.gd`）は
+削除済み。戻すなら git 履歴から取る。
+`map_pin.gd` は 2D 由来だが**現役**（都市ノードの枠と軸を描いている）。
 
 **価格バーの目盛りは全品目で共通**（`UiTheme.PRICE_SCALE_MIN`〜`MAX` = 60〜145%）。
 品目ごとに変えると同じバー位置が別の意味になり、行をまたいだ比較ができなく
