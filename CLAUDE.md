@@ -297,13 +297,13 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 
 **M8 まで完了 = ロードマップ完走**（[roadmap.md](docs/roadmap.md) 参照）。
 1日目から60日目のランク画面まで、マウスだけで通しで遊べる。市場・積荷・大陸図・
-製作所・相場メモ・島と装備・航海日誌・休息・リザルト。解像度は 1280x720。
+製作所・相場メモ・島と装備・探索・航海日誌・休息・リザルト。解像度は 1280x720。
 セーブ/ロードは実装済み（日送りで自動保存、開始画面から「続きから」）。
 
 構造の説明は [architecture.md](docs/architecture.md) にある。
 CLAUDE.md は作業時の規約、architecture.md は構造の説明という分担。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m19.gd` の19本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m20.gd` の20本。
 新しい機能を足したら対応するシナリオも足し、`scenario_all.gd` の
 `SCENARIO_COUNT` を更新すること（忘れてもランナーが本数を照合して止める）。
 

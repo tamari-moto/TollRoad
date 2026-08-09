@@ -24,7 +24,7 @@ func _init() -> void:
 
 
 func _test_textures_exist() -> void:
-	print("--- 9品目のアイコン ---")
+	print("--- 全品目のアイコン ---")
 	for item_id: String in GameData.ITEMS:
 		var texture: Texture2D = UiIcons.item_texture(item_id)
 		_check(texture != null, "%s のアイコンがある" % item_id, "null")
@@ -186,6 +186,7 @@ func _test_signal_arity() -> void:
 		"res://scenes/ui/MemoPanel.tscn",
 		"res://scenes/ui/IslandPanel.tscn",
 		"res://scenes/ui/HUD.tscn",
+		"res://scenes/ui/ExplorationPanel.tscn",
 	]
 
 	for path: String in panels:

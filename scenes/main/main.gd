@@ -135,14 +135,15 @@ func _resolve_nodes() -> void:
 
 	_tab_strip_buttons.clear()
 	for node_name: String in ["MarketTabButton", "CargoTabButton",
-			"WorkshopTabButton", "MemoTabButton", "IslandTabButton"]:
+			"WorkshopTabButton", "MemoTabButton", "IslandTabButton",
+			"ExplorationTabButton"]:
 		var button: Button = UiUtil.find_node(self, node_name)
 		if button != null:
 			_tab_strip_buttons.append(button)
 
 	_panels = []
 	for node_name: String in ["大陸図", "MarketPanel", "CargoPanel",
-			"製作所", "相場メモ", "島と装備"]:
+			"製作所", "相場メモ", "島と装備", "探索"]:
 		var panel: Node = UiUtil.find_node(self, node_name)
 		if panel != null:
 			_panels.append(panel)
@@ -395,6 +396,8 @@ func _play(kind: Sfx.Kind) -> void:
 func _play_for_log(message: String) -> void:
 	if message.contains("襲撃"):
 		_play(Sfx.Kind.RAID)
+	elif message.contains("探索"):
+		_play(Sfx.Kind.EXPLORE)
 	elif message.contains("製作"):
 		_play(Sfx.Kind.CRAFT)
 	elif message.contains("拡張") or message.contains("購入した"):
@@ -482,7 +485,8 @@ func _append_log(message: String, with_sound: bool = true) -> void:
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	# 積荷の全損は最も重い事象なので、その行だけ色を変えて見落とさせない。
-	if message.contains("襲撃"):
+	# 探索失敗も戦闘装備を失う重い事象なので同様に扱う。
+	if message.contains("襲撃") or message.contains("探索失敗"):
 		label.add_theme_color_override("font_color", UiTheme.WARN)
 	_log_list.add_child(label)
 	if with_sound:

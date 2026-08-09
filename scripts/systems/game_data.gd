@@ -9,23 +9,26 @@ const INITIAL_SILVER: int = 30000
 const INITIAL_CITY: String = "martlock"
 
 # --- アイテム ---
-## 種別。装備は資源から製作される。
-enum ItemKind { RESOURCE, EQUIPMENT }
+## 種別。装備は資源から製作される。RARE は探索でのみ手に入り、製作や
+## 労働者の抽選（resource_ids()）の対象外。
+enum ItemKind { RESOURCE, EQUIPMENT, RARE }
 
 const RESOURCE_WEIGHT: int = 1
 const EQUIPMENT_WEIGHT: int = 3
 
 ## 全品目の基準価格と重量。material は装備のみ（資源3個で1個製作）。
 const ITEMS: Dictionary = {
-	"ore":     {"name": "鉱石",   "kind": ItemKind.RESOURCE,  "base_price": 210,  "weight": RESOURCE_WEIGHT},
-	"wood":    {"name": "木材",   "kind": ItemKind.RESOURCE,  "base_price": 205,  "weight": RESOURCE_WEIGHT},
-	"fiber":   {"name": "繊維",   "kind": ItemKind.RESOURCE,  "base_price": 200,  "weight": RESOURCE_WEIGHT},
-	"hide":    {"name": "皮",     "kind": ItemKind.RESOURCE,  "base_price": 215,  "weight": RESOURCE_WEIGHT},
-	"stone":   {"name": "石材",   "kind": ItemKind.RESOURCE,  "base_price": 160,  "weight": RESOURCE_WEIGHT},
-	"sword":   {"name": "剣",     "kind": ItemKind.EQUIPMENT, "base_price": 1500, "weight": EQUIPMENT_WEIGHT, "material": "ore"},
-	"bow":     {"name": "弓",     "kind": ItemKind.EQUIPMENT, "base_price": 1460, "weight": EQUIPMENT_WEIGHT, "material": "wood"},
-	"robe":    {"name": "ローブ", "kind": ItemKind.EQUIPMENT, "base_price": 1420, "weight": EQUIPMENT_WEIGHT, "material": "fiber"},
-	"armor":   {"name": "革鎧",   "kind": ItemKind.EQUIPMENT, "base_price": 1480, "weight": EQUIPMENT_WEIGHT, "material": "hide"},
+	"ore":           {"name": "鉱石",     "kind": ItemKind.RESOURCE,  "base_price": 210,  "weight": RESOURCE_WEIGHT},
+	"wood":          {"name": "木材",     "kind": ItemKind.RESOURCE,  "base_price": 205,  "weight": RESOURCE_WEIGHT},
+	"fiber":         {"name": "繊維",     "kind": ItemKind.RESOURCE,  "base_price": 200,  "weight": RESOURCE_WEIGHT},
+	"hide":          {"name": "皮",       "kind": ItemKind.RESOURCE,  "base_price": 215,  "weight": RESOURCE_WEIGHT},
+	"stone":         {"name": "石材",     "kind": ItemKind.RESOURCE,  "base_price": 160,  "weight": RESOURCE_WEIGHT},
+	"sword":         {"name": "剣",       "kind": ItemKind.EQUIPMENT, "base_price": 1500, "weight": EQUIPMENT_WEIGHT, "material": "ore"},
+	"bow":           {"name": "弓",       "kind": ItemKind.EQUIPMENT, "base_price": 1460, "weight": EQUIPMENT_WEIGHT, "material": "wood"},
+	"robe":          {"name": "ローブ",   "kind": ItemKind.EQUIPMENT, "base_price": 1420, "weight": EQUIPMENT_WEIGHT, "material": "fiber"},
+	"armor":         {"name": "革鎧",     "kind": ItemKind.EQUIPMENT, "base_price": 1480, "weight": EQUIPMENT_WEIGHT, "material": "hide"},
+	"sunstone":      {"name": "陽光石",   "kind": ItemKind.RARE,      "base_price": 900,  "weight": RESOURCE_WEIGHT},
+	"ancient_relic": {"name": "古代兵装", "kind": ItemKind.RARE,      "base_price": 4000, "weight": EQUIPMENT_WEIGHT},
 }
 
 ## 装備1個あたりの材料消費数。
@@ -34,13 +37,20 @@ const CRAFT_MATERIAL_COUNT: int = 3
 # --- 都市 ---
 ## ring は環状位置。カーレオンは中央（黒ゾーン内）なので ring = -1。
 ## specialty はその都市で安い資源、bonus はその都市で安い（かつ製作還元がある）装備。
+## explore_flavor は探索の演出文（討伐/遺跡探索のどちらの体裁かを都市ごとに変える）。
 const CITIES: Dictionary = {
-	"fort_sterling": {"name": "フォートスターリング", "ring": 0,  "specialty": "wood",  "bonus": "bow"},
-	"lymhurst":      {"name": "リムハースト",         "ring": 1,  "specialty": "fiber", "bonus": "robe"},
-	"bridgewatch":   {"name": "ブリッジウォッチ",     "ring": 2,  "specialty": "stone", "bonus": "armor"},
-	"martlock":      {"name": "マートロック",         "ring": 3,  "specialty": "ore",   "bonus": "sword"},
-	"thetford":      {"name": "セットフォード",       "ring": 4,  "specialty": "hide",  "bonus": "armor"},
-	"caerleon":      {"name": "カーレオン",           "ring": -1, "specialty": "",      "bonus": ""},
+	"fort_sterling": {"name": "フォートスターリング", "ring": 0,  "specialty": "wood",  "bonus": "bow",
+		"explore_flavor": "森に潜む狼の群れの討伐"},
+	"lymhurst":      {"name": "リムハースト",         "ring": 1,  "specialty": "fiber", "bonus": "robe",
+		"explore_flavor": "湿地に眠る遺跡の探索"},
+	"bridgewatch":   {"name": "ブリッジウォッチ",     "ring": 2,  "specialty": "stone", "bonus": "armor",
+		"explore_flavor": "採石場跡に巣食う魔物の討伐"},
+	"martlock":      {"name": "マートロック",         "ring": 3,  "specialty": "ore",   "bonus": "sword",
+		"explore_flavor": "山中の坑道遺跡の探索"},
+	"thetford":      {"name": "セットフォード",       "ring": 4,  "specialty": "hide",  "bonus": "armor",
+		"explore_flavor": "湿原に現れる怪物の討伐"},
+	"caerleon":      {"name": "カーレオン",           "ring": -1, "specialty": "",      "bonus": "",
+		"explore_flavor": "黒ゾーン最奥の遺跡の探索"},
 }
 
 const CAERLEON: String = "caerleon"
@@ -72,6 +82,33 @@ const RAID_CHANCE: float = 0.22
 # --- 製作 ---
 const CRAFT_FEE: int = 90
 const CRAFT_REFUND_RATE: float = 0.30
+
+# --- 探索 ---
+## 戦闘装備として兼用する既存の交易用装備。積荷にあるほど成功率が上がる。
+const EXPLORE_COMBAT_ITEMS: Array[String] = ["sword", "bow", "robe", "armor"]
+
+const EXPLORE_BASE_CHANCE: float = 0.35
+## 装備1個あたりのボーナス。同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
+## （種類を跨いで持つ方が伸びる設計）。
+const EXPLORE_EQUIP_BONUS_PER_UNIT: float = 0.03
+const EXPLORE_EQUIP_UNIT_CAP: int = 3
+const EXPLORE_EQUIP_BONUS_CAP: float = 0.30
+const EXPLORE_MAX_CHANCE: float = 0.85
+## カーレオンは黒ゾーンの並びで成功率が下がる代わりに報酬が大きい。
+const EXPLORE_CAERLEON_PENALTY: float = 0.15
+
+const EXPLORE_SILVER_MIN: int = 800
+const EXPLORE_SILVER_MAX: int = 2000
+const EXPLORE_CAERLEON_SILVER_MULT: float = 2.5
+
+const EXPLORE_GEM_MIN: int = 1
+const EXPLORE_GEM_MAX: int = 3
+const EXPLORE_RELIC_CHANCE: float = 0.15
+const EXPLORE_CAERLEON_RELIC_CHANCE: float = 0.35
+
+## 成功すると数日間、島の労働者の産出が増える。
+const EXPLORE_BOOST_DAYS: int = 5
+const EXPLORE_BOOST_MULT: int = 2
 
 # --- 島と労働者 ---
 const ISLAND_LEVELS: Array[Dictionary] = [

@@ -24,7 +24,7 @@ func _init() -> void:
 
 func _all_kinds() -> Array:
 	return [Sfx.Kind.BUY, Sfx.Kind.SELL, Sfx.Kind.CRAFT, Sfx.Kind.UPGRADE,
-		Sfx.Kind.DAY, Sfx.Kind.TRAVEL, Sfx.Kind.RAID]
+		Sfx.Kind.DAY, Sfx.Kind.TRAVEL, Sfx.Kind.RAID, Sfx.Kind.EXPLORE]
 
 
 func _test_streams_generated() -> void:

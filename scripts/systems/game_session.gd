@@ -25,6 +25,9 @@ var island_level: int = 0
 ## item_id -> 個数
 var cargo: Dictionary = {}
 
+## 探索成功のブーストが残っている日数。0なら効果なし。
+var _boost_days_left: int = 0
+
 ## 島倉庫。容量は無制限（Q3）。item_id -> 個数
 var warehouse: Dictionary = {}
 
@@ -265,6 +268,100 @@ func move_to(destination: String) -> bool:
 	return true
 
 
+# --- 探索（1日消費） ---
+
+## 積荷にある戦闘装備（剣・弓・ローブ・革鎧）による成功率の加算。
+## 同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
+## （種類を跨いで持つ方が伸びる設計）。
+func explore_equip_bonus() -> float:
+	var bonus: float = 0.0
+	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+		bonus += mini(cargo_count(item_id), GameData.EXPLORE_EQUIP_UNIT_CAP) * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
+	return minf(bonus, GameData.EXPLORE_EQUIP_BONUS_CAP)
+
+
+## 探索の成功率。カーレオンは黒ゾーンの並びで基本確率が下がる。
+func explore_chance() -> float:
+	var base: float = GameData.EXPLORE_BASE_CHANCE
+	if current_city == GameData.CAERLEON:
+		base -= GameData.EXPLORE_CAERLEON_PENALTY
+	return clampf(base + explore_equip_bonus(), 0.0, GameData.EXPLORE_MAX_CHANCE)
+
+
+## 探索する。成功すればシルバー・レア品・島倉庫のブーストを得る。
+## 失敗すると積荷の戦闘装備（剣・弓・ローブ・革鎧）を全て失う（資源は無傷）。
+## 黒ゾーン襲撃の「積荷全損」とは区別する。
+func explore() -> bool:
+	if is_over():
+		return false
+	var is_caerleon: bool = current_city == GameData.CAERLEON
+	if _rng.randf() < explore_chance():
+		_apply_explore_success(is_caerleon)
+	else:
+		_apply_explore_failure()
+	_advance_day()
+	return true
+
+
+func _apply_explore_success(is_caerleon: bool) -> void:
+	var silver_gain: int = _rng.randi_range(GameData.EXPLORE_SILVER_MIN, GameData.EXPLORE_SILVER_MAX)
+	if is_caerleon:
+		silver_gain = int(silver_gain * GameData.EXPLORE_CAERLEON_SILVER_MULT)
+	silver += silver_gain
+
+	var gem_count: int = _rng.randi_range(GameData.EXPLORE_GEM_MIN, GameData.EXPLORE_GEM_MAX)
+	var granted_gems: int = _grant_item("sunstone", gem_count)
+
+	var relic_chance: float = GameData.EXPLORE_CAERLEON_RELIC_CHANCE if is_caerleon else GameData.EXPLORE_RELIC_CHANCE
+	var granted_relic: bool = _rng.randf() < relic_chance and _grant_item("ancient_relic", 1) > 0
+
+	_boost_days_left = maxi(_boost_days_left, GameData.EXPLORE_BOOST_DAYS)
+
+	var reward_note: String = "%s を %d 個" % [GameData.ITEMS["sunstone"]["name"], granted_gems]
+	if granted_relic:
+		reward_note += "、%s を1個" % GameData.ITEMS["ancient_relic"]["name"]
+	# "探索成功"/"探索失敗" を必ず含める。main.gd はログ本文のキーワードで
+	# 音・配色を分岐しており（"探索" で SE、"探索失敗" で警戒色）、
+	# 都市ごとに異なる explore_flavor だけに頼ると一部の都市で拾えなくなる。
+	_log("%s で探索成功（%s）。シルバー %d と%s獲得。%d日間、島の労働者の産出が増える" % [
+		GameData.CITIES[current_city]["name"], GameData.CITIES[current_city]["explore_flavor"],
+		silver_gain, reward_note, GameData.EXPLORE_BOOST_DAYS])
+	silver_changed.emit(silver)
+	cargo_changed.emit()
+
+
+func _apply_explore_failure() -> void:
+	var lost: bool = false
+	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+		if cargo_count(item_id) > 0:
+			cargo.erase(item_id)
+			lost = true
+	var flavor: String = GameData.CITIES[current_city]["explore_flavor"]
+	if lost:
+		_log("%s で探索失敗（%s）。積荷の戦闘装備を失った。" % [GameData.CITIES[current_city]["name"], flavor])
+		cargo_changed.emit()
+	else:
+		_log("%s で探索失敗（%s）。" % [GameData.CITIES[current_city]["name"], flavor])
+
+
+## 積載の空きまで item_id を count 個だけ積む。積み切れない分はシルバーに換算する。
+## 探索の報酬は選べないため、購入/製作と違って積載超過を許さない
+## （free_capacity() が常に非負である前提を他の計算[max_withdrawable()等]が
+## 使っているため、崩さないように換金で受け止める）。戻り値は積めた個数。
+## シグナルは呼び出し側でまとめて発火するため、ここでは emit しない。
+func _grant_item(item_id: String, count: int) -> int:
+	if count <= 0:
+		return 0
+	var weight: int = GameData.ITEMS[item_id]["weight"]
+	var grantable: int = mini(count, free_capacity() / weight)
+	if grantable > 0:
+		cargo[item_id] = cargo_count(item_id) + grantable
+	var overflow: int = count - grantable
+	if overflow > 0:
+		silver += overflow * GameData.ITEMS[item_id]["base_price"]
+	return grantable
+
+
 # --- 島と労働者 ---
 
 func worker_count() -> int:
@@ -309,12 +406,16 @@ func upgrade_island() -> bool:
 
 
 ## 労働者が1日ぶん働く。1人につきランダムな資源を2個運ぶ（Q4: 5資源から均等）。
+## 探索成功のブーストが残っていれば産出量が倍になる。
 func _run_workers() -> void:
 	var workers: int = worker_count()
 	if workers <= 0:
 		return
 	var resources: Array[String] = GameData.resource_ids()
-	var delivered: int = workers * GameData.RESOURCES_PER_WORKER_PER_DAY
+	var per_worker: int = GameData.RESOURCES_PER_WORKER_PER_DAY
+	if _boost_days_left > 0:
+		per_worker *= GameData.EXPLORE_BOOST_MULT
+	var delivered: int = workers * per_worker
 	for i: int in delivered:
 		var pick: String = resources[_rng.randi_range(0, resources.size() - 1)]
 		warehouse[pick] = warehouse_count(pick) + 1
@@ -397,6 +498,8 @@ func _advance_day() -> void:
 	prices.reroll()
 	_record_memo()
 	_run_workers()
+	if _boost_days_left > 0:
+		_boost_days_left -= 1
 	day_advanced.emit(day)
 
 
@@ -463,6 +566,7 @@ func to_dict() -> Dictionary:
 		"log_entries": log_entries.duplicate(),
 		"prices": prices.prices.duplicate(true),
 		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
+		"boost_days_left": _boost_days_left,
 	}
 
 
@@ -489,6 +593,8 @@ func from_dict(data: Dictionary) -> void:
 		mount = str(data["mount"])
 	if data.has("island_level"):
 		island_level = int(data["island_level"])
+	if data.has("boost_days_left"):
+		_boost_days_left = int(data["boost_days_left"])
 
 	if data.has("cargo"):
 		cargo = _restore_counts(data["cargo"])

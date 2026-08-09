@@ -44,6 +44,8 @@ const ITEM_COLORS: Dictionary = {
 	"bow":   Color(0.8, 0.65, 0.35),
 	"robe":  Color(0.65, 0.45, 0.75),
 	"armor": Color(0.8, 0.55, 0.3),
+	"sunstone":      Color(1.0, 0.85, 0.35),
+	"ancient_relic": Color(0.6, 0.5, 0.85),
 }
 
 # --- ランク ---
