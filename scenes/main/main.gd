@@ -1,12 +1,20 @@
 extends Node2D
 ## メイン画面。各画面パネルを束ね、日誌とリザルトを扱う。
 ##
-## ゲームのルールは GameState.session（GameSession）にあり、ここは
-## 表示と入力の橋渡しのみを行う。
+## ゲームのルールは GameSession にあり、ここは表示と入力の橋渡しのみを行う。
+##
+## **autoload を識別子（`GameState`）として書かないこと。** 識別子は
+## コンパイル時に autoload レジストリを引くため、`--script` のハーネスから
+## この main.gd 自体がロードできなくなり、UI ハンドラを検査できなくなる。
+## セッションの供給元は `_resolve_state()` が実行時に引き、検査は
+## `bind_state()` で差し込む。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const SaveManager = preload("res://scripts/systems/save_manager.gd")
+## preload はパスからの読み込みで autoload レジストリを引かないため、
+## 識別子と違って --script でも解決できる（型注釈のために使う）。
+const GameStateScript = preload("res://scripts/autoload/game_state.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
@@ -35,6 +43,10 @@ const SIDE_PANEL_WIDTH: float = 480.0
 @onready var _briefing_dialog: Window = %BriefingDialog
 
 var _session: GameSession
+
+## セッションの供給元。本編では autoload の GameState、検査では
+## bind_state() で差し込まれた同じ型のインスタンス。
+var _state: GameStateScript
 
 ## 今開いている開始画面が新規開始の入口か。閉じたときの扱いを分ける。
 var _briefing_starts_play: bool = false
@@ -76,7 +88,61 @@ func _ready() -> void:
 		button.tooltip_text = "%s（%d キー）" % [button.text, index + 1]
 	_refresh_tab_strip_highlight()
 
-	_bind_session(GameState.session)
+	_bind_session(_state_session())
+
+
+## セッションの供給元を確定する。既に持っていれば何もしない。
+##
+## autoload は `get_node_or_null()` で引く。識別子として書くと
+## コンパイル時に autoload レジストリを引き、`--script` では
+## main.gd 自体がロードできなくなる。
+## autoload が無い環境（検査）では null のままで、bind_state() を待つ。
+func _resolve_state() -> void:
+	if _state != null:
+		return
+	_state = get_node_or_null("/root/GameState") as GameStateScript
+
+
+## セッションの供給元を差し込む。**検査から呼ぶための入口。**
+##
+## --script のハーネスでは autoload が初期化されないため /root/GameState を
+## 引けない。実物の game_state.gd を .new() してここへ渡せば、UI ハンドラを
+## 実物のまま走らせられる。本編では呼ばれない。
+func bind_state(state: GameStateScript, with_session: bool = true) -> void:
+	_state = state
+	if with_session and _state != null and _state.session != null:
+		_bind_session(_state.session)
+
+
+# --- 供給元への問い合わせ ---
+#
+# null の判断をここへ閉じる。各ハンドラに撒くと、抜けが1つでもあると
+# そこだけ落ちる（しかも検査を書きたいのはまさにその経路）。
+
+func _state_session() -> GameSession:
+	_resolve_state()
+	return _state.session if _state != null else null
+
+
+func _state_has_save() -> bool:
+	_resolve_state()
+	return _state.has_save() if _state != null else false
+
+
+func _state_save_game() -> bool:
+	_resolve_state()
+	return _state.save_game() if _state != null else false
+
+
+func _state_continue_game() -> bool:
+	_resolve_state()
+	return _state.continue_game() if _state != null else false
+
+
+func _state_start_new_game() -> void:
+	_resolve_state()
+	if _state != null:
+		_state.start_new_game()
 
 
 ## セッションを各画面に配る。再プレイ時にも呼ばれる。
@@ -84,6 +150,11 @@ func _ready() -> void:
 ## with_briefing を false にすると開始画面を出さない（「続きから」で
 ## 復帰した直後は、いま閉じた画面をもう一度開かない）。
 func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
+	# 供給元がまだ無い（autoload の無い検査環境で bind_state() 前）ときは
+	# 何もしない。ここで弾いておけば、以降のハンドラに null チェックが要らない。
+	# _ready() は無害に完走し、パネルの結線とスタイル適用までは済む。
+	if session == null:
+		return
 	_session = session
 	print("TollRoad start. Day: %d/%d, Silver: %d, City: %s" % [
 		_session.day, GameData.TOTAL_DAYS, _session.silver, _session.current_city])
@@ -123,7 +194,7 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 ## 仕組みを知らないままにしておく）。
 func _show_briefing(starts_play: bool = false) -> void:
 	_briefing_starts_play = starts_play
-	_briefing_dialog.show_briefing(GameState.has_save())
+	_briefing_dialog.show_briefing(_state_has_save())
 
 
 ## 開始画面を閉じた。新規開始の入口だったときだけ、そのセッションを保存する。
@@ -137,7 +208,7 @@ func _on_briefing_closed() -> void:
 	if not _briefing_starts_play:
 		return
 	_briefing_starts_play = false
-	GameState.save_game()
+	_state_save_game()
 
 
 ## 「続きから」。セーブを読み、各画面へ配り直す。
@@ -145,11 +216,11 @@ func _on_briefing_closed() -> void:
 ## 切断は読み込みが成功してからにする。先に切ると、失敗したときに
 ## 日誌もパネル更新も止まったまま復帰できない。
 func _on_continue_requested() -> void:
-	if not GameState.continue_game():
+	if not _state_continue_game():
 		_append_log("セーブデータを読み込めなかった。%s" % SaveManager.last_error())
 		return
 	_disconnect_session()
-	_bind_session(GameState.session, false)
+	_bind_session(_state_session(), false)
 
 
 ## 画面全体の下地を敷き、各パネルに共通の地色を与える。
@@ -324,8 +395,8 @@ func _show_result() -> void:
 
 func _on_restart_requested() -> void:
 	_disconnect_session()
-	GameState.start_new_game()
-	_bind_session(GameState.session)
+	_state_start_new_game()
+	_bind_session(_state_session())
 
 
 ## 古いセッションのシグナルを切る。繋ぎ替えの前に必ず呼ぶ。
