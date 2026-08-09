@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M5 の検証シナリオ。UI シーンが実際に構築され、HUD が値を反映し、
 ## 休息ボタンで日が進むことを確認する。
 ##
@@ -10,8 +10,8 @@ extends SceneTree
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
+const UiUtil = preload("res://scripts/ui/ui_util.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -19,14 +19,7 @@ func _init() -> void:
 	_test_scene_files_load()
 	_test_hud_binding()
 	_test_number_format()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_display_settings() -> void:
@@ -123,18 +116,10 @@ func _test_hud_binding() -> void:
 
 func _test_number_format() -> void:
 	print("--- 桁区切り ---")
-	var hud_script = load("res://scripts/ui/hud.gd")
-	_check(hud_script._format_number(0) == "0", "0", hud_script._format_number(0))
-	_check(hud_script._format_number(999) == "999", "999", hud_script._format_number(999))
-	_check(hud_script._format_number(1000) == "1,000", "1,000", hud_script._format_number(1000))
-	_check(hud_script._format_number(30000) == "30,000", "30,000", hud_script._format_number(30000))
-	_check(hud_script._format_number(1234567) == "1,234,567", "1,234,567", hud_script._format_number(1234567))
-	_check(hud_script._format_number(-2500) == "-2,500", "負の値", hud_script._format_number(-2500))
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])
+	# 桁区切りの実体は UiUtil にある（HUD はそれを呼ぶだけ）。
+	_check(UiUtil.format_number(0) == "0", "0", UiUtil.format_number(0))
+	_check(UiUtil.format_number(999) == "999", "999", UiUtil.format_number(999))
+	_check(UiUtil.format_number(1000) == "1,000", "1,000", UiUtil.format_number(1000))
+	_check(UiUtil.format_number(30000) == "30,000", "30,000", UiUtil.format_number(30000))
+	_check(UiUtil.format_number(1234567) == "1,234,567", "1,234,567", UiUtil.format_number(1234567))
+	_check(UiUtil.format_number(-2500) == "-2,500", "負の値", UiUtil.format_number(-2500))

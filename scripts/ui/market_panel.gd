@@ -191,7 +191,7 @@ func refresh() -> void:
 			row["bar"].ratio = ratio
 
 		# 色に頼らず向きが分かるよう記号を添える。
-		row["ratio"].text = "%s%d%%" % [_arrow(ratio), int(round(ratio * 100.0))]
+		row["ratio"].text = "%s%d%%" % [arrow_for(ratio), int(round(ratio * 100.0))]
 		row["ratio"].add_theme_color_override("font_color", UiTheme.ratio_color(ratio))
 		if is_instance_valid(row["accent"]):
 			row["accent"].color = UiTheme.ratio_color(ratio)
@@ -243,8 +243,70 @@ func _add_stripe(control: Control) -> void:
 	control.move_child(stripe, 0)
 
 
+# --- 行の状態を外から見る入口 ---
+#
+# 検査（scenario_m16.gd）が行の中身を確かめるために使う。_rows の辞書を
+# そのまま公開すると、キーの構造まで契約になって内部表現を変えられなくなる。
+# 用途ごとの細い関数を通し、辞書は private のまま閉じておく。
+#
+# バッジと比率は Label ではなく String を返す。検査が見ているのは文字列だけで、
+# Label で描くという実装の選択まで契約に含める理由がないため。
+
+
+## 並んでいる品目のID。表示している順。
+func item_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for item_id: String in _rows:
+		ids.append(item_id)
+	return ids
+
+
+## その品目の価格バー。無ければ null。
+func price_bar_for(item_id: String) -> PriceBar:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["bar"] as PriceBar
+
+
+## その品目に出ているバッジの文言（特産・◎最安・◎高値など）。無ければ空文字。
+## 隠れているバッジは「出ていない」として空文字を返す（文字だけ残って
+## 非表示、という状態を検査が見逃さないようにするため）。
+func badge_text_for(item_id: String) -> String:
+	var label: Label = _row_label(item_id, "badge")
+	if label == null or not label.visible:
+		return ""
+	return label.text
+
+
+## その品目に出ている基準比の文言（"▼72%" の形）。無ければ空文字。
+func ratio_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "ratio")
+
+
+## その品目の色帯。無ければ null。
+func accent_for(item_id: String) -> ColorRect:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["accent"] as ColorRect
+
+
+func _row_label_text(item_id: String, key: String) -> String:
+	var label: Label = _row_label(item_id, key)
+	return label.text if label != null else ""
+
+
+func _row_label(item_id: String, key: String) -> Label:
+	if not _rows.has(item_id):
+		return null
+	var label: Label = _rows[item_id].get(key) as Label
+	if label == null or not is_instance_valid(label):
+		return null
+	return label
+
+
 ## 基準価格に対する向き。色が見分けにくい場合の手がかりになる。
-static func _arrow(ratio: float) -> String:
+## 純関数なので --script の検査から直接呼べる（scenario_m16.gd）。
+static func arrow_for(ratio: float) -> String:
 	if ratio <= UiTheme.CHEAP_RATIO:
 		return "▼"
 	if ratio >= UiTheme.DEAR_RATIO:

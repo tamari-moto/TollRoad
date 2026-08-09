@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 大陸図の地図化の検証。円周配置・経路線・紋章。
 ##
 ## 実行:
@@ -10,7 +10,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -18,14 +17,7 @@ func _init() -> void:
 	_test_map_layout()
 	_test_route_lines()
 	_test_node_contents()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_city_crests() -> void:
@@ -60,11 +52,11 @@ func _test_map_layout() -> void:
 
 	# 配置は領域サイズに依存するので、明示的に大きさを与えて再配置させる。
 	area.size = Vector2(400, 320)
-	panel._layout_nodes()
+	panel.layout_nodes()
 
 	# 3D になったので、配置は 3D 座標（Vector3）で確認する。
 	# 投影後の画面座標はカメラの向き次第で変わるため、幾何の検査には使わない。
-	var world: Node = panel._world
+	var world: Node = panel.world()
 	_check(world != null, "3D の世界がある", "ない")
 	if world == null:
 		_despawn(panel)
@@ -72,7 +64,7 @@ func _test_map_layout() -> void:
 
 	var ring: Array[String] = GameData.royal_city_ids()
 	for city_id: String in ring:
-		_check(panel._nodes.has(city_id), "%s のノードがある" % city_id, "ない")
+		_check(panel.node_for(city_id) != null, "%s のノードがある" % city_id, "ない")
 		_check(world.positions.has(city_id), "%s の3D座標がある" % city_id, "ない")
 
 	# 水平面（X-Z）で中心からの距離を測る。高さは地形に沿うので除く。
@@ -120,10 +112,10 @@ func _test_route_lines() -> void:
 		_despawn(panel)
 		return
 	area.size = Vector2(400, 320)
-	panel._layout_nodes()
+	panel.layout_nodes()
 
 	# 経路線は 3D の中のメッシュになった。
-	var world: Node = panel._world
+	var world: Node = panel.world()
 	_check(world != null, "3D の世界がある", "ない")
 	if world == null:
 		_despawn(panel)
@@ -155,71 +147,34 @@ func _test_node_contents() -> void:
 	panel.bind(session)
 
 	# 現在地（マートロック）のノード。
-	var current: Control = panel._nodes.get("martlock")
+	var current: Control = panel.node_for("martlock")
 	_check(current != null, "現在地のノードがある", "ない")
-	if current != null:
-		_check(not panel.is_selectable("martlock"), "現在地は選択できない", "選択できる")
-		var note: Label = current.find_child("Note", true, false)
-		_check(note != null, "ラベルがある", "ない")
-		if note != null:
-			_check(note.text.contains("現在地"), "現在地と表示される", note.text)
-			_check(note.text.contains("マートロック"), "都市名が出る", note.text)
+	_check(not panel.is_selectable("martlock"), "現在地は選択できない", "選択できる")
+	var current_note: String = panel.note_text_for("martlock")
+	_check(current_note != "", "ラベルがある", "ない")
+	_check(current_note.contains("現在地"), "現在地と表示される", current_note)
+	_check(current_note.contains("マートロック"), "都市名が出る", current_note)
 
 	# 隣接都市には日数と費用。
-	var neighbour: Control = panel._nodes.get("bridgewatch")
-	if neighbour != null:
-		var note: Label = neighbour.find_child("Note", true, false)
-		if note != null:
-			_check(note.text.contains("1日"), "隣接は1日と出る", note.text)
-			_check(note.text.contains("250"), "隣接は250と出る", note.text)
+	var neighbour_note: String = panel.note_text_for("bridgewatch")
+	_check(neighbour_note.contains("1日"), "隣接は1日と出る", neighbour_note)
+	_check(neighbour_note.contains("250"), "隣接は250と出る", neighbour_note)
 
 	# カーレオンには襲撃率。
-	var caerleon: Control = panel._nodes.get(GameData.CAERLEON)
-	if caerleon != null:
-		var note: Label = caerleon.find_child("Note", true, false)
-		if note != null:
-			_check(note.text.contains("襲撃22%"), "カーレオンに襲撃率が出る", note.text)
+	var caerleon_note: String = panel.note_text_for(GameData.CAERLEON)
+	_check(caerleon_note.contains("襲撃22%"), "カーレオンに襲撃率が出る", caerleon_note)
 
 	# 紋章が入っている。
 	var crest_count: int = 0
-	for city_id: String in panel._nodes:
-		var node: Control = panel._nodes[city_id]
-		for child: Node in node.find_children("*", "TextureRect", true, false):
-			crest_count += 1
+	for city_id: String in panel.city_ids():
+		crest_count += panel.crest_count_for(city_id)
 	_check(crest_count == 6, "6都市に紋章が入る", str(crest_count))
 
 	# 移動すると現在地の表示が移る。
 	session.move_to("bridgewatch")
-	var moved_note: Label = panel._nodes["bridgewatch"].find_child("Note", true, false)
-	if moved_note != null:
-		_check(moved_note.text.contains("現在地"), "移動先が現在地になる", moved_note.text)
-	var old_note: Label = panel._nodes["martlock"].find_child("Note", true, false)
-	if old_note != null:
-		_check(not old_note.text.contains("現在地"), "元の都市は現在地でなくなる", old_note.text)
+	var moved_note: String = panel.note_text_for("bridgewatch")
+	_check(moved_note.contains("現在地"), "移動先が現在地になる", moved_note)
+	var old_note: String = panel.note_text_for("martlock")
+	_check(not old_note.contains("現在地"), "元の都市は現在地でなくなる", old_note)
 
 	_despawn(panel)
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

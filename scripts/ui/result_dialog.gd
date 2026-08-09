@@ -62,7 +62,7 @@ func _populate() -> void:
 	var rank_name: String = _session.rank()
 	if is_instance_valid(_rank_label):
 		_rank_label.text = rank_name
-		_rank_label.add_theme_color_override("font_color", _rank_color(rank_name))
+		_rank_label.add_theme_color_override("font_color", UiTheme.rank_color(rank_name))
 
 	if is_instance_valid(_net_worth_label):
 		_net_worth_label.text = "純資産 %s シルバー" % UiUtil.format_number(_session.net_worth())
@@ -109,10 +109,6 @@ static func _next_threshold(net_worth: int) -> int:
 		if threshold > net_worth and (best < 0 or threshold < best):
 			best = threshold
 	return best
-
-
-static func _rank_color(rank_name: String) -> Color:
-	return UiTheme.rank_color(rank_name)
 
 
 func _add_row(label_text: String, value_text: String) -> void:

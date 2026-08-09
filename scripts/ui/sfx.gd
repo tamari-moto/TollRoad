@@ -63,7 +63,7 @@ func _build_voices() -> void:
 func play(kind: Kind) -> void:
 	if _muted or _voices.is_empty():
 		return
-	var stream: AudioStreamWAV = _stream_for(kind)
+	var stream: AudioStreamWAV = stream_for(kind)
 	if stream == null:
 		return
 
@@ -91,7 +91,14 @@ func is_muted() -> bool:
 	return _muted
 
 
-static func _stream_for(kind: Kind) -> AudioStreamWAV:
+## 用意されている再生機の数。連打で増えないことを検査から確かめられる。
+func voice_count() -> int:
+	return _voices.size()
+
+
+## その種類の波形。同じ音は作り直さずキャッシュから返す。
+## 純関数なので --script の検査から直接呼べる（scenario_m15.gd）。
+static func stream_for(kind: Kind) -> AudioStreamWAV:
 	if _cache.has(kind):
 		return _cache[kind]
 	var stream: AudioStreamWAV = _build(kind)

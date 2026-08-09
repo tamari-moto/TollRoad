@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 効果音の検証。
 ##
 ## 音そのものの良し悪しは検査できないが、波形が正しく生成されるか、
@@ -11,7 +11,6 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -20,14 +19,7 @@ func _init() -> void:
 	_test_cache()
 	_test_playback()
 	_test_log_mapping()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _all_kinds() -> Array:
@@ -38,7 +30,7 @@ func _all_kinds() -> Array:
 func _test_streams_generated() -> void:
 	print("--- 波形の生成 ---")
 	for kind: int in _all_kinds():
-		var stream: AudioStreamWAV = Sfx._stream_for(kind)
+		var stream: AudioStreamWAV = Sfx.stream_for(kind)
 		_check(stream != null, "種別%d の音が作れる" % kind, "null")
 		if stream == null:
 			continue
@@ -55,7 +47,7 @@ func _test_stream_quality() -> void:
 	print("--- 波形の中身 ---")
 	# 無音になっていない（振幅がある）。
 	for kind: int in _all_kinds():
-		var stream: AudioStreamWAV = Sfx._stream_for(kind)
+		var stream: AudioStreamWAV = Sfx.stream_for(kind)
 		if stream == null:
 			continue
 		var peak: int = 0
@@ -76,8 +68,8 @@ func _test_stream_quality() -> void:
 		"%.0f / 最大 %.0f" % [Sfx.VOLUMES[Sfx.Kind.RAID], loudest])
 
 	# 襲撃は長く、日送りは短い（重さが長さに出ている）。
-	var raid: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.RAID)
-	var day: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.DAY)
+	var raid: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.RAID)
+	var day: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.DAY)
 	if raid != null and day != null:
 		_check(raid.data.size() > day.data.size() * 2,
 			"襲撃は日送りより長い",
@@ -86,13 +78,13 @@ func _test_stream_quality() -> void:
 
 func _test_cache() -> void:
 	print("--- キャッシュ ---")
-	var first: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.BUY)
-	var second: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.BUY)
+	var first: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.BUY)
+	var second: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.BUY)
 	_check(first == second, "同じ種別は作り直さない", "別インスタンス")
 
 	# 種別ごとに別の音。
-	var buy: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.BUY)
-	var sell: AudioStreamWAV = Sfx._stream_for(Sfx.Kind.SELL)
+	var buy: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.BUY)
+	var sell: AudioStreamWAV = Sfx.stream_for(Sfx.Kind.SELL)
 	_check(buy != sell, "購入と売却は別の音", "同じ")
 	_check(buy.data != sell.data, "波形も異なる", "同一データ")
 
@@ -102,14 +94,14 @@ func _test_playback() -> void:
 	var sfx: Node = Sfx.new()
 	root.add_child(sfx)
 
-	_check(sfx._voices.size() == Sfx.VOICE_COUNT, "再生機が用意される",
-		str(sfx._voices.size()))
+	_check(sfx.voice_count() == Sfx.VOICE_COUNT, "再生機が用意される",
+		str(sfx.voice_count()))
 
 	# 連打しても落ちない（再生機を使い回す）。
 	for i: int in Sfx.VOICE_COUNT * 3:
 		sfx.play(Sfx.Kind.BUY)
-	_check(sfx._voices.size() == Sfx.VOICE_COUNT, "連打しても再生機は増えない",
-		str(sfx._voices.size()))
+	_check(sfx.voice_count() == Sfx.VOICE_COUNT, "連打しても再生機は増えない",
+		str(sfx.voice_count()))
 
 	# 消音できる。
 	sfx.set_muted(true)
@@ -195,11 +187,3 @@ func _test_log_mapping() -> void:
 	# 「購入」を含むが「購入した」ではないため、拡張音とは区別される。
 	_check(not buy_entry.contains("購入した"),
 		"品目の購入と騎乗の購入が区別される", buy_entry)
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

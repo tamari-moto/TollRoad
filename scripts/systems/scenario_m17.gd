@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 大陸図の 3D 表示の検証。地形・都市・カメラ・投影。
 ##
 ## 3D の描画結果そのものはヘッドレスで確認できない。ここで見るのは
@@ -13,7 +13,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -22,14 +21,7 @@ func _init() -> void:
 	_test_selection_ring()
 	_test_camera_limits()
 	await _test_projection()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_world_geometry() -> void:
@@ -216,10 +208,10 @@ func _test_selection_ring() -> void:
 		"%.3f" % world.pulse_scale())
 
 	# 周期の 1/4 で最大、3/4 で最小になる。
-	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.25
-	var peak: float = world.pulse_scale()
-	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.75
-	var trough: float = world.pulse_scale()
+	# pulse_scale_at() は内部状態を持たない純関数なので、位相を渡すだけで
+	# 任意の瞬間を確かめられる（以前は _pulse_time を直接書き換えていた）。
+	var peak: float = MapView3D.pulse_scale_at(MapView3D.RING_PULSE_PERIOD * 0.25)
+	var trough: float = MapView3D.pulse_scale_at(MapView3D.RING_PULSE_PERIOD * 0.75)
 	_check(peak > 1.0 and trough < 1.0, "1.0 を挟んで上下する",
 		"最大 %.3f / 最小 %.3f" % [peak, trough])
 
@@ -232,13 +224,11 @@ func _test_selection_ring() -> void:
 		"%.1f 秒" % MapView3D.RING_PULSE_PERIOD)
 
 	# 一周すると元に戻る。
-	world._pulse_time = MapView3D.RING_PULSE_PERIOD
-	_check(is_equal_approx(world.pulse_scale(), 1.0), "一周で元に戻る",
-		"%.3f" % world.pulse_scale())
+	var full_cycle: float = MapView3D.pulse_scale_at(MapView3D.RING_PULSE_PERIOD)
+	_check(is_equal_approx(full_cycle, 1.0), "一周で元に戻る", "%.3f" % full_cycle)
 
 	# 脈動しても半径の比は保たれる（内外が入れ替わらない）。
-	world._pulse_time = MapView3D.RING_PULSE_PERIOD * 0.25
-	world._redraw_selection_ring(world.positions["martlock"])
+	world.redraw_selection_ring_at(MapView3D.RING_PULSE_PERIOD * 0.25)
 	var pulsed: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var center2: Vector3 = world.positions["martlock"]
 	var largest: float = 0.0
@@ -250,10 +240,33 @@ func _test_selection_ring() -> void:
 	_check(largest > smallest, "脈動中も二重の円のまま",
 		"内 %.2f / 外 %.2f" % [smallest, largest])
 
+	# _process を通しても実際に脈動する。
+	#
+	# 上の検査は純関数と明示的な引き直しを見ているだけなので、_process から
+	# リングへ倍率が渡らなくなっても素通りする（脈動が止まっても気づけない）。
+	# 実際の経路を1度は通しておく。
+	world.set_current_city("martlock")
+	var outer_radius := func() -> float:
+		var verts: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var center3: Vector3 = world.positions["martlock"]
+		var found: float = 0.0
+		for v: Vector3 in verts:
+			found = maxf(found, Vector2(v.x - center3.x, v.z - center3.z).length())
+		return found
+
+	var at_start: float = outer_radius.call()
+	world._process(MapView3D.RING_PULSE_PERIOD * 0.25)
+	var at_peak: float = outer_radius.call()
+	world._process(MapView3D.RING_PULSE_PERIOD * 0.5)
+	var at_trough: float = outer_radius.call()
+	_check(at_peak > at_start and at_trough < at_peak,
+		"_process を通すと実際に半径が上下する",
+		"開始 %.3f / 最大 %.3f / 最小 %.3f" % [at_start, at_peak, at_trough])
+
 	# 未知の都市を指定しても落ちず、リングを隠す。
 	world.set_current_city("nonexistent")
 	_check(not ring.visible, "未知の都市ではリングを隠す", "出たまま")
-	_check(world._ring_city == "", "脈動の対象も外れる", world._ring_city)
+	_check(world.ring_city() == "", "脈動の対象も外れる", world.ring_city())
 
 	world.free()
 
@@ -352,21 +365,21 @@ func _test_projection() -> void:
 		_despawn(panel)
 		return
 	area.size = Vector2(420, 340)
-	panel._layout_nodes()
+	panel.layout_nodes()
 	await process_frame
 
-	_check(panel._viewport != null, "SubViewport がある", "ない")
-	if panel._viewport != null:
-		_check(panel._viewport.own_world_3d,
+	_check(panel.viewport() != null, "SubViewport がある", "ない")
+	if panel.viewport() != null:
+		_check(panel.viewport().own_world_3d,
 			"独自の 3D 世界を持つ（本編の 2D を映さない）", "共有している")
 
-	_check(panel._camera != null, "カメラがある", "ない")
-	_check(panel._world != null, "3D の世界がある", "ない")
+	_check(panel.camera() != null, "カメラがある", "ない")
+	_check(panel.world() != null, "3D の世界がある", "ない")
 
 	# 都市が投影先に置かれ、重なっていない。
 	var seen: Array[Vector2] = []
 	var distinct: bool = true
-	for city_id: String in panel._world.positions:
+	for city_id: String in panel.world().positions:
 		var pos: Vector2 = panel.screen_position_for(city_id)
 		for previous: Vector2 in seen:
 			if pos.distance_to(previous) < 1.0:
@@ -376,7 +389,7 @@ func _test_projection() -> void:
 
 	# 自分の投影位置をクリックすれば自分が当たる（レイキャストの往復確認）。
 	var pick_ok: bool = true
-	for city_id: String in panel._world.positions:
+	for city_id: String in panel.world().positions:
 		var picked: String = panel.pick_city_at(panel.screen_position_for(city_id))
 		if picked != city_id:
 			pick_ok = false
@@ -384,16 +397,16 @@ func _test_projection() -> void:
 
 	# カメラを回すと投影位置が追従する。
 	var before: Vector2 = panel.screen_position_for("fort_sterling")
-	panel._camera.rotate_by(1.0, 0.0)
-	panel._update_button_positions()
+	panel.camera().rotate_by(1.0, 0.0)
+	panel.update_node_positions()
 	var after: Vector2 = panel.screen_position_for("fort_sterling")
 	_check(before.distance_to(after) > 1.0, "カメラを回すと投影位置が追従する",
 		"%.1f しか動かない" % before.distance_to(after))
 
 	# 拡大でも追従する。
 	var zoom_before: Vector2 = panel.screen_position_for("martlock")
-	panel._camera.zoom_by(-6.0)
-	panel._update_button_positions()
+	panel.camera().zoom_by(-6.0)
+	panel.update_node_positions()
 	_check(zoom_before.distance_to(panel.screen_position_for("martlock")) > 1.0,
 		"拡大でも投影位置が追従する", "動かない")
 
@@ -404,28 +417,3 @@ func _test_projection() -> void:
 		"現在地がツールチップに出る", panel.tooltip_text_for("bridgewatch"))
 
 	_despawn(panel)
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

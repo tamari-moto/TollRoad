@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 市場の価格バーの検証。
 ##
 ## 実行:
@@ -10,7 +10,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const PriceBar = preload("res://scripts/ui/price_bar.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -22,14 +21,7 @@ func _init() -> void:
 	_test_best_deal_badge()
 	_test_ratio_accent()
 	await _test_bar_renders()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_scale_covers_all_prices() -> void:
@@ -107,7 +99,7 @@ func _test_bar_in_market() -> void:
 
 	# バーの比率が実際の価格と一致する。
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var bar: PriceBar = panel._rows[first_item]["bar"]
+	var bar: PriceBar = panel.price_bar_for(first_item)
 	var price: int = session.prices.get_price(session.current_city, first_item)
 	var expected: float = float(price) / float(GameData.ITEMS[first_item]["base_price"])
 	_check(is_equal_approx(bar.ratio, expected), "バーが実際の価格を指す",
@@ -129,18 +121,18 @@ func _test_bar_in_market() -> void:
 func _test_arrows() -> void:
 	print("--- 向き記号 ---")
 	var market = load("res://scripts/ui/market_panel.gd")
-	_check(market._arrow(0.70) == "▼", "安いと▼", market._arrow(0.70))
-	_check(market._arrow(1.40) == "▲", "高いと▲", market._arrow(1.40))
+	_check(market.arrow_for(0.70) == "▼", "安いと▼", market.arrow_for(0.70))
+	_check(market.arrow_for(1.40) == "▲", "高いと▲", market.arrow_for(1.40))
 	# 基準付近は矢印を出さない。ただし桁位置を揃えるため全角空白を返す
 	# （空文字にすると%の位置が行ごとにずれる）。
-	var neutral: String = market._arrow(1.00)
+	var neutral: String = market.arrow_for(1.00)
 	_check(not neutral.contains("▼") and not neutral.contains("▲"),
 		"基準付近は矢印を出さない", "[%s]" % neutral)
 	_check(neutral.length() == 1, "桁合わせの空白は残す", "長さ %d" % neutral.length())
 
 	# 閾値は色分けと同じ基準を使う（表示が食い違わない）。
-	_check(market._arrow(UiTheme.CHEAP_RATIO) == "▼", "安い閾値ちょうどで▼", "違う")
-	_check(market._arrow(UiTheme.DEAR_RATIO) == "▲", "高い閾値ちょうどで▲", "違う")
+	_check(market.arrow_for(UiTheme.CHEAP_RATIO) == "▼", "安い閾値ちょうどで▼", "違う")
+	_check(market.arrow_for(UiTheme.DEAR_RATIO) == "▲", "高い閾値ちょうどで▲", "違う")
 
 	# 実際の表示に記号が入る。
 	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
@@ -148,8 +140,8 @@ func _test_arrows() -> void:
 		var session: GameSession = GameSession.new(16002)
 		panel.bind(session)
 		var has_arrow: bool = false
-		for item_id: String in panel._rows:
-			var text: String = panel._rows[item_id]["ratio"].text
+		for item_id: String in panel.item_ids():
+			var text: String = panel.ratio_text_for(item_id)
 			if text.contains("▼") or text.contains("▲"):
 				has_arrow = true
 			_check(text.contains("%"), "%s に%%表示がある" % item_id, text)
@@ -167,24 +159,24 @@ func _test_badges() -> void:
 
 	# マートロックの特産は鉱石、生産ボーナスは剣。
 	_check(session.current_city == "martlock", "マートロックから開始", session.current_city)
-	var ore_badge: Label = panel._rows["ore"]["badge"]
-	var sword_badge: Label = panel._rows["sword"]["badge"]
-	var wood_badge: Label = panel._rows["wood"]["badge"]
+	var ore_badge: String = panel.badge_text_for("ore")
+	var sword_badge: String = panel.badge_text_for("sword")
+	var wood_badge: String = panel.badge_text_for("wood")
 
 	# 「今お得」の指標（◎最安/◎高値）と併記されうるので contains で見る。
-	_check(ore_badge.visible and ore_badge.text.contains("特産"), "鉱石に特産バッジ",
-		"%s / %s" % [str(ore_badge.visible), ore_badge.text])
-	_check(sword_badge.visible and sword_badge.text.contains("生産地"), "剣に生産地バッジ",
-		"%s / %s" % [str(sword_badge.visible), sword_badge.text])
-	_check(not wood_badge.text.contains("特産") and not wood_badge.text.contains("生産地"),
-		"木材には特産・生産地バッジが出ない", wood_badge.text)
+	# badge_text_for() は隠れているバッジを空文字で返すので、
+	# 文言を含むことがそのまま「見えている」ことの確認になる。
+	_check(ore_badge.contains("特産"), "鉱石に特産バッジ", ore_badge)
+	_check(sword_badge.contains("生産地"), "剣に生産地バッジ", sword_badge)
+	_check(not wood_badge.contains("特産") and not wood_badge.contains("生産地"),
+		"木材には特産・生産地バッジが出ない", wood_badge)
 
 	# 移動するとバッジが付け替わる。ブリッジウォッチの特産は石材。
 	session.move_to("bridgewatch")
-	_check(not panel._rows["ore"]["badge"].text.contains("特産"),
-		"移動で鉱石の特産バッジが消える", panel._rows["ore"]["badge"].text)
-	_check(panel._rows["stone"]["badge"].text.contains("特産"),
-		"移動先の特産にバッジが出る", panel._rows["stone"]["badge"].text)
+	_check(not panel.badge_text_for("ore").contains("特産"),
+		"移動で鉱石の特産バッジが消える", panel.badge_text_for("ore"))
+	_check(panel.badge_text_for("stone").contains("特産"),
+		"移動先の特産にバッジが出る", panel.badge_text_for("stone"))
 
 	_despawn(panel)
 
@@ -207,21 +199,21 @@ func _test_best_deal_badge() -> void:
 			best_ratio = ratio
 			best_item = item_id
 
-	_check(panel._rows[best_item]["badge"].text.contains("◎最安"),
-		"最も安い品目に◎最安が付く", panel._rows[best_item]["badge"].text)
+	_check(panel.badge_text_for(best_item).contains("◎最安"),
+		"最も安い品目に◎最安が付く", panel.badge_text_for(best_item))
 
 	# 何も所持していなければ◎高値はどこにも出ない。
 	var any_best_sell: bool = false
 	for item_id: String in GameData.ITEMS:
-		if panel._rows[item_id]["badge"].text.contains("◎高値"):
+		if panel.badge_text_for(item_id).contains("◎高値"):
 			any_best_sell = true
 	_check(not any_best_sell, "所持していなければ◎高値は出ない", "出ている")
 
 	# 買うと、唯一の所持品として◎高値の対象になる。
 	session.buy(best_item, 1)
 	panel.refresh()
-	_check(panel._rows[best_item]["badge"].text.contains("◎高値"),
-		"唯一の所持品には◎高値が付く", panel._rows[best_item]["badge"].text)
+	_check(panel.badge_text_for(best_item).contains("◎高値"),
+		"唯一の所持品には◎高値が付く", panel.badge_text_for(best_item))
 
 	_despawn(panel)
 
@@ -237,7 +229,7 @@ func _test_ratio_accent() -> void:
 	for item_id: String in GameData.ITEMS:
 		var price: int = session.prices.get_price(session.current_city, item_id)
 		var ratio: float = float(price) / float(GameData.ITEMS[item_id]["base_price"])
-		var accent: ColorRect = panel._rows[item_id]["accent"]
+		var accent: ColorRect = panel.accent_for(item_id)
 		_check(accent.color == UiTheme.ratio_color(ratio),
 			"%s の色帯が基準比の色と一致する" % item_id, str(accent.color))
 
@@ -270,31 +262,6 @@ func _test_bar_renders() -> void:
 		panel.size = Vector2(560, 420)
 		await process_frame
 		await process_frame
-		var bar_in_row: PriceBar = panel._rows[GameData.ITEMS.keys()[0]]["bar"]
+		var bar_in_row: PriceBar = panel.price_bar_for(GameData.ITEMS.keys()[0])
 		_check(bar_in_row.size.y > 0, "市場の中でも高さがある", str(bar_in_row.size))
 		_despawn(panel)
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

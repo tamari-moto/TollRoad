@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 目的の提示（開始画面・HUD の純資産表示）の検証。
 ##
 ## 実行:
@@ -9,7 +9,6 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -21,14 +20,7 @@ func _init() -> void:
 	_test_main_scene()
 	_test_scene_headers()
 	await _test_dialog_sizing()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_goal_constant() -> void:
@@ -140,7 +132,8 @@ func _test_hud_net_worth() -> void:
 	# 目標に届くと色が変わる。
 	_check(label.get_theme_color("font_color") == UiTheme.TEXT, "未達成は標準色", "違う")
 	session.silver = 600000
-	hud._refresh_net_worth()
+	# シルバーを直接書き換えたのでシグナルは飛ばない。パネル規約の refresh() で更新する。
+	hud.refresh()
 	_check(label.get_theme_color("font_color") == UiTheme.GOOD, "達成すると好調色", "変わらない")
 	_check(bar.value == 500000, "バーは目標で頭打ち", str(bar.value))
 
@@ -312,28 +305,3 @@ func _collect_scenes(dir_path: String, out: PackedStringArray) -> void:
 			out.append(full)
 		entry = dir.get_next()
 	dir.list_dir_end()
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])
