@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M2 の検証シナリオ。製作と黒ゾーンの襲撃を検査する。
 ##
 ## 実行:
@@ -7,7 +7,6 @@ extends SceneTree
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -17,14 +16,7 @@ func _init() -> void:
 	_test_black_zone_route()
 	_test_raid_outcome()
 	_test_raid_rate()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_craft_basics() -> void:
@@ -172,11 +164,3 @@ func _test_raid_rate() -> void:
 	_check(absf(rate - 0.22) < 0.04, "襲撃率が約22%になる",
 		"%.1f%%（%d/%d）" % [rate * 100.0, raids, trials])
 	print("     実測値: %.1f%%（%d/%d）" % [rate * 100.0, raids, trials])
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

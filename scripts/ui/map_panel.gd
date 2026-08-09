@@ -77,7 +77,7 @@ func _build() -> void:
 	# 見た目のはみ出しに対する最後の防衛線。クリック判定は
 	# SubViewportContainer 側にしか無いので、操作性には影響しない。
 	_map_area.clip_contents = true
-	_map_area.resized.connect(_layout_nodes)
+	_map_area.resized.connect(layout_nodes)
 
 	_build_viewport()
 
@@ -95,7 +95,7 @@ func _build() -> void:
 	_confirm.confirmed.connect(_on_confirmed)
 	add_child(_confirm)
 
-	_layout_nodes()
+	layout_nodes()
 
 
 ## 3D の地図を SubViewport に描き、地図領域いっぱいに敷く。
@@ -289,7 +289,11 @@ func _build_node(city_id: String) -> Control:
 ## クリック判定は SubViewportContainer 側のレイキャストで行うため、
 ## ここは見た目（ピンとラベル）の追従だけを担当する。カメラを動かすと
 ## ここが呼ばれてノードが追従する。
-func _layout_nodes() -> void:
+##
+## 公開しているのは、ツリー外では _map_area.resized が飛ばず、
+## --script の検査から配置を確定させる手段が他にないため
+## （テストのための抜け道ではなく、実行環境の制約に対する入口）。
+func layout_nodes() -> void:
 	if _map_area == null or _nodes.is_empty():
 		return
 	var area: Vector2 = _map_area.size
@@ -389,6 +393,75 @@ func _place(city_id: String, point: Vector2) -> void:
 	var node: Control = _nodes.get(city_id)
 	if is_instance_valid(node):
 		node.position = point - NODE_SIZE * 0.5
+
+
+# --- 都市ノードを外から見る入口 ---
+#
+# 検査（scenario_m6.gd, scenario_m11.gd）が見た目を確かめるために使う。
+# _nodes の辞書をそのまま公開すると内部表現が契約になるため、
+# 用途ごとの関数を通す。
+
+
+## その都市の見た目のノード。無ければ null。
+func node_for(city_id: String) -> Control:
+	var node: Control = _nodes.get(city_id)
+	return node if is_instance_valid(node) else null
+
+
+## 並んでいる都市ノードの数。
+func node_count() -> int:
+	return _nodes.size()
+
+
+## 並んでいる都市のID。
+func city_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for city_id: String in _nodes:
+		ids.append(city_id)
+	return ids
+
+
+## その都市のノードに出ている補足文（現在地／移動日数・費用・襲撃率）。
+## 無ければ空文字。
+func note_text_for(city_id: String) -> String:
+	var node: Control = node_for(city_id)
+	if node == null:
+		return ""
+	var note: Label = node.find_child("Note", true, false) as Label
+	if note == null or not is_instance_valid(note):
+		return ""
+	return note.text
+
+
+## その都市のノードに入っている紋章の数。
+func crest_count_for(city_id: String) -> int:
+	var node: Control = node_for(city_id)
+	if node == null:
+		return 0
+	return node.find_children("*", "TextureRect", true, false).size()
+
+
+## 3D の世界。都市の座標や地形を検査から確かめるための入口。
+func world() -> MapView3D:
+	return _world if is_instance_valid(_world) else null
+
+
+## 地図を映しているカメラ。
+func camera() -> MapCamera:
+	return _camera if is_instance_valid(_camera) else null
+
+
+## 3D を描いている SubViewport。
+func viewport() -> SubViewport:
+	return _viewport if is_instance_valid(_viewport) else null
+
+
+## カメラを動かした後にピンを投影位置へ追従させる。
+##
+## 通常は入力処理から呼ばれる。検査がカメラを直接動かしたときも
+## これを呼ばないとピンが古い位置に残る。
+func update_node_positions() -> void:
+	_update_button_positions()
 
 
 func refresh() -> void:

@@ -6,6 +6,7 @@ extends Node2D
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
+const SaveManager = preload("res://scripts/systems/save_manager.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
@@ -55,6 +56,8 @@ func _ready() -> void:
 	_result_button.pressed.connect(_show_result)
 	_briefing_button.pressed.connect(_show_briefing)
 	_result_dialog.restart_requested.connect(_on_restart_requested)
+	_briefing_dialog.continue_requested.connect(_on_continue_requested)
+	_briefing_dialog.closed.connect(_on_briefing_closed)
 	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
@@ -73,7 +76,10 @@ func _ready() -> void:
 
 
 ## セッションを各画面に配る。再プレイ時にも呼ばれる。
-func _bind_session(session: GameSession) -> void:
+##
+## with_briefing を false にすると開始画面を出さない（「続きから」で
+## 復帰した直後は、いま閉じた画面をもう一度開かない）。
+func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 	_session = session
 	print("TollRoad start. Day: %d/%d, Silver: %d, City: %s" % [
 		_session.day, GameData.TOTAL_DAYS, _session.silver, _session.current_city])
@@ -96,11 +102,35 @@ func _bind_session(session: GameSession) -> void:
 	_refresh_status()
 
 	# 1日目に何を目指すのかを伝える。再プレイでも同様に出す。
-	_show_briefing()
+	if with_briefing:
+		_show_briefing()
 
 
+## 開始画面を出す。続きから始められるセーブがあれば、その選択肢も出す。
 func _show_briefing() -> void:
-	_briefing_dialog.show_briefing()
+	_briefing_dialog.show_briefing(GameState.has_save())
+
+
+## 開始画面を閉じた＝このセッションで始めると決まった。
+##
+## 前のプレイのセーブはここで**捨てる**。save_game() で上書きすると、
+## 起動直後のセッションは1日目なので、進行中のセーブが1日目に化けて
+## 消えたのと同じことになる（実際にそうなっていた）。
+func _on_briefing_closed() -> void:
+	SaveManager.delete_save()
+	GameState.save_game()
+
+
+## 「続きから」。セーブを読み、各画面へ配り直す。
+##
+## 切断は読み込みが成功してからにする。先に切ると、失敗したときに
+## 日誌もパネル更新も止まったまま復帰できない。
+func _on_continue_requested() -> void:
+	if not GameState.continue_game():
+		_append_log("セーブデータを読み込めなかった。%s" % SaveManager.last_error())
+		return
+	_disconnect_session()
+	_bind_session(GameState.session, false)
 
 
 ## 画面全体の下地を敷き、各パネルに共通の地色を与える。
@@ -274,14 +304,19 @@ func _show_result() -> void:
 
 
 func _on_restart_requested() -> void:
-	# 古いセッションのシグナルは新しいセッションに繋ぎ替えるので切っておく。
+	_disconnect_session()
+	GameState.start_new_game()
+	_bind_session(GameState.session)
+
+
+## 古いセッションのシグナルを切る。繋ぎ替えの前に必ず呼ぶ。
+func _disconnect_session() -> void:
+	if _session == null:
+		return
 	if _session.logged.is_connected(_append_log):
 		_session.logged.disconnect(_append_log)
 	if _session.day_advanced.is_connected(_on_day_advanced):
 		_session.day_advanced.disconnect(_on_day_advanced)
-
-	GameState.start_new_game()
-	_bind_session(GameState.session)
 
 
 func _clear_log() -> void:

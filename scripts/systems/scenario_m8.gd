@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M8 の検証シナリオ。リザルト画面と再プレイ、および製作の阻害理由表示を検査する。
 ##
 ## 実行:
@@ -7,8 +7,8 @@ extends SceneTree
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -17,14 +17,7 @@ func _init() -> void:
 	_test_craft_blocked_reason()
 	_test_growth_route_reachable()
 	_test_main_scene()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_result_dialog() -> void:
@@ -58,11 +51,11 @@ func _test_result_dialog() -> void:
 	_check(text_dump.contains("島倉庫"), "内訳に島倉庫がある", "ない")
 	_check(text_dump.contains("次のランクまで"), "次のランクまでの差が出る", "ない")
 
-	# ランクごとの色分け。
+	# ランクごとの色分け。実体は UiTheme にある（リザルトはそれを呼ぶだけ）。
 	var script_ref = load("res://scripts/ui/result_dialog.gd")
-	_check(script_ref._rank_color("LEGENDARY MERCHANT") == script_ref.COLOR_LEGENDARY,
+	_check(UiTheme.rank_color("LEGENDARY MERCHANT") == script_ref.COLOR_LEGENDARY,
 		"LEGENDARYは専用色", "違う")
-	_check(script_ref._rank_color("BANKRUPT") == script_ref.COLOR_BANKRUPT,
+	_check(UiTheme.rank_color("BANKRUPT") == script_ref.COLOR_BANKRUPT,
 		"BANKRUPTは専用色", "違う")
 
 	# 最上位なら「次のランク」は出ない。
@@ -199,28 +192,3 @@ func _test_main_scene() -> void:
 		_check(dialog.has_method("show_result"), "リザルトに show_result がある", "ない")
 		_check(dialog.has_signal("restart_requested"), "再プレイのシグナルがある", "ない")
 	main.free()
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

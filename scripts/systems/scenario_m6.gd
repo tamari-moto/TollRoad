@@ -1,14 +1,14 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M6 の検証シナリオ。市場・積荷・大陸図の3画面が実際に動くことを確認する。
 ##
 ## 実行:
 ##   godot --headless --path . --script scripts/systems/scenario_m6.gd
+##
+## _check() / _spawn() / _despawn() / _finish() は scenario_base.gd にある。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
-
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -18,14 +18,7 @@ func _init() -> void:
 	_test_cargo_panel()
 	_test_map_panel()
 	_test_main_scene_structure()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_scenes_load() -> void:
@@ -184,8 +177,7 @@ func _test_map_panel() -> void:
 		return
 
 	# 都市の選択は Button ではなくレイキャストで判定する（CLAUDE.md参照）。
-	# 見た目のノードは _nodes に city_id -> Control で保持している。
-	_check(panel._nodes.size() == 6, "6都市のノードがある", str(panel._nodes.size()))
+	_check(panel.node_count() == 6, "6都市のノードがある", str(panel.node_count()))
 
 	# 表示テキストはツールチップの文言に入る。
 	var found_current: bool = false
@@ -244,28 +236,3 @@ func _test_main_scene_structure() -> void:
 			"%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 	main.free()
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

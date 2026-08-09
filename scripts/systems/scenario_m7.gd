@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M7 の検証シナリオ。製作所・相場メモ・島と装備の3画面を検査する。
 ##
 ## 実行:
@@ -8,7 +8,6 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -18,14 +17,7 @@ func _init() -> void:
 	_test_memo_staleness()
 	_test_island_panel()
 	_test_main_scene_has_all_screens()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_memo_api() -> void:
@@ -276,28 +268,3 @@ func _test_main_scene_has_all_screens() -> void:
 		_check(side_panel.offset_left == side_panel.offset_right,
 			"閉状態では幅が0", "%.1f" % (side_panel.offset_right - side_panel.offset_left))
 	main.free()
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

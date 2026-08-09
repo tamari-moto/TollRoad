@@ -258,13 +258,37 @@ func _process(delta: float) -> void:
 	if not _selection_ring.visible:
 		return
 	_pulse_time += delta
-	_redraw_selection_ring(positions[_ring_city])
+	_redraw_selection_ring(positions[_ring_city], pulse_scale())
 
 
-## 今この瞬間の半径の倍率。1.0 を中心にゆっくり上下する。
-func pulse_scale() -> float:
-	var phase: float = TAU * _pulse_time / RING_PULSE_PERIOD
+## 経過時間に対する半径の倍率。1.0 を中心にゆっくり上下する。
+##
+## 内部状態を持たない純関数にしてあるのは、位相ごとの振る舞いを
+## --script の検査から直接確かめられるようにするため
+## （以前は _pulse_time を外から書き換えていた）。
+static func pulse_scale_at(elapsed: float) -> float:
+	var phase: float = TAU * elapsed / RING_PULSE_PERIOD
 	return 1.0 + sin(phase) * RING_PULSE_AMOUNT
+
+
+## 今この瞬間の半径の倍率。
+func pulse_scale() -> float:
+	return pulse_scale_at(_pulse_time)
+
+
+## リングが付いている都市。付いていなければ空文字。
+func ring_city() -> String:
+	return _ring_city
+
+
+## 指定した位相でリングを引き直す。
+##
+## 検査は時間を進められない（ツリー外では _process が回らない）ため、
+## 位相を渡して任意の瞬間を再現できるようにしている。
+func redraw_selection_ring_at(elapsed: float) -> void:
+	if _ring_city == "" or not positions.has(_ring_city):
+		return
+	_redraw_selection_ring(positions[_ring_city], pulse_scale_at(elapsed))
 
 
 ## リングをその都市の足元に描き直す。
@@ -272,7 +296,7 @@ func pulse_scale() -> float:
 ## 平らな円を作って位置だけ動かすのでは駄目で、都市ごとに地面の高さが
 ## 違うため斜面に埋まったり浮いたりする。円周上の各点で地形の高さを
 ## 引き直し、地面に寝かせる。
-func _redraw_selection_ring(center: Vector3) -> void:
+func _redraw_selection_ring(center: Vector3, scale: float) -> void:
 	if not is_instance_valid(_selection_ring):
 		return
 	var mesh: ImmediateMesh = _selection_ring.mesh
@@ -281,9 +305,6 @@ func _redraw_selection_ring(center: Vector3) -> void:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.vertex_color_use_as_albedo = true
-
-	# 脈動ぶんの倍率。静止時（検査など）は 1.0 になる。
-	var scale: float = pulse_scale()
 
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
 	_add_ring(mesh, center, RING_INNER_RADIUS * scale, UiTheme.FOCUS)
@@ -344,7 +365,7 @@ func set_current_city(city_id: String) -> void:
 		_ring_city = city_id
 		# 到着のたびに位相を戻し、リングが広がるところから始まるようにする。
 		_pulse_time = 0.0
-		_redraw_selection_ring(positions[city_id])
+		_redraw_selection_ring(positions[city_id], pulse_scale())
 		if is_instance_valid(_selection_ring):
 			_selection_ring.visible = true
 	else:

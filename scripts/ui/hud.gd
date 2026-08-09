@@ -72,7 +72,7 @@ func _refresh_net_worth() -> void:
 	var goal: int = goal_amount()
 
 	_net_worth_label.text = "純資産 %s / 目標 %s" % [
-		_format_number(worth), _format_number(goal)]
+		UiUtil.format_number(worth), UiUtil.format_number(goal)]
 	# 目標に届いたら色で知らせる。
 	_net_worth_label.add_theme_color_override(
 		"font_color", UiTheme.GOOD if worth >= goal else UiTheme.TEXT)
@@ -144,7 +144,7 @@ func _animate_silver(target: int) -> void:
 
 func _set_silver_text(value: int) -> void:
 	if is_instance_valid(_silver_label):
-		_silver_label.text = "%s シルバー" % _format_number(value)
+		_silver_label.text = "%s シルバー" % UiUtil.format_number(value)
 
 
 func _refresh_day() -> void:
@@ -187,8 +187,3 @@ func _on_day_advanced(_day: int) -> void:
 	_refresh_day()
 	_refresh_cargo()
 	_refresh_net_worth()
-
-
-## 桁区切りを入れる（1234567 -> 1,234,567）。実体は UiUtil。
-static func _format_number(value: int) -> String:
-	return UiUtil.format_number(value)

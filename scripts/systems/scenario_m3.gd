@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## M3 の検証シナリオ。島・労働者・倉庫・引き取り・騎乗を検査する。
 ##
 ## 実行:
@@ -7,7 +7,6 @@ extends SceneTree
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -17,14 +16,7 @@ func _init() -> void:
 	_test_withdraw()
 	_test_mounts()
 	_test_net_worth_includes_warehouse()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_island_upgrade() -> void:
@@ -221,11 +213,3 @@ func _test_net_worth_includes_warehouse() -> void:
 	_check(s.net_worth() == expected, "純資産 = シルバー + 倉庫の基準価格×0.9",
 		"期待 %d, 実際 %d" % [expected, s.net_worth()])
 	_check(s.net_worth() > cash - 26000, "倉庫のぶん純資産が上乗せされる", str(s.net_worth()))
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

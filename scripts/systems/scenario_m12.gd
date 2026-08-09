@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 騎乗・島の図と背景の検証。
 ##
 ## 実行:
@@ -10,7 +10,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -19,14 +18,7 @@ func _init() -> void:
 	_test_island_panel_art()
 	_test_panel_style()
 	_test_backdrop()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_mount_textures() -> void:
@@ -142,28 +134,3 @@ func _test_backdrop() -> void:
 		# HUD が Root の直下にあり、下地を差し込める構造になっている。
 		_check(main.get_node_or_null("%HUD") != null, "HUD が引ける", "ない")
 	main.free()
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 売買エフェクトの検証。
 ##
 ## 実行:
@@ -10,7 +10,14 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 
-var _failures: int = 0
+## 演出が片付くまで待つ上限（ミリ秒）。
+## 飛翔は FLIGHT_DURATION 0.42 + 弾け 0.08 + 消え 0.12 = 0.62 秒かかる。
+## 倍以上を取っておき、遅い環境でも待ち切れるようにする。
+const FLIGHT_TIMEOUT_MSEC: int = 2000
+
+## 弧の標本を採る長さ（ミリ秒）。FLIGHT_DURATION の半ばまで進めてから
+## 判定したいので、0.42 秒の半分あたりを取る。
+const FLIGHT_SAMPLE_MSEC: int = 220
 
 
 func _init() -> void:
@@ -19,14 +26,7 @@ func _init() -> void:
 	_test_missing_icon_fallback()
 	_test_market_signal()
 	await _test_flight_path()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_layer_basics() -> void:
@@ -64,10 +64,12 @@ func _test_flight_spawns_and_clears() -> void:
 	_check(fx.get_child_count() == 3, "同時に複数飛ばせる", str(fx.get_child_count()))
 
 	# 演出が終わると自動で片付く（残り続けない）。
-	var elapsed: float = 0.0
-	while elapsed < 1.2 and fx.get_child_count() > 0:
-		await process_frame
-		elapsed += 0.016
+	#
+	# 待ちは実時間で計ること。フレーム数に固定値を掛けて時間を代用すると、
+	# 実際の 1 フレームが何ミリ秒かは環境と出力先で変わるため、待ち切れずに
+	# 落ちる（実測: 12 フレームで 93ms しか進まず、演出に必要な 620ms に
+	# 遠く届かない）。標準出力をファイルへ向けただけで結果が変わっていた。
+	await _wait_until_empty(fx, FLIGHT_TIMEOUT_MSEC)
 	_check(fx.get_child_count() == 0, "終わると自動的に消える",
 		"%d 個残った" % fx.get_child_count())
 
@@ -156,11 +158,11 @@ func _test_flight_path() -> void:
 		"出発点から始まる", str(flyer.global_position))
 
 	# 途中で弧を描く（直線より上を通る）。
-	var samples: Array[Vector2] = []
-	for i: int in 12:
-		await process_frame
-		if is_instance_valid(flyer):
-			samples.append(flyer.position)
+	#
+	# 飛翔の半ばまで実時間で進めてから標本を採る。フレーム数で数えると
+	# 弧の頂点へ達する前（実測で行程の 22%）に判定してしまい、直線との差が
+	# 数ピクセルしか出ないため、わずかな揺れで合否が反転していた。
+	var samples: Array[Vector2] = await _sample_flight(flyer, FLIGHT_SAMPLE_MSEC)
 
 	if samples.size() >= 3:
 		var mid: Vector2 = samples[samples.size() / 2]
@@ -176,29 +178,31 @@ func _test_flight_path() -> void:
 
 # --- ヘルパ ---
 
+## 演出層が空になるまで実時間で待つ。上限に達したら諦めて戻る
+## （戻った時点の子の数を呼び出し側が検査する）。
+##
+## フレーム数ではなく Time.get_ticks_msec() で計ること。1 フレームの実尺は
+## 環境と出力先で変わるため、フレーム数に固定値を掛けると待ちが足りなくなる。
+func _wait_until_empty(fx: FxLayer, timeout_msec: int) -> void:
+	var started: int = Time.get_ticks_msec()
+	while fx.get_child_count() > 0:
+		if Time.get_ticks_msec() - started >= timeout_msec:
+			return
+		await process_frame
+
+
+## 飛翔中の位置を実時間で標本する。duration_msec を過ぎるまで毎フレーム採る。
+func _sample_flight(flyer: Control, duration_msec: int) -> Array[Vector2]:
+	var samples: Array[Vector2] = []
+	var started: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started < duration_msec:
+		await process_frame
+		if not is_instance_valid(flyer):
+			break
+		samples.append(flyer.position)
+	return samples
+
+
 func _despawn_layer(fx: FxLayer) -> void:
 	root.remove_child(fx)
 	fx.free()
-
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

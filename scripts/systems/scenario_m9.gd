@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://scripts/systems/scenario_base.gd"
 ## 手触りの調整（パレット統一・フィードバック・キー操作）の検証。
 ##
 ## 実行:
@@ -9,7 +9,6 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-var _failures: int = 0
 
 
 func _init() -> void:
@@ -19,14 +18,7 @@ func _init() -> void:
 	_test_silver_feedback()
 	_test_cargo_colors()
 	_test_raid_log_tint()
-
-	print("")
-	if _failures == 0:
-		print("すべての検査に合格した。")
-		quit(0)
-	else:
-		print("FAIL: %d 件の検査に失敗した。" % _failures)
-		quit(1)
+	_finish()
 
 
 func _test_palette() -> void:
@@ -187,28 +179,3 @@ func _test_raid_log_tint() -> void:
 					found = true
 			break
 	_check(found, "襲撃時にその文言がログへ記録される", "見つからない")
-
-
-# --- ヘルパ ---
-
-func _spawn(path: String) -> Node:
-	var scene: PackedScene = load(path)
-	if scene == null:
-		_check(false, "%s が読み込める" % path, "失敗")
-		return null
-	var node: Node = scene.instantiate()
-	root.add_child(node)
-	return node
-
-
-func _despawn(node: Node) -> void:
-	root.remove_child(node)
-	node.free()
-
-
-func _check(condition: bool, description: String, actual: String) -> void:
-	if condition:
-		print("  OK   %s" % description)
-	else:
-		_failures += 1
-		print("  FAIL %s（実際: %s）" % [description, actual])

@@ -13,12 +13,15 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 signal closed
+## 「続きから」が押された。main.gd が受けてセッションを差し替える。
+signal continue_requested
 
 var _premise: Label
 var _goal_label: Label
 var _rank_list: VBoxContainer
 var _hint: Label
 var _start_button: Button
+var _continue_button: Button
 
 
 func _ready() -> void:
@@ -39,6 +42,28 @@ func _resolve() -> void:
 		_start_button.pressed.connect(_on_close)
 	if not close_requested.is_connected(_on_close):
 		close_requested.connect(_on_close)
+
+	_build_continue_button()
+
+
+## 「続きから」を開始ボタンの上に足す。.tscn を手で書き足すより、
+## ここで組む方がアンカーとサイズの落とし穴を踏まない
+## （ランク表の行を組んでいるのと同じやり方）。
+func _build_continue_button() -> void:
+	if is_instance_valid(_continue_button) or not is_instance_valid(_start_button):
+		return
+	var column: Node = _start_button.get_parent()
+	if column == null:
+		return
+
+	_continue_button = Button.new()
+	_continue_button.name = "ContinueButton"
+	_continue_button.text = "続きから"
+	_continue_button.custom_minimum_size = Vector2(0, 44)
+	_continue_button.pressed.connect(_on_continue)
+	column.add_child(_continue_button)
+	# 開始ボタンの直前に置く。続きがある人はこちらを押すことが多い。
+	column.move_child(_continue_button, _start_button.get_index())
 
 
 ## 目標ランクの閾値。
@@ -107,14 +132,35 @@ func _populate_ranks() -> void:
 
 
 ## 表示する。再表示にも使える。
-func show_briefing() -> void:
+##
+## can_continue が true のときだけ「続きから」を出す。呼び出し側が
+## セーブの有無を判断して渡す（この画面は保存の仕組みを知らない）。
+func show_briefing(can_continue: bool = false) -> void:
 	_resolve()
 	_populate()
+	set_continue_available(can_continue)
 	# 中身をウィンドウいっぱいに広げる（.tscn のアンカーだけでは 0 のまま）。
 	UiUtil.fill_window(self)
 	# ツリー外（--script のハーネス）では表示できない。文面だけ整えて返す。
 	if is_inside_tree():
 		popup_centered()
+
+
+## 「続きから」を出すかどうか。検査から状態を確かめるためにも使う。
+func set_continue_available(available: bool) -> void:
+	_resolve()
+	if is_instance_valid(_continue_button):
+		_continue_button.visible = available
+
+
+## 「続きから」が出ているか。
+func is_continue_available() -> bool:
+	return is_instance_valid(_continue_button) and _continue_button.visible
+
+
+func _on_continue() -> void:
+	hide()
+	continue_requested.emit()
 
 
 func _on_close() -> void:
