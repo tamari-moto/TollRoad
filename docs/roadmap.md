@@ -68,7 +68,7 @@ autoload lookup: <Object#null>     ← autoload は取得できない
 | M7 | 残りの画面 | — |
 | M8 | 完成・調整 | — |
 
-Q1〜Q8 は [game_design.md の未確定事項](game_design.md#未確定事項) を指す。
+Q1〜Q8 は、実装前に `game_design.md` で解決した設計判断を指す（すべて解消済みで、現在は本文に統合されている）。
 
 ---
 
