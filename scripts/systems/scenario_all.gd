@@ -28,7 +28,7 @@ const SCENARIO_DIR: String = "res://scripts/systems"
 
 ## 実行するシナリオの本数。新しいシナリオを足したらここも更新する。
 ## 更新を忘れても本数の照合が気づいて失敗させる。
-const SCENARIO_COUNT: int = 17
+const SCENARIO_COUNT: int = 18
 
 ## await を含むシナリオの番号。別プロセスで走らせる（上記の理由）。
 ## シナリオに await を足したらここへ番号を加えること。

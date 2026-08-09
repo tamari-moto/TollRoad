@@ -436,6 +436,137 @@ func memo_price(city_id: String, item_id: String) -> int:
 	return memo[city_id]["prices"].get(item_id, -1)
 
 
+# --- 保存と復元 ---
+
+## この時点の状態をすべて辞書に写す。保存形式（JSON など）は知らない。
+##
+## _rng の状態を含めるのが要点。これが無いとロード後の乱数系列が変わり、
+## 同じセーブから同じ展開にならない。
+##
+## seed と state を**文字列で持つ**のは、64bit の値が JSON の double
+## （仮数部53bit）では正確に往復しないため。実測で state が
+## 4857946085375722947 -> 4857946085375722496 に化ける。
+##
+## prices も保存する。reroll() は「次の日の相場」を作るものなので、
+## state を戻して引き直しても今日の相場は再現できない。
+func to_dict() -> Dictionary:
+	# prices と rng は続けて読む。間に乱数を消費すると噛み合わなくなる。
+	return {
+		"day": day,
+		"silver": silver,
+		"current_city": current_city,
+		"mount": mount,
+		"island_level": island_level,
+		"cargo": cargo.duplicate(true),
+		"warehouse": warehouse.duplicate(true),
+		"memo": memo.duplicate(true),
+		"log_entries": log_entries.duplicate(),
+		"prices": prices.prices.duplicate(true),
+		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
+	}
+
+
+## 辞書から状態を復元する。
+##
+## 既存のインスタンスへの上書きとして使う（GameSession.new(0) してから呼ぶ）。
+## _init() が PriceTable と初回のメモを作るため、素の状態を別に用意するより
+## 作ってから上書きする方が既存の流れに手を入れずに済む。
+##
+## 欠損したキーには触らない。宣言時の初期値がそのまま残る。
+## **数値は必ず int() を通すこと。** JSON を経由すると float になっており、
+## そのまま入れると後の整数除算が浮動小数除算に化ける。
+##
+## 復元の途中で _log() を呼ばないこと。日誌を戻した後に自分で行を足すと
+## 往復の同一性が崩れる。
+func from_dict(data: Dictionary) -> void:
+	if data.has("day"):
+		day = int(data["day"])
+	if data.has("silver"):
+		silver = int(data["silver"])
+	if data.has("current_city"):
+		current_city = str(data["current_city"])
+	if data.has("mount"):
+		mount = str(data["mount"])
+	if data.has("island_level"):
+		island_level = int(data["island_level"])
+
+	if data.has("cargo"):
+		cargo = _restore_counts(data["cargo"])
+	if data.has("warehouse"):
+		warehouse = _restore_counts(data["warehouse"])
+	if data.has("memo"):
+		memo = _restore_memo(data["memo"])
+	if data.has("log_entries"):
+		log_entries.clear()
+		for entry: Variant in data["log_entries"]:
+			log_entries.append(str(entry))
+
+	# RNG を戻してから相場を決める。相場を引き直す場合に系列を合わせるため。
+	if data.has("rng"):
+		var rng_data: Dictionary = data["rng"]
+		if rng_data.has("seed"):
+			_rng.seed = str(rng_data["seed"]).to_int()
+		if rng_data.has("state"):
+			_rng.state = str(rng_data["state"]).to_int()
+
+	if data.has("prices"):
+		prices.prices = _restore_prices(data["prices"])
+	else:
+		# 相場が無ければ引き直す。get_price() が落ちる状態にはしない。
+		prices.reroll()
+
+
+## item_id -> 個数。未知の品目は捨てる（品目を消した後の古いセーブ対策）。
+func _restore_counts(source: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for item_id: Variant in source:
+		var key: String = str(item_id)
+		if not GameData.ITEMS.has(key):
+			continue
+		var count: int = int(source[item_id])
+		if count > 0:
+			out[key] = count
+	return out
+
+
+## city_id -> {"day": int, "prices": {item_id -> int}}。未知の都市は捨てる。
+func _restore_memo(source: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for city_id: Variant in source:
+		var key: String = str(city_id)
+		if not GameData.CITIES.has(key):
+			continue
+		var entry: Dictionary = source[city_id]
+		var entry_prices: Dictionary = {}
+		for item_id: Variant in entry.get("prices", {}):
+			var item_key: String = str(item_id)
+			if GameData.ITEMS.has(item_key):
+				entry_prices[item_key] = int(entry["prices"][item_id])
+		out[key] = {"day": int(entry.get("day", 1)), "prices": entry_prices}
+	return out
+
+
+## 保存された相場。今の GameData と噛み合わなければ引き直す。
+##
+## 一部だけ埋めると、その品目だけ乱数系列の外の値になる。都市や品目を
+## 足した後の古いセーブでは、丸ごと作り直す方が筋が通る（1日ぶん相場が
+## 変わるが、決定性は保たれる）。
+func _restore_prices(source: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for city_id: String in GameData.CITIES:
+		if not source.has(city_id):
+			prices.reroll()
+			return prices.prices
+		var city_prices: Dictionary = {}
+		for item_id: String in GameData.ITEMS:
+			if not source[city_id].has(item_id):
+				prices.reroll()
+				return prices.prices
+			city_prices[item_id] = int(source[city_id][item_id])
+		out[city_id] = city_prices
+	return out
+
+
 # --- 内部 ---
 
 func _reduce_cargo(item_id: String, count: int) -> void:
