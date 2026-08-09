@@ -25,6 +25,7 @@ func _init() -> void:
 	_test_corrupt_file()
 	_test_briefing_continue()
 	_test_save_lifetime()
+	_test_briefing_close_paths()
 	_finish()
 
 
@@ -535,5 +536,84 @@ func _test_save_lifetime() -> void:
 	var survived: GameSession = _restore_from(broken)
 	_check(not survived.has_memo("martlock"), "壊れたメモは捨てる", "残った")
 	_check(survived.day > 0, "壊れたメモがあっても復元は続く", "落ちた")
+
+	SaveManager.delete_save(TEST_PATH)
+
+
+## 開始画面を閉じたときの2つの経路。
+##
+## main.gd は autoload の GameState を参照するため --script では
+## コンパイルできない（Identifier not found: GameState）。そのため
+## `_on_briefing_closed()` の**判断の順序**をここで再現して検査する。
+## 実物のハンドラを通していないので、main.gd 側の分岐を変えたら
+## こちらも合わせること。
+##
+## 守りたいのは「読み返しただけでセーブが変わらない」こと。
+## 以前は読み返しでも delete_save() + save_game() が走り、進行中の記録を
+## 作り直していた（書き込みに失敗すると消えたままになる）。
+func _test_briefing_close_paths() -> void:
+	print("--- 開始画面を閉じたときの扱い ---")
+	SaveManager.delete_save(TEST_PATH)
+
+	# 8日目まで進んだセーブがある状態を作る。
+	var played: GameSession = _play_a_while(18013)
+	SaveManager.save_game(played, TEST_PATH)
+	var saved_day: int = played.day
+	var saved_silver: int = played.silver
+	_check(saved_day > 1, "そもそも進んだ状態で試している", str(saved_day))
+
+	# 経路1: 目標の読み返し（starts_play = false）。何もしない。
+	var reread_starts_play: bool = false
+	if reread_starts_play:
+		SaveManager.save_game(played, TEST_PATH)
+	var after_reread: GameSession = SaveManager.load_game(TEST_PATH)
+	_check(after_reread != null, "読み返しの後もセーブが残る",
+		SaveManager.last_error())
+	if after_reread != null:
+		_check(after_reread.day == saved_day, "読み返しても日付が変わらない",
+			"%d / %d" % [after_reread.day, saved_day])
+		_check(after_reread.silver == saved_silver, "読み返してもシルバーが変わらない",
+			"%d / %d" % [after_reread.silver, saved_silver])
+
+	# 経路2: 新規開始の入口（starts_play = true）。そのセッションで上書きする。
+	var fresh: GameSession = GameSession.new(18014)
+	var new_starts_play: bool = true
+	if new_starts_play:
+		SaveManager.save_game(fresh, TEST_PATH)
+	var after_start: GameSession = SaveManager.load_game(TEST_PATH)
+	_check(after_start != null and after_start.day == 1,
+		"新規開始の入口なら1日目で上書きされる",
+		str(after_start.day) if after_start != null else "読めない")
+
+	# 上書きなので、前のプレイの記録は残らない。
+	_check(after_start != null and after_start.silver != saved_silver,
+		"前のプレイの記録は残らない",
+		str(after_start.silver) if after_start != null else "読めない")
+
+	# delete_save() を挟まないので「消したが書けなかった」窓が無い。
+	# 書き込みが失敗しても直前のセーブが生き残ることを、保存を試みずに確かめる。
+	var untouched: GameSession = SaveManager.load_game(TEST_PATH)
+	_check(untouched != null, "保存を試みなければセーブはそのまま残る",
+		SaveManager.last_error())
+
+
+	# 上の検査は判断を写しただけなので、main.gd 側が変わっても気づけない。
+	# 実物の分岐が保たれているかをソースで確かめる（本来は実行して見たいが、
+	# autoload を要するため --script では動かせない）。
+	var source: String = ""
+	var file: FileAccess = FileAccess.open("res://scenes/main/main.gd", FileAccess.READ)
+	if file != null:
+		source = file.get_as_text()
+		file.close()
+	_check(source != "", "main.gd を読める", "読めない")
+	_check(source.contains("if not _briefing_starts_play:"),
+		"読み返しでは早期に戻る分岐がある", "分岐が見当たらない")
+	_check(not source.contains("SaveManager.delete_save()"),
+		"開始画面の経路で delete_save() を呼んでいない",
+		"delete_save() が残っている")
+	_check(source.contains("_show_briefing.bind(false)"),
+		"目標ボタンは読み返しとして繋がれている", "bind(false) が無い")
+	_check(source.contains("_show_briefing(true)"),
+		"新規開始の入口は starts_play=true で開く", "true で開いていない")
 
 	SaveManager.delete_save(TEST_PATH)
