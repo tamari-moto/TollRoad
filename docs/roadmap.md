@@ -1,16 +1,28 @@
 # TollRoad 実装ロードマップ
 
+> **これは着手前に書いた計画で、歴史文書として残している。**
+> M0〜M8 はすべて完了し、その後も機能を足しているため、**本文の現状認識は
+> 現在と一致しない**（「実装は45行」「`scripts/systems/` はすべて空」など）。
+> 未来形で書かれた判断も、ほとんどは既に決着している。
+>
+> - **今の構造を知りたい** → [architecture.md](architecture.md)
+> - **作業するときの規約** → [CLAUDE.md](../CLAUDE.md)
+>
+> ここに価値が残っているのは**着手前にどう考えたか**（ヘッドレス優先の理由、
+> テストフレームワークを入れない判断、「落とし穴」の予見）。
+> **現状の記述として読まないこと。**
+
 [game_design.md](game_design.md) が「何を作るか」、本書が「どの順番で作るか」を扱う。
 
 ゴールは **60日を通しで遊べる完成版**（島・騎乗・相場メモ・航海日誌・ランク判定を含む全要素）。
 
-## 現在地
+## 着手前の現在地（2026-08-02 時点）
 
 実装は **45行**（autoload 2つと print 1行）。`scripts/systems/`・`scripts/ui/`・`scenes/ui/`・`scenes/entities/`・`data/` はすべて空。
 
 **既存の45行は置き換え前提。** 3つのシグナルすべてにリスナーが無く、5つの関数すべてに呼び出し元が無い。既存 API に依存するコードはゼロなので、作り直しのコストは発生しない。
 
-特に [economy_manager.gd](../scripts/autoload/economy_manager.gd) の `item_prices: Dictionary` は品目のみをキーとしており、**6都市 × 9品目を表現できない**。M1 で置き換わる。義理で残さないこと。
+特に `economy_manager.gd`（当時の autoload）の `item_prices: Dictionary` は品目のみをキーとしており、**6都市 × 9品目を表現できない**。M1 で置き換わる。義理で残さないこと。<br>※ 予告どおり M1 で削除済み。現在は [price_table.gd](../scripts/systems/price_table.gd) が `prices[city][item]` を持つ。
 
 ## 基本方針
 
