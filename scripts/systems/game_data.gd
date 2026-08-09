@@ -97,14 +97,14 @@ const EXPLORE_MAX_CHANCE: float = 0.85
 ## カーレオンは黒ゾーンの並びで成功率が下がる代わりに報酬が大きい。
 const EXPLORE_CAERLEON_PENALTY: float = 0.15
 
-const EXPLORE_SILVER_MIN: int = 800
-const EXPLORE_SILVER_MAX: int = 2000
+const EXPLORE_SILVER_MIN: int = 1600
+const EXPLORE_SILVER_MAX: int = 4000
 const EXPLORE_CAERLEON_SILVER_MULT: float = 2.5
 
-const EXPLORE_GEM_MIN: int = 1
-const EXPLORE_GEM_MAX: int = 3
-const EXPLORE_RELIC_CHANCE: float = 0.15
-const EXPLORE_CAERLEON_RELIC_CHANCE: float = 0.35
+const EXPLORE_GEM_MIN: int = 2
+const EXPLORE_GEM_MAX: int = 6
+const EXPLORE_RELIC_CHANCE: float = 0.30
+const EXPLORE_CAERLEON_RELIC_CHANCE: float = 0.70
 
 ## 成功すると数日間、島の労働者の産出が増える。
 const EXPLORE_BOOST_DAYS: int = 5
