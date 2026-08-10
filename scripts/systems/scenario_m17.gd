@@ -25,44 +25,50 @@ func _init() -> void:
 
 
 func _test_world_geometry() -> void:
-	print("--- 3D 空間の配置 ---")
+	print("--- 3D 空間の配置（不規則グラフのばね緩和） ---")
 	var world: MapView3D = MapView3D.new()
 
 	_check(world.positions.size() == GameData.CITIES.size(), "全都市の座標がある", str(world.positions.size()))
 
-	# 王国都市が水平面で等距離、等間隔。移動ルールとの対応の担保。
-	# 都市数が変わっても隣接都市間の弦長は CITY_SPACING で一定に保つ設計
-	# （map_view_3d.gd の _compute_scale() 参照）。
+	# 不規則グラフなので環のような厳密な等距離・等角度は前提にしない。
+	# ばね緩和が「重ならない」「王道の間隔がおおむね妥当」「中心からの緩い
+	# 求心力が効いている」ことだけを見る。
 	var ring: Array[String] = GameData.royal_city_ids()
-	var angles: Array[float] = []
 	var radii: Array[float] = []
 	for city_id: String in ring:
 		var p: Vector3 = world.positions[city_id]
-		var flat := Vector2(p.x, p.z)
-		radii.append(flat.length())
-		angles.append(flat.angle())
+		radii.append(Vector2(p.x, p.z).length())
 
-	if radii.size() == GameData.RING_SIZE:
-		_check(radii.max() - radii.min() < 0.01, "全王国都市が等距離",
-			"差 %.3f" % (radii.max() - radii.min()))
-		var adjacent_gap: float = world.positions[ring[0]].distance_to(world.positions[ring[1]])
-		_check(is_equal_approx(adjacent_gap, MapView3D.CITY_SPACING), "隣接都市の間隔が設定どおり",
-			"%.2f / %.2f" % [adjacent_gap, MapView3D.CITY_SPACING])
+	var min_radius: float = radii.min()
+	var max_radius: float = radii.max()
+	_check(min_radius > 1.0, "半径がゼロでない", str(min_radius))
+	_check(max_radius < min_radius * 3.0, "都市間で半径が極端にばらつかない",
+		"最小 %.2f / 最大 %.2f" % [min_radius, max_radius])
 
-	if angles.size() == GameData.RING_SIZE:
-		var even: bool = true
-		var n: int = GameData.RING_SIZE
-		for i: int in n:
-			var diff: float = angles[(i + 1) % n] - angles[i]
-			while diff < 0.0:
-				diff += TAU
-			if absf(diff - TAU / float(n)) > 0.01:
-				even = false
-		_check(even, "隣り合う都市が均等な角度で離れている", "間隔が不均等")
+	var overlap: bool = false
+	for a: String in ring:
+		for b: String in ring:
+			if a == b:
+				continue
+			var pa: Vector2 = Vector2(world.positions[a].x, world.positions[a].z)
+			var pb: Vector2 = Vector2(world.positions[b].x, world.positions[b].z)
+			if pa.distance_to(pb) < 0.5:
+				overlap = true
+	_check(not overlap, "都市どうしが重ならない", "重なっている都市がある")
 
-	# レイヴンスパイアは水平面の中央。
+	# 王道でつながる都市どうしは、平均するとおおむね CITY_SPACING 前後の
+	# 間隔になる（ばね緩和の目標距離）。個々の辺の厳密な一致は求めない。
+	var total_edge_dist: float = 0.0
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		total_edge_dist += world.positions[edge[0]].distance_to(world.positions[edge[1]])
+	var average_edge_dist: float = total_edge_dist / float(GameData.ROYAL_ROAD_EDGES.size())
+	_check(average_edge_dist > MapView3D.CITY_SPACING * 0.5 and average_edge_dist < MapView3D.CITY_SPACING * 2.0,
+		"王道でつながる都市どうしの平均間隔がおおむね妥当",
+		"平均 %.2f（目標 %.2f）" % [average_edge_dist, MapView3D.CITY_SPACING])
+
+	# 中心都市は水平面の中央。
 	var c: Vector3 = world.positions[GameData.CAERLEON]
-	_check(Vector2(c.x, c.z).length() < 0.01, "レイヴンスパイアは中央",
+	_check(Vector2(c.x, c.z).length() < 0.01, "中心都市は中央にある",
 		"中心から %.3f" % Vector2(c.x, c.z).length())
 
 	# 都市は地面の上に乗っている（高さが地形と一致する）。
@@ -72,14 +78,14 @@ func _test_world_geometry() -> void:
 		_check(is_equal_approx(p.y, ground_y), "%s が地面に乗っている" % city_id,
 			"%.2f / 地面 %.2f" % [p.y, ground_y])
 
-	# レイヴンスパイアは盆地の底。周囲より低い。
-	var ravenspire_y: float = world.positions[GameData.CAERLEON].y
+	# 中心都市は盆地の底。周囲より低い。
+	var center_y: float = world.positions[GameData.CAERLEON].y
 	var ring_average: float = 0.0
 	for city_id: String in ring:
 		ring_average += world.positions[city_id].y
 	ring_average /= float(ring.size())
-	_check(ravenspire_y < ring_average, "レイヴンスパイアは周囲より低い（盆地の底）",
-		"%.2f vs 平均 %.2f" % [ravenspire_y, ring_average])
+	_check(center_y < ring_average, "中心都市は周囲より低い（盆地の底）",
+		"%.2f vs 平均 %.2f" % [center_y, ring_average])
 
 	world.free()
 

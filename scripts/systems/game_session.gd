@@ -209,28 +209,109 @@ func craft(item_id: String, count: int) -> bool:
 
 # --- 移動 ---
 
-## その都市へ移動するのに必要な日数・費用を返す。
-## 到達不能な場合は空の Dictionary。
-func route_to(destination: String) -> Dictionary:
-	if destination == current_city:
+## from_city から to_city への直接区間（1ホップ）のコスト。
+## 直接つながっていない場合は空の Dictionary。
+## 経路探索（_shortest_path）と move_to() の実行の両方がこれを辺の重みとして使う。
+func _direct_leg(from_city: String, to_city: String) -> Dictionary:
+	if from_city == to_city:
 		return {}
-	var is_black_zone: bool = destination == GameData.CAERLEON or current_city == GameData.CAERLEON
+	var is_black_zone: bool = to_city == GameData.CAERLEON or from_city == GameData.CAERLEON
 	if is_black_zone:
 		return {
 			"days": GameData.MOVE_BLACK_ZONE_DAYS,
 			"cost": GameData.MOVE_BLACK_ZONE_COST,
 			"raid_chance": GameData.RAID_CHANCE,
 		}
-	if GameData.is_adjacent(current_city, destination):
+	if GameData.is_adjacent(from_city, to_city):
 		return {
 			"days": GameData.MOVE_ADJACENT_DAYS,
 			"cost": GameData.MOVE_ADJACENT_COST,
 			"raid_chance": 0.0,
 		}
+	return {}
+
+
+## city_id から1ホップで行ける全都市（王道の隣接都市 + 中心都市）。
+## 中心都市自身からは全王国都市が1ホップ。
+func _leg_neighbors(city_id: String) -> Array[String]:
+	if city_id == GameData.CAERLEON:
+		return GameData.royal_city_ids()
+	var neighbors: Array[String] = GameData.road_neighbors(city_id).duplicate()
+	neighbors.append(GameData.CAERLEON)
+	return neighbors
+
+
+## from_city から to_city への最小コスト経路（到着都市の列、from_city 自体は含まない）。
+## 都市数が10と少ないので、優先度キュー無しの単純なダイクストラで十分。
+## 全区間が1日固定のため、コスト最小化はホップ数最小化とほぼ一致する
+## （区間の日数が変わる場合はこの前提が崩れるので、そのときはコストではなく
+## 日数を主キーにする設計へ見直すこと）。
+## グラフは常に連結なので、from_city != to_city なら空にはならない想定。
+func _shortest_path(from_city: String, to_city: String) -> Array[String]:
+	var nodes: Array[String] = []
+	for id: String in GameData.CITIES:
+		nodes.append(id)
+
+	var dist: Dictionary = {}
+	var prev: Dictionary = {}
+	var visited: Dictionary = {}
+	for node: String in nodes:
+		dist[node] = INF
+	dist[from_city] = 0.0
+
+	while true:
+		var current: String = ""
+		var current_dist: float = INF
+		for node: String in nodes:
+			if not visited.has(node) and dist[node] < current_dist:
+				current = node
+				current_dist = dist[node]
+		if current == "" or current == to_city:
+			break
+		visited[current] = true
+		for neighbor: String in _leg_neighbors(current):
+			var leg: Dictionary = _direct_leg(current, neighbor)
+			var candidate: float = dist[current] + leg["cost"]
+			if candidate < dist[neighbor]:
+				dist[neighbor] = candidate
+				prev[neighbor] = current
+
+	if from_city != to_city and not prev.has(to_city):
+		return []
+
+	var path: Array[String] = []
+	var step: String = to_city
+	while step != from_city:
+		path.push_front(step)
+		step = prev[step]
+	return path
+
+
+## その都市へ移動するのに必要な合計日数・費用・襲撃率を返す（最短経路の合成）。
+## raid_chance は「経路のどこか1区間以上で被弾する確率」
+## （1 - 全区間とも無事である確率の積）。到達不能な場合は空の Dictionary。
+func route_to(destination: String) -> Dictionary:
+	if destination == current_city:
+		return {}
+	var path: Array[String] = _shortest_path(current_city, destination)
+	if path.is_empty():
+		return {}
+
+	var total_days: int = 0
+	var total_cost: int = 0
+	var survive_chance: float = 1.0
+	var from_city: String = current_city
+	for stop: String in path:
+		var leg: Dictionary = _direct_leg(from_city, stop)
+		total_days += leg["days"]
+		total_cost += leg["cost"]
+		survive_chance *= 1.0 - leg["raid_chance"]
+		from_city = stop
+
 	return {
-		"days": GameData.MOVE_FAR_DAYS,
-		"cost": GameData.MOVE_FAR_COST,
-		"raid_chance": 0.0,
+		"days": total_days,
+		"cost": total_cost,
+		"raid_chance": 1.0 - survive_chance,
 	}
 
 
@@ -241,27 +322,35 @@ func can_move_to(destination: String) -> bool:
 	return not route.is_empty() and silver >= route["cost"]
 
 
-## 移動する。黒ゾーンでは襲撃判定を行い、被弾すると積荷を全て失う
-## （シルバーと島倉庫は無傷）。
-## 襲撃判定は片道につき1度（Q6）。黒ゾーンは1日移動なので区間は1つしかなく、
-## レイヴンスパイアを往復すると計2回判定される（往復とも無事な確率は約61%）。
+## 移動する。最短経路が複数区間にまたがる場合も、1回の呼び出しで最終目的地
+## まで一括して進む（プレイヤーの操作は1クリックのまま）。
+## 黒ゾーンを含む区間ごとに独立して襲撃判定を行う（Q6 の「片道につき1度」を
+## 区間単位に一般化したもの）。被弾しても旅程はそのまま最終目的地まで続く。
+## 積荷は最初の被弾で失われ、同じ旅程内で2度目以降の被弾があってもログは
+## 重複させない（乱数の消費自体は区間ごとに必ず行い、決定性を保つ）。
 func move_to(destination: String) -> bool:
 	if not can_move_to(destination):
 		return false
+	var path: Array[String] = _shortest_path(current_city, destination)
 	var route: Dictionary = route_to(destination)
 	silver -= route["cost"]
-	current_city = destination
 	_log("%s へ移動（%d日、費用 %d）" % [GameData.CITIES[destination]["name"], route["days"], route["cost"]])
 	silver_changed.emit(silver)
 
-	var raided: bool = false
-	if route["raid_chance"] > 0.0 and _rng.randf() < route["raid_chance"]:
-		raided = true
+	var raided_this_trip: bool = false
+	var from_city: String = current_city
+	for stop: String in path:
+		var leg: Dictionary = _direct_leg(from_city, stop)
+		current_city = stop
+		if leg["raid_chance"] > 0.0:
+			var this_leg_raided: bool = _rng.randf() < leg["raid_chance"]
+			if this_leg_raided:
+				raided_this_trip = true
+		for i: int in leg["days"]:
+			_advance_day()
+		from_city = stop
 
-	for i: int in route["days"]:
-		_advance_day()
-
-	if raided:
+	if raided_this_trip:
 		cargo.clear()
 		_log("襲撃された。積荷を全て失った。")
 		cargo_changed.emit()

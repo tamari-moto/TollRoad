@@ -54,25 +54,40 @@ func _despawn(node: Node) -> void:
 	node.free()
 
 
-## 環状で city_id の次（=王道1日で行ける隣接都市）。
+## city_id と王道で直接つながる都市の1つ（=1日で行ける隣接都市）。
 ##
-## 都市名を直書きすると都市の増減・改名のたびにシナリオを書き換える
-## 羽目になるため、「隣接都市が要る」検査はこれ経由で都市IDを得ること。
+## 都市名を直書きすると都市の増減・改名・接続変更のたびにシナリオを
+## 書き換える羽目になるため、「隣接都市が要る」検査はこれ経由で都市IDを
+## 得ること。次数が都市ごとに不揃い（GameData.ROYAL_ROAD_EDGES 参照）なので
+## 「次」という順序の概念は無く、road_neighbors() の先頭を返す。
 ## GameData は関数内ローカルの const にして、各シナリオ側で個別に
 ## preload している同名の const と衝突しないようにしてある。
 func _adjacent_royal_city(city_id: String) -> String:
 	const GameData = preload("res://scripts/systems/game_data.gd")
-	var ring: Array[String] = GameData.royal_city_ids()
-	var index: int = ring.find(city_id)
-	return ring[(index + 1) % ring.size()]
+	return GameData.road_neighbors(city_id)[0]
 
 
-## 環状で city_id から2つ離れた都市（=王道2日かかる非隣接都市）。
+## city_id から王道でちょうど2ホップ先（直接隣接ではない）都市。
+##
+## 現在のトポロジーは全都市がこの条件を満たす候補を持つ（設計時に手計算で
+## 確認済み）。BFSで距離2に達した最初の都市を返す。
 func _far_royal_city(city_id: String) -> String:
 	const GameData = preload("res://scripts/systems/game_data.gd")
-	var ring: Array[String] = GameData.royal_city_ids()
-	var index: int = ring.find(city_id)
-	return ring[(index + 2) % ring.size()]
+	var visited: Dictionary = {city_id: 0}
+	var queue: Array[String] = [city_id]
+	while not queue.is_empty():
+		var current: String = queue.pop_front()
+		var current_dist: int = visited[current]
+		if current_dist >= 2:
+			continue
+		for neighbor: String in GameData.road_neighbors(current):
+			if not visited.has(neighbor):
+				visited[neighbor] = current_dist + 1
+				queue.append(neighbor)
+	for id: String in visited:
+		if visited[id] == 2:
+			return id
+	return city_id
 
 
 ## 結果を集計して終了する。各シナリオの _init() の末尾で必ず呼ぶこと。

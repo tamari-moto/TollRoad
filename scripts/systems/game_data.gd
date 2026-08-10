@@ -43,35 +43,49 @@ const ITEMS: Dictionary = {
 const CRAFT_MATERIAL_COUNT: int = 3
 
 # --- 都市 ---
-## ring は環状位置。レイヴンスパイアは中央（黒ゾーン内）なので ring = -1。
 ## specialty はその都市で安い資源、bonus はその都市で安い（かつ製作還元がある）装備。
 ## explore_flavor は探索の演出文（討伐/遺跡探索のどちらの体裁かを都市ごとに変える）。
+## 接続関係（どの都市と王道で直接つながるか）は ROYAL_ROAD_EDGES を参照。
 const CITIES: Dictionary = {
-	"oakhaven":   {"name": "オークヘイヴン",   "ring": 0,  "specialty": "wood",  "bonus": "bow",
+	"oakhaven":   {"name": "オークヘイヴン",   "specialty": "wood",  "bonus": "bow",
 		"explore_flavor": "森に潜む狼の群れの討伐"},
-	"wrenfield":  {"name": "レンフィールド",   "ring": 1,  "specialty": "fiber", "bonus": "robe",
+	"wrenfield":  {"name": "レンフィールド",   "specialty": "fiber", "bonus": "robe",
 		"explore_flavor": "湿地に眠る遺跡の探索"},
-	"stonegate":  {"name": "ストーンゲート",   "ring": 2,  "specialty": "stone", "bonus": "shield",
+	"stonegate":  {"name": "ストーンゲート",   "specialty": "stone", "bonus": "shield",
 		"explore_flavor": "採石場跡に巣食う魔物の討伐"},
-	"ironhollow": {"name": "アイアンホロウ",   "ring": 3,  "specialty": "ore",   "bonus": "sword",
+	"ironhollow": {"name": "アイアンホロウ",   "specialty": "ore",   "bonus": "sword",
 		"explore_flavor": "山中の坑道遺跡の探索"},
-	"foxmere":    {"name": "フォックスミア",   "ring": 4,  "specialty": "hide",  "bonus": "armor",
+	"foxmere":    {"name": "フォックスミア",   "specialty": "hide",  "bonus": "armor",
 		"explore_flavor": "湿原に現れる怪物の討伐"},
-	"cragmoor":   {"name": "クラグムーア",     "ring": 5,  "specialty": "coal",  "bonus": "warhammer",
+	"cragmoor":   {"name": "クラグムーア",     "specialty": "coal",  "bonus": "warhammer",
 		"explore_flavor": "廃坑に眠る発破遺構の探索"},
-	"fenwick":    {"name": "フェンウィック",   "ring": 6,  "specialty": "wool",  "bonus": "cloak",
+	"fenwick":    {"name": "フェンウィック",   "specialty": "wool",  "bonus": "cloak",
 		"explore_flavor": "湿地牧草地を荒らす獣の討伐"},
-	"silvermere": {"name": "シルバーミア",     "ring": 7,  "specialty": "quartz", "bonus": "staff",
+	"silvermere": {"name": "シルバーミア",     "specialty": "quartz", "bonus": "staff",
 		"explore_flavor": "湖底に沈む魔導遺跡の探索"},
-	"wyndham":    {"name": "ウィンダム",       "ring": 8,  "specialty": "clay",  "bonus": "",
+	"wyndham":    {"name": "ウィンダム",       "specialty": "clay",  "bonus": "",
 		"explore_flavor": "窯場を脅かす盗賊団の討伐"},
-	"ravenspire": {"name": "レイヴンスパイア", "ring": -1, "specialty": "",      "bonus": "",
+	"ravenspire": {"name": "レイヴンスパイア", "specialty": "",      "bonus": "",
 		"explore_flavor": "黒ゾーン最奥の遺跡の探索"},
 }
 
 const CAERLEON: String = "ravenspire"
-## 環状に並ぶ王国都市の数。隣接判定に使う。
-const RING_SIZE: int = 9
+
+## 王国都市どうしを直接つなぐ王道（黒ゾーンを含まない）。片方向だけ書けば
+## 双方向とみなす（is_adjacent() が両順序で照合する）。次数はわざと不揃いに
+## してある（oakhaven/wyndham は行き止まり、ironhollow は最大の交差点）。
+const ROYAL_ROAD_EDGES: Array = [
+	["oakhaven", "stonegate"],
+	["stonegate", "ironhollow"],
+	["ironhollow", "foxmere"],
+	["ironhollow", "wrenfield"],
+	["ironhollow", "cragmoor"],
+	["foxmere", "cragmoor"],
+	["foxmere", "silvermere"],
+	["wrenfield", "fenwick"],
+	["fenwick", "silvermere"],
+	["silvermere", "wyndham"],
+]
 
 # --- 価格 ---
 const JITTER_MIN: float = 0.86
@@ -89,8 +103,6 @@ const SELL_TAX_RATE: float = 0.05
 # --- 移動 ---
 const MOVE_ADJACENT_DAYS: int = 1
 const MOVE_ADJACENT_COST: int = 250
-const MOVE_FAR_DAYS: int = 2
-const MOVE_FAR_COST: int = 450
 const MOVE_BLACK_ZONE_DAYS: int = 1
 const MOVE_BLACK_ZONE_COST: int = 400
 const RAID_CHANCE: float = 0.22
@@ -173,28 +185,36 @@ static func resource_ids() -> Array[String]:
 	return ids
 
 
-## 王国都市（レイヴンスパイア以外）のIDを環状位置の順で返す。
+## 王国都市（レイヴンスパイア以外）のIDを CITIES の宣言順で返す。
+## 順序はトポロジーとは無関係な、表示用の安定順でしかない。
 static func royal_city_ids() -> Array[String]:
 	var ids: Array[String] = []
-	ids.resize(RING_SIZE)
 	for id: String in CITIES:
-		var ring: int = CITIES[id]["ring"]
-		if ring >= 0:
-			ids[ring] = id
+		if id != CAERLEON:
+			ids.append(id)
 	return ids
 
 
-## 2都市が環状で隣接しているか。環は閉じている（0と RING_SIZE-1 も隣接）。
-## レイヴンスパイアはどの都市とも王道では接続しない。
+## 2都市が王道で直接つながっているか（ROYAL_ROAD_EDGES に辺があるか）。
+## レイヴンスパイアはどの都市とも王道では接続しない（黒ゾーン隣接は含まない）。
 static func is_adjacent(city_a: String, city_b: String) -> bool:
 	if city_a == city_b:
 		return false
-	var ring_a: int = CITIES[city_a]["ring"]
-	var ring_b: int = CITIES[city_b]["ring"]
-	if ring_a < 0 or ring_b < 0:
-		return false
-	var diff: int = absi(ring_a - ring_b)
-	return diff == 1 or diff == RING_SIZE - 1
+	for edge: Array in ROYAL_ROAD_EDGES:
+		if (edge[0] == city_a and edge[1] == city_b) or (edge[0] == city_b and edge[1] == city_a):
+			return true
+	return false
+
+
+## city_id と王道で直接つながる都市のIDを返す（レイヴンスパイアは常に空）。
+static func road_neighbors(city_id: String) -> Array[String]:
+	var neighbors: Array[String] = []
+	for edge: Array in ROYAL_ROAD_EDGES:
+		if edge[0] == city_id:
+			neighbors.append(edge[1])
+		elif edge[1] == city_id:
+			neighbors.append(edge[0])
+	return neighbors
 
 
 ## 純資産から到達ランク名を返す。

@@ -45,26 +45,46 @@ func _test_static_definitions() -> void:
 
 
 func _test_adjacency() -> void:
-	print("--- 隣接判定（環は閉じている） ---")
-	# 都市名には依存させず、環状位置（royal_city_ids() のインデックス）で
-	# 構造そのものを検査する。都市の改名・増減があってもそのまま通る。
+	print("--- 隣接判定（不規則な連結グラフ） ---")
+	# 都市名には依存させず、GameData.ROYAL_ROAD_EDGES から導かれる構造だけを
+	# 検査する。環ではなく次数が都市ごとに異なるグラフなので、「全都市が
+	# 隣接2つ」のような一様性は前提にしない。
 	var ring: Array[String] = GameData.royal_city_ids()
-	var last: int = ring.size() - 1
-	_check(GameData.is_adjacent(ring[3], ring[2]), "環状位置3と2は隣接", "false")
-	_check(GameData.is_adjacent(ring[3], ring[4]), "環状位置3と4は隣接", "false")
-	# 環が閉じているので 0 と RING_SIZE-1 も隣接する。
-	_check(GameData.is_adjacent(ring[0], ring[last]), "環状位置0とRING_SIZE-1は隣接", "false")
-	_check(not GameData.is_adjacent(ring[0], ring[2]), "0と2は非隣接", "true")
-	_check(not GameData.is_adjacent(ring[0], GameData.CAERLEON), "中心都市は王道で接続しない", "true")
-	_check(not GameData.is_adjacent(ring[0], ring[0]), "同一都市は隣接ではない", "true")
 
-	# どの王国都市もちょうど2つの隣接を持つ。
+	for a: String in ring:
+		_check(not GameData.is_adjacent(a, a), "%s は自分自身とは隣接しない" % a, "隣接扱い")
+		_check(not GameData.is_adjacent(a, GameData.CAERLEON),
+			"%s は中心都市と王道では接続しない" % a, "接続扱い")
+		for b: String in ring:
+			_check(GameData.is_adjacent(a, b) == GameData.is_adjacent(b, a),
+				"%s-%s の隣接判定は対称" % [a, b], "非対称")
+
+	# ROYAL_ROAD_EDGES が参照する都市は必ず実在の王国都市。
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		_check(ring.has(edge[0]) and ring.has(edge[1]),
+			"辺 %s-%s は実在の王国都市を指す" % [edge[0], edge[1]], "不明な都市を含む")
+
+	# 次数（隣接数）が不揃いであること自体が「環ではない」ことの直接的な証拠。
+	var min_degree: int = 999
+	var max_degree: int = 0
 	for city_id: String in ring:
-		var count: int = 0
-		for other: String in ring:
-			if GameData.is_adjacent(city_id, other):
-				count += 1
-		_check(count == 2, "%s の隣接は2都市" % city_id, str(count))
+		var degree: int = GameData.road_neighbors(city_id).size()
+		min_degree = mini(min_degree, degree)
+		max_degree = maxi(max_degree, degree)
+	_check(min_degree >= 1, "孤立した都市がない（次数1以上）", str(min_degree))
+	_check(min_degree != max_degree, "次数が不揃い（環ではない）", "全都市が次数%d" % min_degree)
+
+	# 黒ゾーンを除いた王道だけでも全都市が連結している。
+	var visited: Dictionary = {ring[0]: true}
+	var queue: Array[String] = [ring[0]]
+	while not queue.is_empty():
+		var current: String = queue.pop_front()
+		for neighbor: String in GameData.road_neighbors(current):
+			if not visited.has(neighbor):
+				visited[neighbor] = true
+				queue.append(neighbor)
+	_check(visited.size() == ring.size(), "王道だけで全都市が連結している",
+		"%d / %d 都市に到達" % [visited.size(), ring.size()])
 
 
 func _test_price_modifiers() -> void:
@@ -186,13 +206,14 @@ func _test_trade_loop() -> void:
 	_check(sell_price > buy_price, "特産地で買い他所で売ると単価が上がる",
 		"買 %d / 売 %d（シード次第では逆転しうる）" % [buy_price, sell_price])
 
-	# 非隣接への移動は2日・450（現在地から見て非隣接な都市へ）。
+	# 王道2ホップ先（非隣接）への移動は、王道250×2の500・2日
+	# （黒ゾーン経由の800より安いので経路探索はこちらを選ぶ）。
 	var far_city: String = _far_royal_city(s.current_city)
 	var day_before: int = s.day
 	var silver_before_far: int = s.silver
 	s.move_to(far_city)
-	_check(s.silver == silver_before_far - 450, "非隣接の移動費は450", str(s.silver))
-	_check(s.day == day_before + 2, "非隣接は2日かかる", str(s.day))
+	_check(s.silver == silver_before_far - 500, "2ホップ先の移動費は500", str(s.silver))
+	_check(s.day == day_before + 2, "2ホップ先は2日かかる", str(s.day))
 
 	# 不変条件。
 	_check(s.silver >= 0, "シルバーが負にならない", str(s.silver))

@@ -16,6 +16,7 @@ func _init() -> void:
 	_test_black_zone_route()
 	_test_raid_outcome()
 	_test_raid_rate()
+	_test_multi_leg_raid()
 	_finish()
 
 
@@ -166,6 +167,75 @@ func _test_raid_outcome() -> void:
 		if entry.contains("襲撃"):
 			found_log = true
 	_check(found_log, "襲撃が航海日誌に記録される", "記録なし")
+
+
+## 王道で迂回するより中心都市を2回経由した方が安い都市ペアでは、1回の
+## move_to() が黒ゾーン区間を2つ含む。途中の区間で被弾しても旅程は最終
+## 目的地まで続き、費用・日数は経路全体の合計どおりになることを検査する。
+func _test_multi_leg_raid() -> void:
+	print("--- 複数区間の移動（黒ゾーンを2回経由） ---")
+	# そのような都市ペアは、route_to() の raid_chance が単発の黒ゾーン移動
+	# （0.22）より高くなる（2区間ぶんの襲撃判定が合成されるため）。
+	# この特徴でペアを動的に探す（都市名は直書きしない）。
+	var ring: Array[String] = GameData.royal_city_ids()
+	var start_city: String = ""
+	var end_city: String = ""
+	var expected_route: Dictionary = {}
+	for a: String in ring:
+		var probe: GameSession = GameSession.new(0)
+		if probe.current_city != a:
+			probe.move_to(a)
+		for b: String in ring:
+			if b == a:
+				continue
+			var route: Dictionary = probe.route_to(b)
+			if route.get("raid_chance", 0.0) > GameData.RAID_CHANCE + 0.01:
+				start_city = a
+				end_city = b
+				expected_route = route
+				break
+		if start_city != "":
+			break
+
+	_check(start_city != "", "中心都市を2回経由する都市ペアが存在する", "見つからない")
+	if start_city == "":
+		return
+
+	# そのペアで、実際に襲撃が起きるシードを探す。
+	var raided_session: GameSession = null
+	var silver_at_departure: int = 0
+	var day_before: int = 0
+	for seed_value: int in range(1, 500):
+		var s: GameSession = GameSession.new(seed_value)
+		if s.current_city != start_city:
+			s.move_to(start_city)
+		s.buy("ore", 10)
+		if s.cargo_count("ore") != 10:
+			continue
+		silver_at_departure = s.silver
+		day_before = s.day
+		s.move_to(end_city)
+		if s.cargo.is_empty():
+			raided_session = s
+			break
+
+	_check(raided_session != null, "多段移動で襲撃が起きるシードが見つかる", "500シード試して0件")
+	if raided_session == null:
+		return
+
+	_check(raided_session.current_city == end_city,
+		"経路の途中で被弾しても最終目的地まで旅程が続く", raided_session.current_city)
+	_check(raided_session.cargo.is_empty(), "襲撃で積荷を全て失う", "残っている")
+	_check(raided_session.silver == silver_at_departure - expected_route["cost"],
+		"被弾しても費用は経路の合計どおり引かれる", str(raided_session.silver))
+	_check(raided_session.day == day_before + expected_route["days"],
+		"被弾しても日数は経路の合計どおり進む", str(raided_session.day))
+
+	var found_log: bool = false
+	for entry: String in raided_session.log_entries:
+		if entry.contains("襲撃"):
+			found_log = true
+	_check(found_log, "多段移動でも襲撃が航海日誌に記録される", "記録なし")
 
 
 func _test_raid_rate() -> void:

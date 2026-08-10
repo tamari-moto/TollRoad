@@ -83,7 +83,7 @@ func _populate() -> void:
 			"手持ちは %s シルバーと、荷を積むロバが一頭きり。\n\n" +
 			"%d つの都市を結ぶ街道を巡り、%d日のうちにどれだけの財を築けるか。\n" +
 			"中央の%sは実入りが大きいが、そこへ至る道は無法地帯だ。"
-		) % [UiUtil.format_number(GameData.INITIAL_SILVER), GameData.RING_SIZE, GameData.TOTAL_DAYS,
+		) % [UiUtil.format_number(GameData.INITIAL_SILVER), GameData.royal_city_ids().size(), GameData.TOTAL_DAYS,
 			GameData.CITIES[GameData.CAERLEON]["name"]]
 
 	if is_instance_valid(_goal_label):

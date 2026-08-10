@@ -1,9 +1,10 @@
 extends Node3D
 ## 大陸図の 3D 表示。地形・都市・経路を組み立てる。
 ##
-## 都市の配置は 2D 版と同じ規則（環状に王国都市、中央にレイヴンスパイアを
-## 都市数に応じた等間隔で配置）をそのまま 3D 空間に写す。
-## 移動ルールと地図の対応を崩さないため。
+## 都市の配置は GameData.ROYAL_ROAD_EDGES（不規則な連結グラフ）を、決定的な
+## ばね緩和（Fruchterman-Reingold 型の力学モデル）で水平面に配置してから
+## 3D 空間に写す。中央にはレイヴンスパイアを固定する。乱数は使わないので
+## 毎回ビット単位で同じ配置になる。
 ##
 ## クリック判定は 3D では行わない。map_panel が unproject_position() で
 ## 画面座標へ変換し、既存の Button を重ねる。
@@ -11,16 +12,25 @@ extends Node3D
 const GameData = preload("res://scripts/systems/game_data.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-## 隣接都市間の目標間隔（3D 空間の単位）。都市数（GameData.RING_SIZE）が
-## 変わっても間隔を一定に保つため、半径はこの値から動的に算出する
-## （旧 RING_SIZE=5・半径9.0 の組み合わせから逆算: 2*9.0*sin(π/5) ≈ 10.58）。
+## 王道でつながる都市間の目標間隔（3D 空間の単位）。ばね緩和の引力が
+## この距離に収束させようとする（旧・環状配置時代の値をそのまま踏襲）。
 const CITY_SPACING: float = 10.58
-## 地形の一辺に足す余白（環の直径の外側）。
+## 地形の一辺に足す余白（配置全体の直径の外側）。
 const TERRAIN_MARGIN: float = 16.0
-## 盆地の半径に足す余白（環の半径の外側）。
+## 盆地の半径に足す余白（配置全体の半径の外側）。
 const BASIN_MARGIN: float = 2.0
 
-## 環状の半径（3D 空間の単位）。_compute_scale() で都市数に応じて算出する。
+## ばね緩和の反復回数。多いほど収束するが、都市数が10程度なので十分少なくて済む。
+const RELAXATION_ITERATIONS: int = 300
+## 反復1回あたりの最大移動量（温度）。反復が進むにつれ線形に0へ冷やす
+## ことで発散を防ぎ、後半ほど収束に近づける（Fruchterman-Reingold の cooling）。
+const RELAXATION_INITIAL_TEMPERATURE: float = CITY_SPACING * 0.5
+## 中心からの半径を大まかに一定へ寄せる、弱い求心力の強さ（0〜1の割合）。
+## 強すぎるとばねと反発の均衡を崩し、弱すぎると配置が全体に広がりすぎる。
+const CENTERING_STRENGTH: float = 0.02
+
+## 配置全体の半径（3D 空間の単位）。緩和後の実際の座標の広がりから
+## _compute_scale() が算出する（環のような閉形式の計算はしない）。
 var _ring_radius: float = 0.0
 ## 地形の一辺。都市が乗る範囲より広く取る。_compute_scale() で算出する。
 var _terrain_size: float = 0.0
@@ -81,8 +91,12 @@ func _build() -> void:
 	_noise.seed = 20260802
 	_noise.frequency = TERRAIN_NOISE_SCALE
 
-	_compute_scale()
-	_compute_positions()
+	# 高さ（height_at()）は _basin_radius に依存するため、まず水平面
+	# （X-Z）の配置をばね緩和で決め、その広がりから空間定数を算出してから
+	# 高さ込みの最終座標を確定させる、という順序を守る必要がある。
+	var flat_positions: Dictionary = _relax_positions()
+	_compute_scale(flat_positions)
+	_compute_positions(flat_positions)
 	_build_terrain()
 	_build_cities()
 	_build_routes()
@@ -90,26 +104,81 @@ func _build() -> void:
 	_build_light()
 
 
-## 都市数（GameData.RING_SIZE）から空間定数を算出する。
-## 弦長 = 2 * 半径 * sin(π / 都市数) が CITY_SPACING で一定になるように
-## 半径を決め、地形・盆地の大きさもそれに追随させる。
-func _compute_scale() -> void:
-	_ring_radius = CITY_SPACING / (2.0 * sin(PI / float(GameData.RING_SIZE)))
+## 王国都市の水平面(X-Z)配置を、GameData.ROYAL_ROAD_EDGES に沿った決定的な
+## ばね緩和で求める（Fruchterman-Reingold 型）。乱数は使わない。
+## 中心都市（GameData.CAERLEON）は原点固定で、緩和の対象に含めない。
+func _relax_positions() -> Dictionary:
+	var ring: Array[String] = GameData.royal_city_ids()
+	var flat: Dictionary = {}
+
+	# 初期値は崩壊防止のための単なる仮配置（正円）。緩和で実際の間隔に収束する。
+	var seed_radius: float = CITY_SPACING / (2.0 * sin(PI / float(ring.size())))
+	for index: int in ring.size():
+		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
+		flat[ring[index]] = Vector2(cos(angle), sin(angle)) * seed_radius
+
+	var k: float = CITY_SPACING
+	for iteration: int in RELAXATION_ITERATIONS:
+		var forces: Dictionary = {}
+		for city_id: String in ring:
+			forces[city_id] = Vector2.ZERO
+
+		# 反発力: 全ペア。近いほど強く押し合う（都市が重なるのを防ぐ）。
+		for i: int in ring.size():
+			for j: int in range(i + 1, ring.size()):
+				var a: String = ring[i]
+				var b: String = ring[j]
+				var delta: Vector2 = flat[a] - flat[b]
+				var dist: float = maxf(delta.length(), 0.01)
+				var push: Vector2 = delta.normalized() * (k * k / dist)
+				forces[a] += push
+				forces[b] -= push
+
+		# 引力: 王道でつながる都市どうしのみ。離れているほど強く引き合う。
+		for edge: Array in GameData.ROYAL_ROAD_EDGES:
+			var a: String = edge[0]
+			var b: String = edge[1]
+			var delta: Vector2 = flat[b] - flat[a]
+			var dist: float = maxf(delta.length(), 0.01)
+			var pull: Vector2 = delta.normalized() * (dist * dist / k)
+			forces[a] += pull
+			forces[b] -= pull
+
+		# 中心からの半径を大まかに一定へ寄せる、弱い求心力。
+		for city_id: String in ring:
+			var radius: float = flat[city_id].length()
+			if radius > 0.01:
+				forces[city_id] -= flat[city_id].normalized() * (radius - seed_radius) * CENTERING_STRENGTH
+
+		# 温度を反復とともに線形に冷やし、1回の移動量に上限をかける
+		# （発散を防ぎ、後半の反復ほど収束に近づく）。
+		var temperature: float = RELAXATION_INITIAL_TEMPERATURE * (1.0 - float(iteration) / float(RELAXATION_ITERATIONS))
+		for city_id: String in ring:
+			var force: Vector2 = forces[city_id]
+			var magnitude: float = force.length()
+			if magnitude > 0.01:
+				flat[city_id] += force.normalized() * minf(magnitude, temperature)
+
+	flat[GameData.CAERLEON] = Vector2.ZERO
+	return flat
+
+
+## 緩和後の実際の座標の広がりから空間定数を算出する
+## （環のような閉形式の計算はせず、実測値から地形・盆地の大きさを決める）。
+func _compute_scale(flat_positions: Dictionary) -> void:
+	var max_radius: float = 0.0
+	for city_id: String in flat_positions:
+		max_radius = maxf(max_radius, flat_positions[city_id].length())
+	_ring_radius = max_radius
 	_terrain_size = _ring_radius * 2.0 + TERRAIN_MARGIN
 	_basin_radius = _ring_radius + BASIN_MARGIN
 
 
-## 都市の 3D 座標。2D 版と同じ規則で並べる。
-## 環状位置 0 を奥（-Z）にして時計回り。レイヴンスパイアは中央。
-func _compute_positions() -> void:
-	var ring: Array[String] = GameData.royal_city_ids()
-	for index: int in ring.size():
-		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
-		var x: float = cos(angle) * _ring_radius
-		var z: float = sin(angle) * _ring_radius
-		positions[ring[index]] = Vector3(x, height_at(x, z), z)
-
-	positions[GameData.CAERLEON] = Vector3(0.0, height_at(0.0, 0.0), 0.0)
+## 緩和済みの水平面座標に高さ（height_at()）を足して最終的な 3D 座標にする。
+func _compute_positions(flat_positions: Dictionary) -> void:
+	for city_id: String in flat_positions:
+		var p: Vector2 = flat_positions[city_id]
+		positions[city_id] = Vector3(p.x, height_at(p.x, p.y), p.y)
 
 
 ## その地点の地面の高さ。都市も経路もこれに沿わせる。
@@ -224,12 +293,11 @@ func _build_routes() -> void:
 
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
 
-	var ring: Array[String] = GameData.royal_city_ids()
-	for i: int in ring.size():
-		_add_route(mesh, positions[ring[i]],
-			positions[ring[(i + 1) % ring.size()]],
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		_add_route(mesh, positions[edge[0]], positions[edge[1]],
 			Color(0.45, 0.42, 0.36), false)
 
+	var ring: Array[String] = GameData.royal_city_ids()
 	var center: Vector3 = positions[GameData.CAERLEON]
 	for city_id: String in ring:
 		_add_route(mesh, positions[city_id], center, UiTheme.WARN, true)

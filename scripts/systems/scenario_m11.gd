@@ -37,7 +37,7 @@ func _test_city_crests() -> void:
 
 
 func _test_map_layout() -> void:
-	print("--- 円周配置 ---")
+	print("--- 都市の配置（不規則グラフのばね緩和） ---")
 	var panel: Node = _spawn("res://scenes/ui/MapPanel.tscn")
 	if panel == null:
 		return
@@ -67,34 +67,44 @@ func _test_map_layout() -> void:
 		_check(panel.node_for(city_id) != null, "%s のノードがある" % city_id, "ない")
 		_check(world.positions.has(city_id), "%s の3D座標がある" % city_id, "ない")
 
-	# 水平面（X-Z）で中心からの距離を測る。高さは地形に沿うので除く。
-	var center3: Vector3 = world.positions.get(GameData.CAERLEON, Vector3.ZERO)
-	var radii: Array[float] = []
-	for city_id: String in ring:
-		if not world.positions.has(city_id):
-			continue
-		var p: Vector3 = world.positions[city_id]
-		radii.append(Vector2(p.x, p.z).length())
-
-	if radii.size() == GameData.RING_SIZE:
-		var spread: float = radii.max() - radii.min()
-		_check(spread < 0.01, "全王国都市が中心から等距離にある", "半径の差 %.3f" % spread)
-		_check(radii[0] > 1.0, "半径がゼロでない", str(radii[0]))
-
 	# 中心都市は中央（水平面の原点）。
+	var center3: Vector3 = world.positions.get(GameData.CAERLEON, Vector3.ZERO)
 	_check(Vector2(center3.x, center3.z).length() < 0.01, "中心都市は中央にある",
 		"中心から %.3f" % Vector2(center3.x, center3.z).length())
 
-	# 環状の隣接どうしは、非隣接より近い。移動ルールとの対応の担保。
-	if ring.size() >= 3 and world.positions.has(ring[0]) and world.positions.has(ring[1]) \
-			and world.positions.has(ring[2]):
-		var p0: Vector3 = world.positions[ring[0]]
-		var p1: Vector3 = world.positions[ring[1]]
-		var p2: Vector3 = world.positions[ring[2]]
-		var adjacent_dist: float = p0.distance_to(p1)
-		var far_dist: float = p0.distance_to(p2)
-		_check(adjacent_dist < far_dist, "隣接都市は非隣接より近くに置かれる",
-			"隣接 %.1f / 非隣接 %.1f" % [adjacent_dist, far_dist])
+	# 王国都市どうしが同じ座標に重ならない（水平面）。
+	var overlap: bool = false
+	for a: String in ring:
+		for b: String in ring:
+			if a == b:
+				continue
+			var pa: Vector2 = Vector2(world.positions[a].x, world.positions[a].z)
+			var pb: Vector2 = Vector2(world.positions[b].x, world.positions[b].z)
+			if pa.distance_to(pb) < 0.5:
+				overlap = true
+	_check(not overlap, "都市どうしが重ならない", "重なっている都市がある")
+
+	# 不規則グラフなので環のような厳密な等距離は前提にしない。
+	# 半径がゼロでなく、都市間で極端にばらつかないことだけ確認する。
+	var radii: Array[float] = []
+	for city_id: String in ring:
+		radii.append(Vector2(world.positions[city_id].x, world.positions[city_id].z).length())
+	var min_radius: float = radii.min()
+	var max_radius: float = radii.max()
+	_check(min_radius > 1.0, "半径がゼロでない", str(min_radius))
+	_check(max_radius < min_radius * 3.0, "都市間で半径が極端にばらつかない",
+		"最小 %.2f / 最大 %.2f" % [min_radius, max_radius])
+
+	# 王道でつながる都市どうしは、平均するとおおむね CITY_SPACING 前後の
+	# 間隔になる（ばね緩和の目標距離）。個々の辺の厳密な一致は求めない。
+	const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
+	var total_edge_dist: float = 0.0
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		total_edge_dist += world.positions[edge[0]].distance_to(world.positions[edge[1]])
+	var average_edge_dist: float = total_edge_dist / float(GameData.ROYAL_ROAD_EDGES.size())
+	_check(average_edge_dist > MapView3D.CITY_SPACING * 0.5 and average_edge_dist < MapView3D.CITY_SPACING * 2.0,
+		"王道でつながる都市どうしの平均間隔がおおむね妥当",
+		"平均 %.2f（目標 %.2f）" % [average_edge_dist, MapView3D.CITY_SPACING])
 
 	_despawn(panel)
 
