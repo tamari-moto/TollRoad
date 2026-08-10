@@ -38,7 +38,7 @@ func _test_game_end() -> void:
 	# 終了後は行動できない。
 	_check(not s.rest(), "終了後は休息できない", "できてしまった")
 	_check(not s.buy("ore", 1), "終了後は購入できない", "できてしまった")
-	_check(not s.move_to("bridgewatch"), "終了後は移動できない", "できてしまった")
+	_check(not s.move_to("stonegate"), "終了後は移動できない", "できてしまった")
 	var day_after: int = s.day
 	s.rest()
 	_check(s.day == day_after, "終了後は日が進まない", str(s.day))
@@ -49,7 +49,7 @@ func _test_stranded() -> void:
 	var s: GameSession = GameSession.new(3002)
 	s.silver = 100
 	_check(s.is_stranded(), "移動費が払えないと立ち往生", "移動できる")
-	_check(not s.move_to("bridgewatch"), "移動は拒否される", "移動できてしまった")
+	_check(not s.move_to("stonegate"), "移動は拒否される", "移動できてしまった")
 	_check(s.rest(), "それでも休息はできる", "休息もできない")
 	_check(s.day == 2, "休息で日が進む", str(s.day))
 
@@ -136,7 +136,7 @@ func _run_balance_batch() -> void:
 
 
 ## 意図された成長ルートで60日を通しプレイする。
-## ボーナス都市で特産資源を装備に変え、カーレオンへ運んで売る。余力があれば
+## ボーナス都市で特産資源を装備に変え、レイヴンスパイアへ運んで売る。余力があれば
 ## 島を拡張する。最適解ではなく、バランスが破綻していないことを測る基準線。
 func _play(s: GameSession) -> Dictionary:
 	var actions: int = 0
@@ -152,7 +152,7 @@ func _play(s: GameSession) -> Dictionary:
 				var price: int = s.prices.get_price(s.current_city, item_id)
 				var base: int = GameData.ITEMS[item_id]["base_price"]
 				var is_equipment: bool = GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT
-				# 装備はカーレオンが最も高いので、他所では基準の1割増を待つ。
+				# 装備はレイヴンスパイアが最も高いので、他所では基準の1割増を待つ。
 				var threshold: float = 1.1 if is_equipment and s.current_city != GameData.CAERLEON else 1.0
 				if float(price) > float(base) * threshold:
 					s.sell(item_id, s.cargo_count(item_id))
@@ -194,7 +194,7 @@ func _play(s: GameSession) -> Dictionary:
 				s.buy(best_id, s.max_buyable(best_id))
 				actions += 1
 
-		# 装備を積んでいればカーレオンへ渡る（装備は 1.24 倍で売れる）。
+		# 装備を積んでいればレイヴンスパイアへ渡る（装備は 1.24 倍で売れる）。
 		# 22% で全損するが、期待値では見合う。
 		var has_equipment: bool = false
 		for item_id: String in s.cargo:

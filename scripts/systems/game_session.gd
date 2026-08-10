@@ -244,7 +244,7 @@ func can_move_to(destination: String) -> bool:
 ## 移動する。黒ゾーンでは襲撃判定を行い、被弾すると積荷を全て失う
 ## （シルバーと島倉庫は無傷）。
 ## 襲撃判定は片道につき1度（Q6）。黒ゾーンは1日移動なので区間は1つしかなく、
-## カーレオンを往復すると計2回判定される（往復とも無事な確率は約61%）。
+## レイヴンスパイアを往復すると計2回判定される（往復とも無事な確率は約61%）。
 func move_to(destination: String) -> bool:
 	if not can_move_to(destination):
 		return false
@@ -270,7 +270,7 @@ func move_to(destination: String) -> bool:
 
 # --- 探索（1日消費） ---
 
-## 積荷にある戦闘装備（剣・弓・ローブ・革鎧）による成功率の加算。
+## 積荷にある戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）による成功率の加算。
 ## 同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
 ## （種類を跨いで持つ方が伸びる設計）。
 func explore_equip_bonus() -> float:
@@ -280,7 +280,7 @@ func explore_equip_bonus() -> float:
 	return minf(bonus, GameData.EXPLORE_EQUIP_BONUS_CAP)
 
 
-## 探索の成功率。カーレオンは黒ゾーンの並びで基本確率が下がる。
+## 探索の成功率。レイヴンスパイアは黒ゾーンの並びで基本確率が下がる。
 func explore_chance() -> float:
 	var base: float = GameData.EXPLORE_BASE_CHANCE
 	if current_city == GameData.CAERLEON:
@@ -289,7 +289,7 @@ func explore_chance() -> float:
 
 
 ## 探索する。成功すればシルバー・レア品・島倉庫のブーストを得る。
-## 失敗すると積荷の戦闘装備（剣・弓・ローブ・革鎧）を全て失う（資源は無傷）。
+## 失敗すると積荷の戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を全て失う（資源は無傷）。
 ## 黒ゾーン襲撃の「積荷全損」とは区別する。
 func explore() -> bool:
 	if is_over():

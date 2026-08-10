@@ -1,7 +1,7 @@
 extends PanelContainer
 ## 探索。現在地に応じた討伐/遺跡探索を1日かけて行う。
 ##
-## 積荷にある戦闘装備（剣・弓・ローブ・革鎧）を持っているほど成功率が上がる。
+## 積荷にある戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を持っているほど成功率が上がる。
 ## 成功すればシルバー・レア品・島倉庫のブーストを得るが、失敗すると
 ## 積荷の戦闘装備を全て失う（資源は無傷）。
 
@@ -58,10 +58,13 @@ func refresh() -> void:
 		_chance_label.add_theme_color_override("font_color", _chance_color(chance))
 
 	if is_instance_valid(_hint_label):
+		var combat_names: PackedStringArray = []
+		for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+			combat_names.append(GameData.ITEMS[item_id]["name"])
 		_hint_label.text = ("成功: シルバー・%s・低確率で%sを獲得し、%d日間は島の労働者の産出が倍になる\n" +
-			"失敗: 積荷の戦闘装備（剣・弓・ローブ・革鎧）を全て失う（資源は無傷）") % [
+			"失敗: 積荷の戦闘装備（%s）を全て失う（資源は無傷）") % [
 			GameData.ITEMS["sunstone"]["name"], GameData.ITEMS["ancient_relic"]["name"],
-			GameData.EXPLORE_BOOST_DAYS]
+			GameData.EXPLORE_BOOST_DAYS, "・".join(combat_names)]
 
 	var over: bool = _session.is_over()
 	_explore_button.text = "探索する（1日）"

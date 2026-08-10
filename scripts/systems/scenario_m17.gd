@@ -28,9 +28,11 @@ func _test_world_geometry() -> void:
 	print("--- 3D 空間の配置 ---")
 	var world: MapView3D = MapView3D.new()
 
-	_check(world.positions.size() == 6, "6都市の座標がある", str(world.positions.size()))
+	_check(world.positions.size() == GameData.CITIES.size(), "全都市の座標がある", str(world.positions.size()))
 
-	# 5都市が水平面で等距離、72度間隔。移動ルールとの対応の担保。
+	# 王国都市が水平面で等距離、等間隔。移動ルールとの対応の担保。
+	# 都市数が変わっても隣接都市間の弦長は CITY_SPACING で一定に保つ設計
+	# （map_view_3d.gd の _compute_scale() 参照）。
 	var ring: Array[String] = GameData.royal_city_ids()
 	var angles: Array[float] = []
 	var radii: Array[float] = []
@@ -40,25 +42,27 @@ func _test_world_geometry() -> void:
 		radii.append(flat.length())
 		angles.append(flat.angle())
 
-	if radii.size() == 5:
-		_check(radii.max() - radii.min() < 0.01, "5都市が等距離",
+	if radii.size() == GameData.RING_SIZE:
+		_check(radii.max() - radii.min() < 0.01, "全王国都市が等距離",
 			"差 %.3f" % (radii.max() - radii.min()))
-		_check(is_equal_approx(radii[0], MapView3D.RING_RADIUS), "半径が設定どおり",
-			"%.2f / %.2f" % [radii[0], MapView3D.RING_RADIUS])
+		var adjacent_gap: float = world.positions[ring[0]].distance_to(world.positions[ring[1]])
+		_check(is_equal_approx(adjacent_gap, MapView3D.CITY_SPACING), "隣接都市の間隔が設定どおり",
+			"%.2f / %.2f" % [adjacent_gap, MapView3D.CITY_SPACING])
 
-	if angles.size() == 5:
+	if angles.size() == GameData.RING_SIZE:
 		var even: bool = true
-		for i: int in 5:
-			var diff: float = angles[(i + 1) % 5] - angles[i]
+		var n: int = GameData.RING_SIZE
+		for i: int in n:
+			var diff: float = angles[(i + 1) % n] - angles[i]
 			while diff < 0.0:
 				diff += TAU
-			if absf(diff - TAU / 5.0) > 0.01:
+			if absf(diff - TAU / float(n)) > 0.01:
 				even = false
-		_check(even, "隣り合う都市が72度ずつ離れている", "間隔が不均等")
+		_check(even, "隣り合う都市が均等な角度で離れている", "間隔が不均等")
 
-	# カーレオンは水平面の中央。
+	# レイヴンスパイアは水平面の中央。
 	var c: Vector3 = world.positions[GameData.CAERLEON]
-	_check(Vector2(c.x, c.z).length() < 0.01, "カーレオンは中央",
+	_check(Vector2(c.x, c.z).length() < 0.01, "レイヴンスパイアは中央",
 		"中心から %.3f" % Vector2(c.x, c.z).length())
 
 	# 都市は地面の上に乗っている（高さが地形と一致する）。
@@ -68,14 +72,14 @@ func _test_world_geometry() -> void:
 		_check(is_equal_approx(p.y, ground_y), "%s が地面に乗っている" % city_id,
 			"%.2f / 地面 %.2f" % [p.y, ground_y])
 
-	# カーレオンは盆地の底。周囲より低い。
-	var caerleon_y: float = world.positions[GameData.CAERLEON].y
+	# レイヴンスパイアは盆地の底。周囲より低い。
+	var ravenspire_y: float = world.positions[GameData.CAERLEON].y
 	var ring_average: float = 0.0
 	for city_id: String in ring:
 		ring_average += world.positions[city_id].y
 	ring_average /= float(ring.size())
-	_check(caerleon_y < ring_average, "カーレオンは周囲より低い（盆地の底）",
-		"%.2f vs 平均 %.2f" % [caerleon_y, ring_average])
+	_check(ravenspire_y < ring_average, "レイヴンスパイアは周囲より低い（盆地の底）",
+		"%.2f vs 平均 %.2f" % [ravenspire_y, ring_average])
 
 	world.free()
 
@@ -117,12 +121,12 @@ func _test_terrain() -> void:
 	_check(world.get_node_or_null("Routes") != null, "経路のメッシュがある", "ない")
 	_check(world.get_node_or_null("Sun") != null, "光源がある", "ない")
 
-	# 都市の柱が6本。
+	# 都市の柱が全都市ぶんある。
 	var pillars: int = 0
 	for city_id: String in GameData.CITIES:
 		if world.get_node_or_null(city_id) != null:
 			pillars += 1
-	_check(pillars == 6, "6都市の柱がある", str(pillars))
+	_check(pillars == GameData.CITIES.size(), "全都市の柱がある", str(pillars))
 
 	world.free()
 
@@ -137,7 +141,7 @@ func _test_selection_ring() -> void:
 		world.free()
 		return
 
-	world.set_current_city("martlock")
+	world.set_current_city("ironhollow")
 	var mesh: ImmediateMesh = ring.mesh
 	_check(mesh.get_surface_count() > 0, "リングが描かれている", "空")
 	if mesh.get_surface_count() == 0:
@@ -152,7 +156,7 @@ func _test_selection_ring() -> void:
 		"%d / 期待 %d" % [vertices.size(), expected])
 
 	# 現在地を囲んでいる。中心からの距離が内外の半径に一致する。
-	var center: Vector3 = world.positions["martlock"]
+	var center: Vector3 = world.positions["ironhollow"]
 	var near_inner: int = 0
 	var near_outer: int = 0
 	for v: Vector3 in vertices:
@@ -186,15 +190,15 @@ func _test_selection_ring() -> void:
 		"%.3f / 期待 %.3f" % [lowest, want_y])
 
 	# 地形が違えば輪の高さも違う。
-	var other: Vector3 = world.positions["lymhurst"]
+	var other: Vector3 = world.positions["wrenfield"]
 	if absf(world.height_at(other.x, other.z) - world.height_at(center.x, center.z)) > 0.01:
 		_check(not is_equal_approx(world.ring_height(other), want_y),
 			"都市ごとに輪の高さが変わる", "同じ高さ")
 
 	# 移動すると追従する。
-	world.set_current_city("bridgewatch")
+	world.set_current_city("stonegate")
 	var moved: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var new_center: Vector3 = world.positions["bridgewatch"]
+	var new_center: Vector3 = world.positions["stonegate"]
 	var around_new: bool = true
 	for v: Vector3 in moved:
 		var flat: float = Vector2(v.x - new_center.x, v.z - new_center.z).length()
@@ -203,7 +207,7 @@ func _test_selection_ring() -> void:
 	_check(around_new, "移動先の都市を囲む", "元の位置に残っている")
 
 	# 脈動。到着直後は 1.0 から始まり、時間とともに上下する。
-	world.set_current_city("martlock")
+	world.set_current_city("ironhollow")
 	_check(is_equal_approx(world.pulse_scale(), 1.0), "到着直後の倍率は1.0",
 		"%.3f" % world.pulse_scale())
 
@@ -230,7 +234,7 @@ func _test_selection_ring() -> void:
 	# 脈動しても半径の比は保たれる（内外が入れ替わらない）。
 	world.redraw_selection_ring_at(MapView3D.RING_PULSE_PERIOD * 0.25)
 	var pulsed: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var center2: Vector3 = world.positions["martlock"]
+	var center2: Vector3 = world.positions["ironhollow"]
 	var largest: float = 0.0
 	var smallest: float = 9999.0
 	for v: Vector3 in pulsed:
@@ -245,10 +249,10 @@ func _test_selection_ring() -> void:
 	# 上の検査は純関数と明示的な引き直しを見ているだけなので、_process から
 	# リングへ倍率が渡らなくなっても素通りする（脈動が止まっても気づけない）。
 	# 実際の経路を1度は通しておく。
-	world.set_current_city("martlock")
+	world.set_current_city("ironhollow")
 	var outer_radius := func() -> float:
 		var verts: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-		var center3: Vector3 = world.positions["martlock"]
+		var center3: Vector3 = world.positions["ironhollow"]
 		var found: float = 0.0
 		for v: Vector3 in verts:
 			found = maxf(found, Vector2(v.x - center3.x, v.z - center3.z).length())
@@ -396,24 +400,24 @@ func _test_projection() -> void:
 	_check(pick_ok, "投影位置をクリックすると同じ都市が当たる", "食い違いがある")
 
 	# カメラを回すと投影位置が追従する。
-	var before: Vector2 = panel.screen_position_for("fort_sterling")
+	var before: Vector2 = panel.screen_position_for("oakhaven")
 	panel.camera().rotate_by(1.0, 0.0)
 	panel.update_node_positions()
-	var after: Vector2 = panel.screen_position_for("fort_sterling")
+	var after: Vector2 = panel.screen_position_for("oakhaven")
 	_check(before.distance_to(after) > 1.0, "カメラを回すと投影位置が追従する",
 		"%.1f しか動かない" % before.distance_to(after))
 
 	# 拡大でも追従する。
-	var zoom_before: Vector2 = panel.screen_position_for("martlock")
+	var zoom_before: Vector2 = panel.screen_position_for("ironhollow")
 	panel.camera().zoom_by(-6.0)
 	panel.update_node_positions()
-	_check(zoom_before.distance_to(panel.screen_position_for("martlock")) > 1.0,
+	_check(zoom_before.distance_to(panel.screen_position_for("ironhollow")) > 1.0,
 		"拡大でも投影位置が追従する", "動かない")
 
 	# 移動しても操作は従来どおり効く（レイキャストへ移行した設計の担保）。
-	session.move_to("bridgewatch")
-	_check(not panel.is_selectable("bridgewatch"), "現在地は選択できない", "選択できる")
-	_check(panel.tooltip_text_for("bridgewatch").contains("現在地"),
-		"現在地がツールチップに出る", panel.tooltip_text_for("bridgewatch"))
+	session.move_to("stonegate")
+	_check(not panel.is_selectable("stonegate"), "現在地は選択できない", "選択できる")
+	_check(panel.tooltip_text_for("stonegate").contains("現在地"),
+		"現在地がツールチップに出る", panel.tooltip_text_for("stonegate"))
 
 	_despawn(panel)

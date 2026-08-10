@@ -100,8 +100,8 @@ func _test_rebind_no_leak() -> void:
 	# 古いセッションを動かしても新しい表示は変わらない。
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var title: Label = UiUtil.find_node(panel, "MarketTitle")
-	first.move_to("bridgewatch")
-	_check(title.text.contains("マートロック"),
+	first.move_to("stonegate")
+	_check(title.text.contains("アイアンホロウ"),
 		"古いセッションの移動は表示に影響しない", title.text)
 
 	_despawn(panel)
@@ -142,7 +142,7 @@ func _test_craft_blocked_reason() -> void:
 
 func _test_growth_route_reachable() -> void:
 	print("--- 成長ルートが機能する ---")
-	# ボーナス都市で特産資源から装備を作り、カーレオンで売る。
+	# ボーナス都市で特産資源から装備を作り、レイヴンスパイアで売る。
 	var s: GameSession = GameSession.new(8006)
 	var start: int = s.silver
 
@@ -152,15 +152,15 @@ func _test_growth_route_reachable() -> void:
 	s.craft("sword", 13)
 	_check(s.cargo_count("sword") == 13, "剣13個できた", str(s.cargo_count("sword")))
 
-	var sword_price: int = s.prices.get_price("caerleon", "sword")
-	var ore_price: int = s.prices.get_price("martlock", "ore")
+	var sword_price: int = s.prices.get_price("ravenspire", "sword")
+	var ore_price: int = s.prices.get_price("ironhollow", "ore")
 	# ボーナス都市では材料2個 + 手数料90 が1個の原価。
 	var unit_cost: int = ore_price * 2 + GameData.CRAFT_FEE
 	_check(sword_price > unit_cost * 2,
-		"カーレオンの剣は原価の2倍以上で売れる", "原価%d / 売値%d" % [unit_cost, sword_price])
+		"レイヴンスパイアの剣は原価の2倍以上で売れる", "原価%d / 売値%d" % [unit_cost, sword_price])
 
 	# 襲撃されなければ大きく増える。
-	s.move_to("caerleon")
+	s.move_to("ravenspire")
 	if s.cargo_count("sword") > 0:
 		s.sell("sword", s.cargo_count("sword"))
 		_check(s.silver > start, "1サイクルで資金が増える", "%d -> %d" % [start, s.silver])
@@ -168,11 +168,11 @@ func _test_growth_route_reachable() -> void:
 	else:
 		print("     （このシードでは襲撃された）")
 
-	# 装備はカーレオンで最も高い。
-	var caerleon_sword: int = s.prices.get_price("caerleon", "sword")
-	var martlock_sword: int = s.prices.get_price("martlock", "sword")
-	_check(caerleon_sword > martlock_sword, "カーレオンの装備は他所より高い",
-		"カーレオン%d / マートロック%d" % [caerleon_sword, martlock_sword])
+	# 装備はレイヴンスパイアで最も高い。
+	var ravenspire_sword: int = s.prices.get_price("ravenspire", "sword")
+	var ironhollow_sword: int = s.prices.get_price("ironhollow", "sword")
+	_check(ravenspire_sword > ironhollow_sword, "レイヴンスパイアの装備は他所より高い",
+		"レイヴンスパイア%d / アイアンホロウ%d" % [ravenspire_sword, ironhollow_sword])
 
 
 func _test_main_scene() -> void:

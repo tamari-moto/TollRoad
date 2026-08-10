@@ -95,7 +95,7 @@ func _test_bar_in_market() -> void:
 	for child: Node in grid.get_children():
 		for bar: Node in child.find_children("Bar", "", true, false):
 			bar_count += 1
-	_check(bar_count == GameData.ITEMS.size(), "全9品目にバーがある", str(bar_count))
+	_check(bar_count == GameData.ITEMS.size(), "全品目にバーがある", str(bar_count))
 
 	# バーの比率が実際の価格と一致する。
 	var first_item: String = GameData.ITEMS.keys()[0]
@@ -107,7 +107,7 @@ func _test_bar_in_market() -> void:
 
 	# 移動すると相場が変わり、バーも追従する。
 	var before: float = bar.ratio
-	session.move_to("bridgewatch")
+	session.move_to("stonegate")
 	_check(bar.ratio != before or true, "移動後もバーが更新される", "")
 	var after_price: int = session.prices.get_price(session.current_city, first_item)
 	var after_expected: float = float(after_price) / float(
@@ -157,8 +157,8 @@ func _test_badges() -> void:
 	var session: GameSession = GameSession.new(16003)
 	panel.bind(session)
 
-	# マートロックの特産は鉱石、生産ボーナスは剣。
-	_check(session.current_city == "martlock", "マートロックから開始", session.current_city)
+	# アイアンホロウの特産は鉱石、生産ボーナスは剣。
+	_check(session.current_city == "ironhollow", "アイアンホロウから開始", session.current_city)
 	var ore_badge: String = panel.badge_text_for("ore")
 	var sword_badge: String = panel.badge_text_for("sword")
 	var wood_badge: String = panel.badge_text_for("wood")
@@ -171,8 +171,8 @@ func _test_badges() -> void:
 	_check(not wood_badge.contains("特産") and not wood_badge.contains("生産地"),
 		"木材には特産・生産地バッジが出ない", wood_badge)
 
-	# 移動するとバッジが付け替わる。ブリッジウォッチの特産は石材。
-	session.move_to("bridgewatch")
+	# 移動するとバッジが付け替わる。ストーンゲートの特産は石材。
+	session.move_to("stonegate")
 	_check(not panel.badge_text_for("ore").contains("特産"),
 		"移動で鉱石の特産バッジが消える", panel.badge_text_for("ore"))
 	_check(panel.badge_text_for("stone").contains("特産"),

@@ -12,7 +12,7 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 func _init() -> void:
 	_test_city_flavors()
 	_test_chance_formula()
-	_test_caerleon_penalty()
+	_test_ravenspire_penalty()
 	_test_success_rate()
 	_test_reward_bounds()
 	_test_capacity_safety()
@@ -50,7 +50,11 @@ func _test_chance_formula() -> void:
 		"同種の装備は頭打ち数までしか加算されない", str(s.explore_chance()))
 
 	# 種類を跨ぐとボーナスが伸びるが、合計は上限でクランプされる。
+	# 装備の種類数 × 頭打ち数 × 重量3 がロバの積載(40)を超えうるため、
+	# 先に積載の大きい騎乗へ乗り換えておく。
 	var s2: GameSession = GameSession.new(20002)
+	s2.silver = 999999
+	s2.buy_mount("mammoth")
 	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
 		s2.buy(item_id, GameData.EXPLORE_EQUIP_UNIT_CAP)
 		_check(s2.cargo_count(item_id) == GameData.EXPLORE_EQUIP_UNIT_CAP,
@@ -62,14 +66,14 @@ func _test_chance_formula() -> void:
 		"ボーナス合計は上限でクランプされる", str(s2.explore_chance()))
 
 
-func _test_caerleon_penalty() -> void:
-	print("--- カーレオンのペナルティ ---")
+func _test_ravenspire_penalty() -> void:
+	print("--- レイヴンスパイアのペナルティ ---")
 	var s: GameSession = GameSession.new(20003)
 	if s.current_city != GameData.CAERLEON:
 		s.move_to(GameData.CAERLEON)
-	_check(s.current_city == GameData.CAERLEON, "検査の前提: カーレオンにいる", s.current_city)
+	_check(s.current_city == GameData.CAERLEON, "検査の前提: レイヴンスパイアにいる", s.current_city)
 	_check(is_equal_approx(s.explore_chance(), GameData.EXPLORE_BASE_CHANCE - GameData.EXPLORE_CAERLEON_PENALTY),
-		"カーレオンは基本確率が下がる", str(s.explore_chance()))
+		"レイヴンスパイアは基本確率が下がる", str(s.explore_chance()))
 
 
 func _test_success_rate() -> void:

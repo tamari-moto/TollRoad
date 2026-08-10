@@ -15,7 +15,7 @@ const LINE_WIDTH: float = 1.4
 ## 都市名の下線の幅。
 const UNDERLINE_WIDTH: float = 1.0
 
-## 危険な行き先（カーレオン）は枠の色を変える。
+## 危険な行き先（レイヴンスパイア）は枠の色を変える。
 var danger: bool = false:
 	set(value):
 		danger = value

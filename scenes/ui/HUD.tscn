@@ -42,7 +42,7 @@ show_percentage = false
 [node name="CityLabel" type="Label" parent="Margin/Row"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "マートロック"
+text = "アイアンホロウ"
 
 [node name="CargoLabel" type="Label" parent="Margin/Row"]
 unique_name_in_owner = true

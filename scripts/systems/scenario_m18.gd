@@ -35,12 +35,12 @@ func _play_a_while(rng_seed: int) -> GameSession:
 	var s: GameSession = GameSession.new(rng_seed)
 	s.buy("ore", 6)
 	s.craft("sword", 1)
-	s.move_to("bridgewatch")
+	s.move_to("stonegate")
 	s.buy("stone", 4)
 	s.upgrade_island()
 	for i: int in 5:
 		s.rest()
-	s.move_to("martlock")
+	s.move_to("ironhollow")
 	s.sell("stone", 2)
 	return s
 
@@ -118,7 +118,7 @@ func _test_round_trip() -> void:
 			var b: int = restored.prices.get_price(city_id, item_id)
 			if a != b and price_mismatch == "":
 				price_mismatch = "%s の %s が %d / %d" % [city_id, item_id, b, a]
-	_check(price_mismatch == "", "全都市×全品目の価格が一致する（54項目）",
+	_check(price_mismatch == "", "全都市×全品目の価格が一致する（%d項目）" % (GameData.CITIES.size() * GameData.ITEMS.size()),
 		price_mismatch)
 
 	# 派生値も一致する。
@@ -154,9 +154,9 @@ func _test_value_types() -> void:
 	if cargo_item != "":
 		_check(typeof(restored.cargo[cargo_item]) == TYPE_INT, "積荷の個数が int で戻る",
 			type_string(typeof(restored.cargo[cargo_item])))
-	_check(typeof(restored.prices.get_price("martlock", "ore")) == TYPE_INT,
+	_check(typeof(restored.prices.get_price("ironhollow", "ore")) == TYPE_INT,
 		"価格が int で戻る",
-		type_string(typeof(restored.prices.prices["martlock"]["ore"])))
+		type_string(typeof(restored.prices.prices["ironhollow"]["ore"])))
 
 	# JSON を通しても値そのものが変わらないこと。
 	_check(restored.silver == original.silver, "JSON 経由でもシルバーが一致",
@@ -180,8 +180,8 @@ func _test_rng_continuity() -> void:
 	for i: int in 10:
 		original.rest()
 		series.append("%d|%d|%d" % [
-			original.prices.get_price("caerleon", "sword"),
-			original.prices.get_price("martlock", "ore"),
+			original.prices.get_price("ravenspire", "sword"),
+			original.prices.get_price("ironhollow", "ore"),
 			original.warehouse_total()])
 
 	# 復元した側も同じだけ進める。
@@ -190,8 +190,8 @@ func _test_rng_continuity() -> void:
 	for i: int in 10:
 		restored.rest()
 		restored_series.append("%d|%d|%d" % [
-			restored.prices.get_price("caerleon", "sword"),
-			restored.prices.get_price("martlock", "ore"),
+			restored.prices.get_price("ravenspire", "sword"),
+			restored.prices.get_price("ironhollow", "ore"),
 			restored.warehouse_total()])
 
 	var first_gap: String = ""
@@ -208,8 +208,8 @@ func _test_rng_continuity() -> void:
 	for i: int in 10:
 		broken_session.rest()
 		broken_series.append("%d|%d|%d" % [
-			broken_session.prices.get_price("caerleon", "sword"),
-			broken_session.prices.get_price("martlock", "ore"),
+			broken_session.prices.get_price("ravenspire", "sword"),
+			broken_session.prices.get_price("ironhollow", "ore"),
 			broken_session.warehouse_total()])
 	_check(broken_series != series,
 		"state を捨てると系列がずれる（state の保存が必要な根拠）",
@@ -234,8 +234,8 @@ func _test_rng_continuity() -> void:
 	for i: int in 10:
 		json_session.rest()
 		json_series.append("%d|%d|%d" % [
-			json_session.prices.get_price("caerleon", "sword"),
-			json_session.prices.get_price("martlock", "ore"),
+			json_session.prices.get_price("ravenspire", "sword"),
+			json_session.prices.get_price("ironhollow", "ore"),
 			json_session.warehouse_total()])
 	_check(json_series == series, "JSON を通しても10日ぶんの系列が一致する",
 		"ずれた")
@@ -325,7 +325,7 @@ func _test_unknown_ids() -> void:
 
 	# 都市が1つ欠けた相場は部分補完せず引き直す。
 	var partial: Dictionary = full.duplicate(true)
-	partial["prices"].erase("caerleon")
+	partial["prices"].erase("ravenspire")
 	var rerolled: GameSession = _restore_from(partial)
 	var all_filled: bool = true
 	for city_id: String in GameData.CITIES:
@@ -365,9 +365,9 @@ func _test_file_io() -> void:
 		var b: Array[String] = []
 		for i: int in 8:
 			original.rest()
-			a.append(str(original.prices.get_price("caerleon", "sword")))
+			a.append(str(original.prices.get_price("ravenspire", "sword")))
 			loaded.rest()
-			b.append(str(loaded.prices.get_price("caerleon", "sword")))
+			b.append(str(loaded.prices.get_price("ravenspire", "sword")))
 		_check(a == b, "ファイル経由でも乱数系列が続く", "ずれた")
 
 	_check(SaveManager.delete_save(TEST_PATH), "消せる", "失敗した")
@@ -408,7 +408,7 @@ func _test_version_mismatch() -> void:
 	_check(SaveManager.load_game(TEST_PATH) == null, "知らない都市なら読まない", "読めた")
 
 	# 島レベルと騎乗は範囲の問題なので丸めて読む。
-	data["current_city"] = "martlock"
+	data["current_city"] = "ironhollow"
 	data["island_level"] = 99
 	data["mount"] = "dragon"
 	_write_json(data)
@@ -532,9 +532,9 @@ func _test_save_lifetime() -> void:
 
 	# 手で壊された memo（辞書でない値）でも落ちない。
 	var broken: Dictionary = _play_a_while(18012).to_dict()
-	broken["memo"]["martlock"] = "壊れている"
+	broken["memo"]["ironhollow"] = "壊れている"
 	var survived: GameSession = _restore_from(broken)
-	_check(not survived.has_memo("martlock"), "壊れたメモは捨てる", "残った")
+	_check(not survived.has_memo("ironhollow"), "壊れたメモは捨てる", "残った")
 	_check(survived.day > 0, "壊れたメモがあっても復元は続く", "落ちた")
 
 	SaveManager.delete_save(TEST_PATH)

@@ -55,46 +55,51 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 8
 
-[node name="TabStripColumn" type="VBoxContainer" parent="UI/Root/TabStrip/TabStripMargin"]
+[node name="TabStripScroll" type="ScrollContainer" parent="UI/Root/TabStrip/TabStripMargin"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="TabStripColumn" type="VBoxContainer" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="MarketTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="MarketTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "市場"
 
-[node name="CargoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="CargoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "積荷"
 
-[node name="WorkshopTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="WorkshopTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "製作所"
 
-[node name="MemoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="MemoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "相場メモ"
 
-[node name="IslandTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="IslandTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "島と装備"
 
-[node name="ExplorationTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="ExplorationTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2

@@ -21,10 +21,10 @@ func _init() -> void:
 
 func _test_craft_basics() -> void:
 	print("--- 製作（ボーナスなし） ---")
-	# ブリッジウォッチのボーナスは革鎧。剣はボーナス対象外。
+	# ストーンゲートのボーナスは革鎧。剣はボーナス対象外。
 	var s: GameSession = GameSession.new(1001)
-	s.move_to("bridgewatch")
-	_check(not s.has_craft_bonus("sword"), "ブリッジウォッチで剣はボーナス外", "ボーナスあり")
+	s.move_to("stonegate")
+	_check(not s.has_craft_bonus("sword"), "ストーンゲートで剣はボーナス外", "ボーナスあり")
 	_check(s.material_cost_per_unit("sword") == 3, "ボーナス外は材料3個", str(s.material_cost_per_unit("sword")))
 
 	s.buy("ore", 9)
@@ -40,10 +40,10 @@ func _test_craft_basics() -> void:
 
 func _test_craft_bonus() -> void:
 	print("--- 製作（生産ボーナス都市） ---")
-	# マートロックのボーナスは剣。
+	# アイアンホロウのボーナスは剣。
 	var s: GameSession = GameSession.new(1002)
-	_check(s.current_city == "martlock", "マートロックにいる", s.current_city)
-	_check(s.has_craft_bonus("sword"), "マートロックで剣はボーナス対象", "対象外")
+	_check(s.current_city == "ironhollow", "アイアンホロウにいる", s.current_city)
+	_check(s.has_craft_bonus("sword"), "アイアンホロウで剣はボーナス対象", "対象外")
 	# 3 × 0.3 = 0.9 → 四捨五入で1個還元 → 実質2個
 	_check(s.material_cost_per_unit("sword") == 2, "ボーナス都市では実質2個", str(s.material_cost_per_unit("sword")))
 
@@ -54,7 +54,7 @@ func _test_craft_bonus() -> void:
 
 	# 還元の有無で必要量が変わることを直接比較する。
 	var no_bonus: GameSession = GameSession.new(1003)
-	no_bonus.move_to("bridgewatch")
+	no_bonus.move_to("stonegate")
 	_check(no_bonus.material_cost_per_unit("sword") > s.material_cost_per_unit("sword"),
 		"ボーナス都市の方が材料が少なくて済む", "同じ")
 
@@ -71,7 +71,7 @@ func _test_craft_limits() -> void:
 	_check(not s.craft("ore", 1), "資源の製作は拒否される", "通ってしまった")
 
 	s.buy("ore", 4)
-	# マートロックは実質2個消費なので4個から2個作れる。
+	# アイアンホロウは実質2個消費なので4個から2個作れる。
 	_check(s.max_craftable("sword") == 2, "鉱石4個から剣2個", str(s.max_craftable("sword")))
 	_check(not s.craft("sword", 3), "上限を超える製作は拒否される", "通ってしまった")
 	_check(s.craft("sword", 2), "上限ちょうどは製作できる", "できない")
@@ -90,7 +90,7 @@ func _test_craft_limits() -> void:
 func _test_black_zone_route() -> void:
 	print("--- 黒ゾーンの経路 ---")
 	var s: GameSession = GameSession.new(1006)
-	var route: Dictionary = s.route_to("caerleon")
+	var route: Dictionary = s.route_to("ravenspire")
 	_check(route["days"] == 1, "黒ゾーンは1日", str(route["days"]))
 	_check(route["cost"] == 400, "黒ゾーンの費用は400", str(route["cost"]))
 	_check(is_equal_approx(route["raid_chance"], 0.22), "襲撃率は22%", str(route["raid_chance"]))
@@ -100,18 +100,18 @@ func _test_black_zone_route() -> void:
 		var t: GameSession = GameSession.new(1007)
 		if t.current_city != city_id:
 			t.move_to(city_id)
-		var r: Dictionary = t.route_to("caerleon")
+		var r: Dictionary = t.route_to("ravenspire")
 		_check(r["cost"] == 400 and r["days"] == 1, "%s からも同条件" % city_id, str(r))
 
-	# カーレオン発の帰路も黒ゾーン扱い。
+	# レイヴンスパイア発の帰路も黒ゾーン扱い。
 	var back: GameSession = GameSession.new(1008)
-	back.move_to("caerleon")
-	var ret: Dictionary = back.route_to("martlock")
+	back.move_to("ravenspire")
+	var ret: Dictionary = back.route_to("ironhollow")
 	_check(is_equal_approx(ret["raid_chance"], 0.22), "帰路も襲撃判定がある", str(ret["raid_chance"]))
 
 	# 王道では襲撃しない。
 	var safe: GameSession = GameSession.new(1009)
-	_check(is_equal_approx(safe.route_to("bridgewatch")["raid_chance"], 0.0), "王道は襲撃なし", "襲撃あり")
+	_check(is_equal_approx(safe.route_to("stonegate")["raid_chance"], 0.0), "王道は襲撃なし", "襲撃あり")
 
 
 func _test_raid_outcome() -> void:
@@ -125,7 +125,7 @@ func _test_raid_outcome() -> void:
 		if s.cargo_count("ore") != 10:
 			continue
 		silver_at_departure = s.silver
-		s.move_to("caerleon")
+		s.move_to("ravenspire")
 		if s.cargo.is_empty():
 			raided_session = s
 			break
@@ -137,7 +137,7 @@ func _test_raid_outcome() -> void:
 	_check(raided_session.cargo.is_empty(), "襲撃で積荷を全て失う", "残っている")
 	_check(raided_session.silver == silver_at_departure - 400,
 		"襲撃されてもシルバーは移動費のみ減る", str(raided_session.silver))
-	_check(raided_session.current_city == "caerleon", "襲撃されても移動は成立する", raided_session.current_city)
+	_check(raided_session.current_city == "ravenspire", "襲撃されても移動は成立する", raided_session.current_city)
 	_check(raided_session.day == 2, "襲撃されても1日で着く", str(raided_session.day))
 
 	var found_log: bool = false
@@ -156,7 +156,7 @@ func _test_raid_rate() -> void:
 		s.buy("ore", 5)
 		if s.cargo_count("ore") == 0:
 			continue
-		s.move_to("caerleon")
+		s.move_to("ravenspire")
 		if s.cargo.is_empty():
 			raids += 1
 	var rate: float = float(raids) / float(trials)

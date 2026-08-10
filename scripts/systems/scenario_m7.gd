@@ -23,19 +23,19 @@ func _init() -> void:
 func _test_memo_api() -> void:
 	print("--- 相場メモの API ---")
 	var s: GameSession = GameSession.new(7001)
-	_check(s.memo_age("martlock") == 0, "現在地の記録は0日前", str(s.memo_age("martlock")))
-	_check(s.memo_age("caerleon") == -1, "未訪問は-1", str(s.memo_age("caerleon")))
-	_check(s.memo_price("caerleon", "ore") == -1, "未訪問の価格は-1", str(s.memo_price("caerleon", "ore")))
+	_check(s.memo_age("ironhollow") == 0, "現在地の記録は0日前", str(s.memo_age("ironhollow")))
+	_check(s.memo_age("ravenspire") == -1, "未訪問は-1", str(s.memo_age("ravenspire")))
+	_check(s.memo_price("ravenspire", "ore") == -1, "未訪問の価格は-1", str(s.memo_price("ravenspire", "ore")))
 
-	var recorded: int = s.memo_price("martlock", "ore")
-	var actual: int = s.prices.get_price("martlock", "ore")
+	var recorded: int = s.memo_price("ironhollow", "ore")
+	var actual: int = s.prices.get_price("ironhollow", "ore")
 	_check(recorded == actual, "記録は訪問時の相場と一致", "%d vs %d" % [recorded, actual])
 
 	# 移動して日が進むと、前の都市の記録は古くなるが値は残る。
-	s.move_to("bridgewatch")
-	_check(s.memo_price("martlock", "ore") == recorded, "去った都市の記録は保持される",
-		str(s.memo_price("martlock", "ore")))
-	_check(s.memo_age("martlock") == 1, "1日経つと1日前の記録", str(s.memo_age("martlock")))
+	s.move_to("stonegate")
+	_check(s.memo_price("ironhollow", "ore") == recorded, "去った都市の記録は保持される",
+		str(s.memo_price("ironhollow", "ore")))
+	_check(s.memo_age("ironhollow") == 1, "1日経つと1日前の記録", str(s.memo_age("ironhollow")))
 
 
 func _test_workshop_panel() -> void:
@@ -52,11 +52,15 @@ func _test_workshop_panel() -> void:
 		_despawn(panel)
 		return
 
-	# ヘッダ5列 + 装備4種 × 5列 = 25ノード
-	_check(grid.get_child_count() == 5 + 4 * 5, "装備4種の行が生成される", str(grid.get_child_count()))
+	# ヘッダ5列 + 装備種数 × 5列
+	var equipment_count: int = 0
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT:
+			equipment_count += 1
+	_check(grid.get_child_count() == 5 + equipment_count * 5, "全装備の行が生成される", str(grid.get_child_count()))
 
 	var title: Label = UiUtil.find_node(panel, "WorkshopTitle")
-	# マートロックは剣のボーナス都市。
+	# アイアンホロウは剣のボーナス都市。
 	_check(title.text.contains("剣"), "ボーナス対象が題名に出る", title.text)
 	_check(title.text.contains("90"), "手数料が題名に出る", title.text)
 
@@ -80,7 +84,7 @@ func _test_workshop_panel() -> void:
 	_check(session.day == day_before + 1, "製作は1日消費", str(session.day - day_before))
 
 	# ボーナスのない都市では消費3個になる。
-	session.move_to("bridgewatch")
+	session.move_to("stonegate")
 	panel.refresh()
 	_check(sword_cost.text == "3個", "ボーナス外では消費3個", sword_cost.text)
 
@@ -101,13 +105,14 @@ func _test_memo_panel() -> void:
 		_despawn(panel)
 		return
 
-	# 見出し行(1+6) + 9品目 × (1+6) = 70ノード
-	var expected: int = 7 + GameData.ITEMS.size() * 7
-	_check(grid.get_child_count() == expected, "6都市×9品目の表になる",
+	# 見出し行(1+都市数) + 全品目 × (1+都市数)
+	var columns: int = GameData.CITIES.size() + 1
+	var expected: int = columns + GameData.ITEMS.size() * columns
+	_check(grid.get_child_count() == expected, "全都市×全品目の表になる",
 		"%d / 期待 %d" % [grid.get_child_count(), expected])
-	_check(grid.columns == 7, "列数は品目＋6都市", str(grid.columns))
+	_check(grid.columns == columns, "列数は品目＋全都市", str(grid.columns))
 
-	# 未訪問の都市は「?」。開始時はマートロックのみ既知。
+	# 未訪問の都市は「?」。開始時はアイアンホロウのみ既知。
 	var unknown_count: int = 0
 	var known_count: int = 0
 	for child: Node in grid.get_children():
@@ -118,18 +123,19 @@ func _test_memo_panel() -> void:
 			unknown_count += 1
 		elif label.text.strip_edges().is_valid_int() or label.text.contains(","):
 			known_count += 1
-	_check(unknown_count == GameData.ITEMS.size() * 5, "未訪問5都市×9品目が?になる", str(unknown_count))
-	_check(known_count == GameData.ITEMS.size(), "現在地の9品目だけ既知", str(known_count))
+	var unvisited: int = GameData.CITIES.size() - 1
+	_check(unknown_count == GameData.ITEMS.size() * unvisited, "未訪問都市×全品目が?になる", str(unknown_count))
+	_check(known_count == GameData.ITEMS.size(), "現在地の品目だけ既知", str(known_count))
 
 	# 訪問すると「?」が減る。
-	session.move_to("bridgewatch")
+	session.move_to("stonegate")
 	panel.refresh()
 	var after_unknown: int = 0
 	for child: Node in grid.get_children():
 		var label: Label = child as Label
 		if label != null and label.text == "?":
 			after_unknown += 1
-	_check(after_unknown == GameData.ITEMS.size() * 4, "訪問すると?が9個減る", str(after_unknown))
+	_check(after_unknown == GameData.ITEMS.size() * (unvisited - 1), "訪問すると?が全品目分減る", str(after_unknown))
 
 	_despawn(panel)
 
@@ -143,14 +149,14 @@ func _test_memo_staleness() -> void:
 	panel.bind(session)
 	var grid: GridContainer = UiUtil.find_node(panel, "MemoGrid")
 
-	# マートロックを離れ、7日経過させる。
-	session.move_to("bridgewatch")
-	_check(not session.is_memo_stale("martlock"), "1日後はまだ新しい", "古い扱い")
+	# アイアンホロウを離れ、7日経過させる。
+	session.move_to("stonegate")
+	_check(not session.is_memo_stale("ironhollow"), "1日後はまだ新しい", "古い扱い")
 
 	for i: int in 6:
 		session.rest()
-	_check(session.is_memo_stale("martlock"), "7日経つと古い記録になる",
-		"age=%d" % session.memo_age("martlock"))
+	_check(session.is_memo_stale("ironhollow"), "7日経つと古い記録になる",
+		"age=%d" % session.memo_age("ironhollow"))
 	panel.refresh()
 
 	# 薄字（COLOR_STALE）になっているセルが存在する。
@@ -164,10 +170,10 @@ func _test_memo_staleness() -> void:
 		if label.has_theme_color_override("font_color"):
 			if label.get_theme_color("font_color") == stale_color:
 				stale_cells += 1
-	_check(stale_cells == GameData.ITEMS.size(), "古い都市の9品目が薄字になる", str(stale_cells))
+	_check(stale_cells == GameData.ITEMS.size(), "古い都市の全品目が薄字になる", str(stale_cells))
 
 	# 現在地の記録は毎日更新されるので薄字にならない。
-	_check(not session.is_memo_stale("bridgewatch"), "現在地は常に新しい", "古い扱い")
+	_check(not session.is_memo_stale("stonegate"), "現在地は常に新しい", "古い扱い")
 
 	_despawn(panel)
 
@@ -245,17 +251,17 @@ func _test_main_scene_has_all_screens() -> void:
 		return
 	var main: Node = scene.instantiate()
 	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%Tabs",
-			"%大陸図", "%製作所", "%相場メモ", "%島と装備",
+			"%大陸図", "%製作所", "%相場メモ", "%島と装備", "%探索",
 			"%TabStrip", "%SidePanel",
 			"%MarketTabButton", "%CargoTabButton", "%WorkshopTabButton",
-			"%MemoTabButton", "%IslandTabButton",
+			"%MemoTabButton", "%IslandTabButton", "%ExplorationTabButton",
 			"%LogScroll", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 
 	var tabs: TabContainer = main.get_node_or_null("%Tabs")
 	if tabs != null:
-		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備の5つがタブ。
-		_check(tabs.get_tab_count() == 5, "タブが5つある", str(tabs.get_tab_count()))
+		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備・探索の6つがタブ。
+		_check(tabs.get_tab_count() == 6, "タブが6つある", str(tabs.get_tab_count()))
 		_check(not tabs.tabs_visible, "Tabsのタブバー自体は隠れている（TabStripが選択を持つ）",
 			"見えている")
 

@@ -1,8 +1,9 @@
 extends Node3D
 ## 大陸図の 3D 表示。地形・都市・経路を組み立てる。
 ##
-## 都市の配置は 2D 版と同じ規則（環状5都市＋中央カーレオン、72度間隔）を
-## そのまま 3D 空間に写す。移動ルールと地図の対応を崩さないため。
+## 都市の配置は 2D 版と同じ規則（環状に王国都市、中央にレイヴンスパイアを
+## 都市数に応じた等間隔で配置）をそのまま 3D 空間に写す。
+## 移動ルールと地図の対応を崩さないため。
 ##
 ## クリック判定は 3D では行わない。map_panel が unproject_position() で
 ## 画面座標へ変換し、既存の Button を重ねる。
@@ -10,21 +11,30 @@ extends Node3D
 const GameData = preload("res://scripts/systems/game_data.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
-## 環状の半径（3D 空間の単位）。
-const RING_RADIUS: float = 9.0
-## 地形の一辺。都市が乗る範囲より広く取る。
-const TERRAIN_SIZE: float = 34.0
+## 隣接都市間の目標間隔（3D 空間の単位）。都市数（GameData.RING_SIZE）が
+## 変わっても間隔を一定に保つため、半径はこの値から動的に算出する
+## （旧 RING_SIZE=5・半径9.0 の組み合わせから逆算: 2*9.0*sin(π/5) ≈ 10.58）。
+const CITY_SPACING: float = 10.58
+## 地形の一辺に足す余白（環の直径の外側）。
+const TERRAIN_MARGIN: float = 16.0
+## 盆地の半径に足す余白（環の半径の外側）。
+const BASIN_MARGIN: float = 2.0
+
+## 環状の半径（3D 空間の単位）。_compute_scale() で都市数に応じて算出する。
+var _ring_radius: float = 0.0
+## 地形の一辺。都市が乗る範囲より広く取る。_compute_scale() で算出する。
+var _terrain_size: float = 0.0
 ## 地形の分割数。多いほど滑らかだが重い。
-const TERRAIN_SUBDIVISIONS: int = 48
+const TERRAIN_SUBDIVISIONS: int = 64
 
 ## 起伏の高さ。
 const TERRAIN_HEIGHT: float = 2.4
 ## ノイズの細かさ。
 const TERRAIN_NOISE_SCALE: float = 0.10
-## 中央を掘り下げる深さ。カーレオンが盆地の底に見えるようにする。
+## 中央を掘り下げる深さ。レイヴンスパイアが盆地の底に見えるようにする。
 const BASIN_DEPTH: float = 2.2
-## 盆地の広がり。
-const BASIN_RADIUS: float = 11.0
+## 盆地の広がり。_compute_scale() で算出する。
+var _basin_radius: float = 0.0
 
 ## 都市の柱の高さと太さ。
 const CITY_HEIGHT: float = 1.5
@@ -71,6 +81,7 @@ func _build() -> void:
 	_noise.seed = 20260802
 	_noise.frequency = TERRAIN_NOISE_SCALE
 
+	_compute_scale()
 	_compute_positions()
 	_build_terrain()
 	_build_cities()
@@ -79,14 +90,23 @@ func _build() -> void:
 	_build_light()
 
 
+## 都市数（GameData.RING_SIZE）から空間定数を算出する。
+## 弦長 = 2 * 半径 * sin(π / 都市数) が CITY_SPACING で一定になるように
+## 半径を決め、地形・盆地の大きさもそれに追随させる。
+func _compute_scale() -> void:
+	_ring_radius = CITY_SPACING / (2.0 * sin(PI / float(GameData.RING_SIZE)))
+	_terrain_size = _ring_radius * 2.0 + TERRAIN_MARGIN
+	_basin_radius = _ring_radius + BASIN_MARGIN
+
+
 ## 都市の 3D 座標。2D 版と同じ規則で並べる。
-## 環状位置 0 を奥（-Z）にして時計回り。カーレオンは中央。
+## 環状位置 0 を奥（-Z）にして時計回り。レイヴンスパイアは中央。
 func _compute_positions() -> void:
 	var ring: Array[String] = GameData.royal_city_ids()
 	for index: int in ring.size():
 		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
-		var x: float = cos(angle) * RING_RADIUS
-		var z: float = sin(angle) * RING_RADIUS
+		var x: float = cos(angle) * _ring_radius
+		var z: float = sin(angle) * _ring_radius
 		positions[ring[index]] = Vector3(x, height_at(x, z), z)
 
 	positions[GameData.CAERLEON] = Vector3(0.0, height_at(0.0, 0.0), 0.0)
@@ -95,16 +115,16 @@ func _compute_positions() -> void:
 ## その地点の地面の高さ。都市も経路もこれに沿わせる。
 func height_at(x: float, z: float) -> float:
 	var h: float = _noise.get_noise_2d(x, z) * TERRAIN_HEIGHT
-	# 中央を掘り下げる。カーレオンが盆地の底になり、
+	# 中央を掘り下げる。レイヴンスパイアが盆地の底になり、
 	# 外周の王国都市がそれを囲む地形として読める。
 	var distance: float = Vector2(x, z).length()
-	var basin: float = clampf(1.0 - distance / BASIN_RADIUS, 0.0, 1.0)
+	var basin: float = clampf(1.0 - distance / _basin_radius, 0.0, 1.0)
 	return h - basin * basin * BASIN_DEPTH
 
 
 func _build_terrain() -> void:
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(TERRAIN_SIZE, TERRAIN_SIZE)
+	plane.size = Vector2(_terrain_size, _terrain_size)
 	plane.subdivide_width = TERRAIN_SUBDIVISIONS
 	plane.subdivide_depth = TERRAIN_SUBDIVISIONS
 
