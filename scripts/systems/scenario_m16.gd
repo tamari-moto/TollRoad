@@ -107,7 +107,7 @@ func _test_bar_in_market() -> void:
 
 	# 移動すると相場が変わり、バーも追従する。
 	var before: float = bar.ratio
-	session.move_to("stonegate")
+	session.move_to(_adjacent_royal_city(session.current_city))
 	_check(bar.ratio != before or true, "移動後もバーが更新される", "")
 	var after_price: int = session.prices.get_price(session.current_city, first_item)
 	var after_expected: float = float(after_price) / float(
@@ -157,26 +157,41 @@ func _test_badges() -> void:
 	var session: GameSession = GameSession.new(16003)
 	panel.bind(session)
 
-	# アイアンホロウの特産は鉱石、生産ボーナスは剣。
-	_check(session.current_city == "ironhollow", "アイアンホロウから開始", session.current_city)
-	var ore_badge: String = panel.badge_text_for("ore")
-	var sword_badge: String = panel.badge_text_for("sword")
-	var wood_badge: String = panel.badge_text_for("wood")
+	# 初期都市の特産と生産ボーナスにバッジが出る。
+	var home: String = GameData.INITIAL_CITY
+	var specialty: String = GameData.CITIES[home]["specialty"]
+	var bonus: String = GameData.CITIES[home]["bonus"]
+	var unrelated: String = ""
+	for item_id: String in GameData.ITEMS:
+		if item_id != specialty and item_id != bonus:
+			unrelated = item_id
+			break
+
+	_check(session.current_city == home, "初期都市から開始", session.current_city)
+	var specialty_badge: String = panel.badge_text_for(specialty)
+	var bonus_badge: String = panel.badge_text_for(bonus)
+	var unrelated_badge: String = panel.badge_text_for(unrelated)
 
 	# 「今お得」の指標（◎最安/◎高値）と併記されうるので contains で見る。
 	# badge_text_for() は隠れているバッジを空文字で返すので、
 	# 文言を含むことがそのまま「見えている」ことの確認になる。
-	_check(ore_badge.contains("特産"), "鉱石に特産バッジ", ore_badge)
-	_check(sword_badge.contains("生産地"), "剣に生産地バッジ", sword_badge)
-	_check(not wood_badge.contains("特産") and not wood_badge.contains("生産地"),
-		"木材には特産・生産地バッジが出ない", wood_badge)
+	_check(specialty_badge.contains("特産"), "特産品に特産バッジ", specialty_badge)
+	_check(bonus_badge.contains("生産地"), "生産ボーナス品に生産地バッジ", bonus_badge)
+	_check(not unrelated_badge.contains("特産") and not unrelated_badge.contains("生産地"),
+		"無関係な品目には特産・生産地バッジが出ない", unrelated_badge)
 
-	# 移動するとバッジが付け替わる。ストーンゲートの特産は石材。
-	session.move_to("stonegate")
-	_check(not panel.badge_text_for("ore").contains("特産"),
-		"移動で鉱石の特産バッジが消える", panel.badge_text_for("ore"))
-	_check(panel.badge_text_for("stone").contains("特産"),
-		"移動先の特産にバッジが出る", panel.badge_text_for("stone"))
+	# 移動するとバッジが付け替わる。
+	var other_city: String = ""
+	for city_id: String in GameData.royal_city_ids():
+		if city_id != home:
+			other_city = city_id
+			break
+	var other_specialty: String = GameData.CITIES[other_city]["specialty"]
+	session.move_to(other_city)
+	_check(not panel.badge_text_for(specialty).contains("特産"),
+		"移動で元の特産バッジが消える", panel.badge_text_for(specialty))
+	_check(panel.badge_text_for(other_specialty).contains("特産"),
+		"移動先の特産にバッジが出る", panel.badge_text_for(other_specialty))
 
 	_despawn(panel)
 

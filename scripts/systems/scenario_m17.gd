@@ -141,7 +141,10 @@ func _test_selection_ring() -> void:
 		world.free()
 		return
 
-	world.set_current_city("ironhollow")
+	var home: String = GameData.INITIAL_CITY
+	var neighbor: String = _adjacent_royal_city(home)
+
+	world.set_current_city(home)
 	var mesh: ImmediateMesh = ring.mesh
 	_check(mesh.get_surface_count() > 0, "リングが描かれている", "空")
 	if mesh.get_surface_count() == 0:
@@ -156,7 +159,7 @@ func _test_selection_ring() -> void:
 		"%d / 期待 %d" % [vertices.size(), expected])
 
 	# 現在地を囲んでいる。中心からの距離が内外の半径に一致する。
-	var center: Vector3 = world.positions["ironhollow"]
+	var center: Vector3 = world.positions[home]
 	var near_inner: int = 0
 	var near_outer: int = 0
 	for v: Vector3 in vertices:
@@ -190,15 +193,16 @@ func _test_selection_ring() -> void:
 		"%.3f / 期待 %.3f" % [lowest, want_y])
 
 	# 地形が違えば輪の高さも違う。
-	var other: Vector3 = world.positions["wrenfield"]
+	var far_city: String = _far_royal_city(home)
+	var other: Vector3 = world.positions[far_city]
 	if absf(world.height_at(other.x, other.z) - world.height_at(center.x, center.z)) > 0.01:
 		_check(not is_equal_approx(world.ring_height(other), want_y),
 			"都市ごとに輪の高さが変わる", "同じ高さ")
 
 	# 移動すると追従する。
-	world.set_current_city("stonegate")
+	world.set_current_city(neighbor)
 	var moved: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var new_center: Vector3 = world.positions["stonegate"]
+	var new_center: Vector3 = world.positions[neighbor]
 	var around_new: bool = true
 	for v: Vector3 in moved:
 		var flat: float = Vector2(v.x - new_center.x, v.z - new_center.z).length()
@@ -207,7 +211,7 @@ func _test_selection_ring() -> void:
 	_check(around_new, "移動先の都市を囲む", "元の位置に残っている")
 
 	# 脈動。到着直後は 1.0 から始まり、時間とともに上下する。
-	world.set_current_city("ironhollow")
+	world.set_current_city(home)
 	_check(is_equal_approx(world.pulse_scale(), 1.0), "到着直後の倍率は1.0",
 		"%.3f" % world.pulse_scale())
 
@@ -234,7 +238,7 @@ func _test_selection_ring() -> void:
 	# 脈動しても半径の比は保たれる（内外が入れ替わらない）。
 	world.redraw_selection_ring_at(MapView3D.RING_PULSE_PERIOD * 0.25)
 	var pulsed: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var center2: Vector3 = world.positions["ironhollow"]
+	var center2: Vector3 = world.positions[home]
 	var largest: float = 0.0
 	var smallest: float = 9999.0
 	for v: Vector3 in pulsed:
@@ -249,10 +253,10 @@ func _test_selection_ring() -> void:
 	# 上の検査は純関数と明示的な引き直しを見ているだけなので、_process から
 	# リングへ倍率が渡らなくなっても素通りする（脈動が止まっても気づけない）。
 	# 実際の経路を1度は通しておく。
-	world.set_current_city("ironhollow")
+	world.set_current_city(home)
 	var outer_radius := func() -> float:
 		var verts: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-		var center3: Vector3 = world.positions["ironhollow"]
+		var center3: Vector3 = world.positions[home]
 		var found: float = 0.0
 		for v: Vector3 in verts:
 			found = maxf(found, Vector2(v.x - center3.x, v.z - center3.z).length())
@@ -400,24 +404,27 @@ func _test_projection() -> void:
 	_check(pick_ok, "投影位置をクリックすると同じ都市が当たる", "食い違いがある")
 
 	# カメラを回すと投影位置が追従する。
-	var before: Vector2 = panel.screen_position_for("oakhaven")
+	var any_city: String = GameData.royal_city_ids()[0]
+	var before: Vector2 = panel.screen_position_for(any_city)
 	panel.camera().rotate_by(1.0, 0.0)
 	panel.update_node_positions()
-	var after: Vector2 = panel.screen_position_for("oakhaven")
+	var after: Vector2 = panel.screen_position_for(any_city)
 	_check(before.distance_to(after) > 1.0, "カメラを回すと投影位置が追従する",
 		"%.1f しか動かない" % before.distance_to(after))
 
 	# 拡大でも追従する。
-	var zoom_before: Vector2 = panel.screen_position_for("ironhollow")
+	var home: String = GameData.INITIAL_CITY
+	var zoom_before: Vector2 = panel.screen_position_for(home)
 	panel.camera().zoom_by(-6.0)
 	panel.update_node_positions()
-	_check(zoom_before.distance_to(panel.screen_position_for("ironhollow")) > 1.0,
+	_check(zoom_before.distance_to(panel.screen_position_for(home)) > 1.0,
 		"拡大でも投影位置が追従する", "動かない")
 
 	# 移動しても操作は従来どおり効く（レイキャストへ移行した設計の担保）。
-	session.move_to("stonegate")
-	_check(not panel.is_selectable("stonegate"), "現在地は選択できない", "選択できる")
-	_check(panel.tooltip_text_for("stonegate").contains("現在地"),
-		"現在地がツールチップに出る", panel.tooltip_text_for("stonegate"))
+	var neighbor: String = _adjacent_royal_city(session.current_city)
+	session.move_to(neighbor)
+	_check(not panel.is_selectable(neighbor), "現在地は選択できない", "選択できる")
+	_check(panel.tooltip_text_for(neighbor).contains("現在地"),
+		"現在地がツールチップに出る", panel.tooltip_text_for(neighbor))
 
 	_despawn(panel)

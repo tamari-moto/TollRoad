@@ -172,7 +172,7 @@ func _test_raid_log_tint() -> void:
 		s.buy("ore", 5)
 		if s.cargo_count("ore") == 0:
 			continue
-		s.move_to("ravenspire")
+		s.move_to(GameData.CAERLEON)
 		if s.cargo.is_empty():
 			for entry: String in s.log_entries:
 				if entry.contains("襲撃"):

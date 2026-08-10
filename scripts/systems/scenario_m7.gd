@@ -22,20 +22,22 @@ func _init() -> void:
 
 func _test_memo_api() -> void:
 	print("--- 相場メモの API ---")
+	var home: String = GameData.INITIAL_CITY
 	var s: GameSession = GameSession.new(7001)
-	_check(s.memo_age("ironhollow") == 0, "現在地の記録は0日前", str(s.memo_age("ironhollow")))
-	_check(s.memo_age("ravenspire") == -1, "未訪問は-1", str(s.memo_age("ravenspire")))
-	_check(s.memo_price("ravenspire", "ore") == -1, "未訪問の価格は-1", str(s.memo_price("ravenspire", "ore")))
+	var neighbor: String = _adjacent_royal_city(home)
+	_check(s.memo_age(home) == 0, "現在地の記録は0日前", str(s.memo_age(home)))
+	_check(s.memo_age(GameData.CAERLEON) == -1, "未訪問は-1", str(s.memo_age(GameData.CAERLEON)))
+	_check(s.memo_price(GameData.CAERLEON, "ore") == -1, "未訪問の価格は-1", str(s.memo_price(GameData.CAERLEON, "ore")))
 
-	var recorded: int = s.memo_price("ironhollow", "ore")
-	var actual: int = s.prices.get_price("ironhollow", "ore")
+	var recorded: int = s.memo_price(home, "ore")
+	var actual: int = s.prices.get_price(home, "ore")
 	_check(recorded == actual, "記録は訪問時の相場と一致", "%d vs %d" % [recorded, actual])
 
 	# 移動して日が進むと、前の都市の記録は古くなるが値は残る。
-	s.move_to("stonegate")
-	_check(s.memo_price("ironhollow", "ore") == recorded, "去った都市の記録は保持される",
-		str(s.memo_price("ironhollow", "ore")))
-	_check(s.memo_age("ironhollow") == 1, "1日経つと1日前の記録", str(s.memo_age("ironhollow")))
+	s.move_to(neighbor)
+	_check(s.memo_price(home, "ore") == recorded, "去った都市の記録は保持される",
+		str(s.memo_price(home, "ore")))
+	_check(s.memo_age(home) == 1, "1日経つと1日前の記録", str(s.memo_age(home)))
 
 
 func _test_workshop_panel() -> void:
@@ -59,34 +61,51 @@ func _test_workshop_panel() -> void:
 			equipment_count += 1
 	_check(grid.get_child_count() == 5 + equipment_count * 5, "全装備の行が生成される", str(grid.get_child_count()))
 
+	# 初期都市はそのボーナス品目の製作地。
+	var home: String = GameData.INITIAL_CITY
+	var bonus_item: String = GameData.CITIES[home]["bonus"]
+	var material: String = GameData.ITEMS[bonus_item]["material"]
+
 	var title: Label = UiUtil.find_node(panel, "WorkshopTitle")
-	# アイアンホロウは剣のボーナス都市。
-	_check(title.text.contains("剣"), "ボーナス対象が題名に出る", title.text)
+	_check(title.text.contains(GameData.ITEMS[bonus_item]["name"]), "ボーナス対象が題名に出る", title.text)
 	_check(title.text.contains("90"), "手数料が題名に出る", title.text)
 
-	# 剣の行（ITEMS の並びで sword は6番目、装備としては1番目）。
-	var sword_cost: Label = grid.get_child(5 + 2) as Label
-	_check(sword_cost.text == "2個", "ボーナス都市では消費2個", sword_cost.text)
+	# ボーナス品目の行を ITEMS の並び（装備のみ）から探す。
+	var equipment_index: int = 0
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] != GameData.ItemKind.EQUIPMENT:
+			continue
+		if item_id == bonus_item:
+			break
+		equipment_index += 1
+	var row: int = 5 + equipment_index * 5
+	var bonus_cost: Label = grid.get_child(row + 2) as Label
+	_check(bonus_cost.text == "2個", "ボーナス都市では消費2個", bonus_cost.text)
 
 	# 材料が無ければ作れない。
-	var sword_button: Button = grid.get_child(5 + 4) as Button
-	_check(sword_button.disabled, "材料なしでは作るボタンが無効", "押せる")
+	var bonus_button: Button = grid.get_child(row + 4) as Button
+	_check(bonus_button.disabled, "材料なしでは作るボタンが無効", "押せる")
 
 	# 材料を買うと作れるようになる。
-	session.buy("ore", 10)
-	_check(not sword_button.disabled, "材料があれば押せる", "無効のまま")
-	_check(sword_button.text.contains("5"), "作れる数がボタンに出る", sword_button.text)
+	session.buy(material, 10)
+	_check(not bonus_button.disabled, "材料があれば押せる", "無効のまま")
+	_check(bonus_button.text.contains("5"), "作れる数がボタンに出る", bonus_button.text)
 
 	var day_before: int = session.day
-	sword_button.pressed.emit()
-	_check(session.cargo_count("sword") == 5, "作るボタンでまとめて製作される",
-		str(session.cargo_count("sword")))
+	bonus_button.pressed.emit()
+	_check(session.cargo_count(bonus_item) == 5, "作るボタンでまとめて製作される",
+		str(session.cargo_count(bonus_item)))
 	_check(session.day == day_before + 1, "製作は1日消費", str(session.day - day_before))
 
 	# ボーナスのない都市では消費3個になる。
-	session.move_to("stonegate")
+	var other_city: String = ""
+	for city_id: String in GameData.royal_city_ids():
+		if city_id != home:
+			other_city = city_id
+			break
+	session.move_to(other_city)
 	panel.refresh()
-	_check(sword_cost.text == "3個", "ボーナス外では消費3個", sword_cost.text)
+	_check(bonus_cost.text == "3個", "ボーナス外では消費3個", bonus_cost.text)
 
 	_despawn(panel)
 
@@ -112,7 +131,7 @@ func _test_memo_panel() -> void:
 		"%d / 期待 %d" % [grid.get_child_count(), expected])
 	_check(grid.columns == columns, "列数は品目＋全都市", str(grid.columns))
 
-	# 未訪問の都市は「?」。開始時はアイアンホロウのみ既知。
+	# 未訪問の都市は「?」。開始時は初期都市のみ既知。
 	var unknown_count: int = 0
 	var known_count: int = 0
 	for child: Node in grid.get_children():
@@ -128,7 +147,7 @@ func _test_memo_panel() -> void:
 	_check(known_count == GameData.ITEMS.size(), "現在地の品目だけ既知", str(known_count))
 
 	# 訪問すると「?」が減る。
-	session.move_to("stonegate")
+	session.move_to(_adjacent_royal_city(session.current_city))
 	panel.refresh()
 	var after_unknown: int = 0
 	for child: Node in grid.get_children():
@@ -149,14 +168,16 @@ func _test_memo_staleness() -> void:
 	panel.bind(session)
 	var grid: GridContainer = UiUtil.find_node(panel, "MemoGrid")
 
-	# アイアンホロウを離れ、7日経過させる。
-	session.move_to("stonegate")
-	_check(not session.is_memo_stale("ironhollow"), "1日後はまだ新しい", "古い扱い")
+	# 初期都市を離れ、7日経過させる。
+	var home: String = session.current_city
+	var neighbor: String = _adjacent_royal_city(home)
+	session.move_to(neighbor)
+	_check(not session.is_memo_stale(home), "1日後はまだ新しい", "古い扱い")
 
 	for i: int in 6:
 		session.rest()
-	_check(session.is_memo_stale("ironhollow"), "7日経つと古い記録になる",
-		"age=%d" % session.memo_age("ironhollow"))
+	_check(session.is_memo_stale(home), "7日経つと古い記録になる",
+		"age=%d" % session.memo_age(home))
 	panel.refresh()
 
 	# 薄字（COLOR_STALE）になっているセルが存在する。
@@ -173,7 +194,7 @@ func _test_memo_staleness() -> void:
 	_check(stale_cells == GameData.ITEMS.size(), "古い都市の全品目が薄字になる", str(stale_cells))
 
 	# 現在地の記録は毎日更新されるので薄字にならない。
-	_check(not session.is_memo_stale("stonegate"), "現在地は常に新しい", "古い扱い")
+	_check(not session.is_memo_stale(neighbor), "現在地は常に新しい", "古い扱い")
 
 	_despawn(panel)
 

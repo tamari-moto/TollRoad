@@ -55,8 +55,8 @@ func _test_briefing_content() -> void:
 
 	_check(premise != null and premise.text.contains("商人"), "導入文に商人と出る",
 		premise.text if premise != null else "ない")
-	_check(premise != null and premise.text.contains("レイヴンスパイア"),
-		"レイヴンスパイアの危険が示される", "示されない")
+	_check(premise != null and premise.text.contains(GameData.CITIES[GameData.CAERLEON]["name"]),
+		"中心都市の危険が示される", "示されない")
 
 	_check(goal != null and goal.text.contains("500,000"), "目標額が出る",
 		goal.text if goal != null else "ない")

@@ -144,7 +144,7 @@ func _test_log_mapping() -> void:
 	_check(rest_logged, "休息がログに残る", "残らない")
 
 	var move_session: GameSession = GameSession.new(15003)
-	move_session.move_to("stonegate")
+	move_session.move_to(_adjacent_royal_city(move_session.current_city))
 	var move_logged: bool = false
 	for entry: String in move_session.log_entries:
 		if entry.contains("移動"):
@@ -167,7 +167,7 @@ func _test_log_mapping() -> void:
 		s.buy("ore", 5)
 		if s.cargo_count("ore") == 0:
 			continue
-		s.move_to("ravenspire")
+		s.move_to(GameData.CAERLEON)
 		if s.cargo.is_empty():
 			for entry: String in s.log_entries:
 				if entry.contains("襲撃"):

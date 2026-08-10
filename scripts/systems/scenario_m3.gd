@@ -73,13 +73,13 @@ func _test_worker_output() -> void:
 
 	# 移動や製作でも日が進むので労働者は働く。
 	var before: int = s.warehouse_total()
-	s.move_to("stonegate")
+	s.move_to(_adjacent_royal_city(s.current_city))
 	_check(s.warehouse_total() == before + 6, "移動中も労働者は働く",
 		"期待 %d, 実際 %d" % [before + 6, s.warehouse_total()])
 
 	# 非隣接移動（2日）なら2日ぶん。
 	var before_far: int = s.warehouse_total()
-	s.move_to("foxmere")
+	s.move_to(_far_royal_city(s.current_city))
 	_check(s.warehouse_total() == before_far + 12, "2日移動なら2日ぶん働く",
 		"期待 %d, 実際 %d" % [before_far + 12, s.warehouse_total()])
 

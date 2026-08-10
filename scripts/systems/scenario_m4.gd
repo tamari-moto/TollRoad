@@ -38,7 +38,7 @@ func _test_game_end() -> void:
 	# 終了後は行動できない。
 	_check(not s.rest(), "終了後は休息できない", "できてしまった")
 	_check(not s.buy("ore", 1), "終了後は購入できない", "できてしまった")
-	_check(not s.move_to("stonegate"), "終了後は移動できない", "できてしまった")
+	_check(not s.move_to(_adjacent_royal_city(s.current_city)), "終了後は移動できない", "できてしまった")
 	var day_after: int = s.day
 	s.rest()
 	_check(s.day == day_after, "終了後は日が進まない", str(s.day))
@@ -49,7 +49,7 @@ func _test_stranded() -> void:
 	var s: GameSession = GameSession.new(3002)
 	s.silver = 100
 	_check(s.is_stranded(), "移動費が払えないと立ち往生", "移動できる")
-	_check(not s.move_to("stonegate"), "移動は拒否される", "移動できてしまった")
+	_check(not s.move_to(_adjacent_royal_city(s.current_city)), "移動は拒否される", "移動できてしまった")
 	_check(s.rest(), "それでも休息はできる", "休息もできない")
 	_check(s.day == 2, "休息で日が進む", str(s.day))
 
