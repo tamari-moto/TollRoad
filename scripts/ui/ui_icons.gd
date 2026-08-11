@@ -13,6 +13,7 @@ const ITEM_ICON_DIR: String = "res://assets/sprites/items"
 const CITY_ICON_DIR: String = "res://assets/sprites/cities"
 const MOUNT_ICON_DIR: String = "res://assets/sprites/mounts"
 const ISLAND_ICON_DIR: String = "res://assets/sprites/island"
+const COMPANION_ICON_DIR: String = "res://assets/sprites/companions"
 
 ## 一覧に並べる際の推奨サイズ。
 const LIST_ICON_SIZE: int = 20
@@ -22,6 +23,8 @@ const CITY_ICON_SIZE: int = 44
 const MOUNT_ICON_SIZE := Vector2(56, 42)
 ## 島の図（横長）。
 const ISLAND_ICON_SIZE := Vector2(96, 64)
+## ギルド仲間の肖像（正方形）。
+const COMPANION_ICON_SIZE := Vector2(56, 56)
 
 ## "種別/id" -> Texture2D。見つからなかった場合も記録し、再探索を避ける。
 static var _cache: Dictionary = {}
@@ -45,6 +48,11 @@ static func mount_texture(mount_id: String) -> Texture2D:
 ## 島の図。レベルに対応する画像を返す。存在しなければ null。
 static func island_texture(level: int) -> Texture2D:
 	return _texture(ISLAND_ICON_DIR, "island_%d" % level)
+
+
+## ギルド仲間の肖像。存在しなければ null。
+static func companion_texture(companion_id: String) -> Texture2D:
+	return _texture(COMPANION_ICON_DIR, companion_id)
 
 
 static func _texture(dir: String, id: String) -> Texture2D:

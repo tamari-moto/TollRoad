@@ -4,6 +4,7 @@ extends PanelContainer
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 const BUTTON_MIN_SIZE: Vector2 = Vector2(0, 44)
 
@@ -39,7 +40,17 @@ func _build() -> void:
 	for companion_id: String in GameData.COMPANION_ORDER:
 		var button := Button.new()
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.custom_minimum_size = BUTTON_MIN_SIZE
+		button.custom_minimum_size = Vector2(0, UiIcons.COMPANION_ICON_SIZE.y)
+
+		# 肖像をボタンの icon として持たせる。画像が無ければ何もしない
+		# （UiIcons は欠損時に null を返す。名前だけでも壊れない）。
+		var portrait: Texture2D = UiIcons.companion_texture(companion_id)
+		if portrait != null:
+			button.icon = portrait
+			button.expand_icon = true
+			button.add_theme_constant_override(
+				"icon_max_width", int(UiIcons.COMPANION_ICON_SIZE.x))
+
 		button.pressed.connect(_on_companion_pressed.bind(companion_id))
 		_list.add_child(button)
 		_buttons[companion_id] = button

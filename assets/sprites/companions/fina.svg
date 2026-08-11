@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="フィナの肖像">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a2c26"/><stop offset="1" stop-color="#241a16"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="50%" cy="42%" r="55%">
+      <stop offset="0" stop-color="#e0805f" stop-opacity=".55"/><stop offset="1" stop-color="#e0805f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg1)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow1)"/>
+  <path d="M95 96 L82 44 L128 78 Z" fill="#8a5a44"/><path d="M100 90 L92 58 L120 78 Z" fill="#e0805f"/>
+  <path d="M205 96 L218 44 L172 78 Z" fill="#8a5a44"/><path d="M200 90 L208 58 L180 78 Z" fill="#e0805f"/>
+  <path d="M78 150 Q70 90 150 82 Q230 90 222 150 L222 210 Q150 200 78 210 Z" fill="#7a4c38"/>
+  <path d="M60 300 Q64 224 150 220 Q236 224 240 300 Z" fill="#c56a4c"/>
+  <path d="M120 232 Q150 250 180 232 L172 300 L128 300 Z" fill="#f2e2c8"/>
+  <rect x="134" y="196" width="32" height="34" rx="12" fill="#f0c3a4"/>
+  <ellipse cx="150" cy="160" rx="58" ry="60" fill="#fbd6b8"/>
+  <path d="M92 150 Q96 96 150 92 Q204 96 208 150 Q186 120 150 124 Q114 120 92 150Z" fill="#8a5a44"/>
+  <path d="M150 92 Q120 96 108 140 Q132 116 150 118 Q168 116 192 140 Q180 96 150 92Z" fill="#9a6448"/>
+  <ellipse cx="118" cy="176" rx="11" ry="7" fill="#f5a98a" opacity=".7"/>
+  <ellipse cx="182" cy="176" rx="11" ry="7" fill="#f5a98a" opacity=".7"/>
+  <ellipse cx="124" cy="160" rx="9" ry="11" fill="#3a2418"/><circle cx="127" cy="156" r="3" fill="#fff"/>
+  <ellipse cx="176" cy="160" rx="9" ry="11" fill="#3a2418"/><circle cx="179" cy="156" r="3" fill="#fff"/>
+  <path d="M112 146 Q124 140 136 146" stroke="#6a4230" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M164 146 Q176 140 188 146" stroke="#6a4230" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M138 184 Q150 196 162 184" stroke="#a85c44" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <circle cx="228" cy="250" r="20" fill="#e5c574" stroke="#b78a2e" stroke-width="2"/>
+  <text x="228" y="257" text-anchor="middle" font-family="Cinzel" font-size="18" fill="#8a6620" font-weight="700">$</text>
+</svg>
