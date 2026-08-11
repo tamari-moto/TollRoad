@@ -135,14 +135,14 @@ func _resolve_nodes() -> void:
 
 	_tab_strip_buttons.clear()
 	for node_name: String in ["MarketTabButton", "CargoTabButton",
-			"WorkshopTabButton", "MemoTabButton", "IslandTabButton"]:
+			"WorkshopTabButton", "MemoTabButton", "IslandTabButton", "CompanionTabButton"]:
 		var button: Button = UiUtil.find_node(self, node_name)
 		if button != null:
 			_tab_strip_buttons.append(button)
 
 	_panels = []
 	for node_name: String in ["大陸図", "MarketPanel", "CargoPanel",
-			"製作所", "相場メモ", "島と装備"]:
+			"製作所", "相場メモ", "島と装備", "CompanionPanel"]:
 		var panel: Node = UiUtil.find_node(self, node_name)
 		if panel != null:
 			_panels.append(panel)

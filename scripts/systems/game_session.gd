@@ -14,6 +14,7 @@ signal cargo_changed()
 signal warehouse_changed()
 signal island_upgraded(level: int)
 signal mount_changed(mount_id: String)
+signal companion_changed(companion_id: String)
 signal logged(message: String)
 
 var day: int = 1
@@ -21,6 +22,9 @@ var silver: int = GameData.INITIAL_SILVER
 var current_city: String = GameData.INITIAL_CITY
 var mount: String = GameData.INITIAL_MOUNT
 var island_level: int = 0
+
+## 同行中のギルド仲間。GameData.COMPANION_NONE（空文字）なら誰もいない。
+var active_companion: String = GameData.COMPANION_NONE
 
 ## item_id -> 個数
 var cargo: Dictionary = {}
@@ -48,8 +52,12 @@ func _init(rng_seed: int = 0) -> void:
 
 # --- 状態の参照 ---
 
+## 積載量（ロッコが同行していれば加算）。
 func capacity() -> int:
-	return GameData.MOUNTS[mount]["capacity"]
+	var base: int = GameData.MOUNTS[mount]["capacity"]
+	if active_companion == "rocco":
+		base += GameData.COMPANION_CAPACITY_BONUS
+	return base
 
 
 func cargo_weight() -> int:
@@ -103,9 +111,17 @@ func rank() -> String:
 
 # --- 取引（日数を消費しない） ---
 
+## この都市でのこの品目の購入単価（フィナが同行していれば割引後）。
+func buy_price(item_id: String) -> int:
+	var price: int = prices.get_price(current_city, item_id)
+	if active_companion == "fina":
+		price = int(round(price * (1.0 - GameData.COMPANION_BUY_DISCOUNT)))
+	return price
+
+
 ## 購入可能な最大数（シルバーと積載空きの小さい方）。
 func max_buyable(item_id: String) -> int:
-	var price: int = prices.get_price(current_city, item_id)
+	var price: int = buy_price(item_id)
 	if price <= 0:
 		return 0
 	var by_silver: int = silver / price
@@ -116,7 +132,7 @@ func max_buyable(item_id: String) -> int:
 func buy(item_id: String, count: int) -> bool:
 	if is_over() or count <= 0 or count > max_buyable(item_id):
 		return false
-	var price: int = prices.get_price(current_city, item_id)
+	var price: int = buy_price(item_id)
 	var total: int = price * count
 	silver -= total
 	cargo[item_id] = cargo_count(item_id) + count
@@ -151,6 +167,13 @@ func has_craft_bonus(item_id: String) -> bool:
 	return GameData.CITIES[current_city]["bonus"] == item_id
 
 
+## 装備1個あたりの製作手数料（ガドルフが同行していれば下がる）。
+func craft_fee_per_unit() -> int:
+	if active_companion == "gadolf":
+		return GameData.COMPANION_CRAFT_FEE
+	return GameData.CRAFT_FEE
+
+
 ## 装備1個あたりの実質材料消費数。
 ## ボーナス都市では 3個消費して 3×0.3=0.9 → 四捨五入で1個還元、実質2個（Q: 1個ごとに計算）。
 func material_cost_per_unit(item_id: String) -> int:
@@ -168,7 +191,7 @@ func max_craftable(item_id: String) -> int:
 	var material: String = item["material"]
 	var per_unit: int = material_cost_per_unit(item_id)
 	var by_material: int = cargo_count(material) / per_unit
-	var by_silver: int = silver / GameData.CRAFT_FEE
+	var by_silver: int = silver / craft_fee_per_unit()
 	# 材料が減って装備が増えるぶんの正味の重量増加。
 	var weight_delta: int = item["weight"] - GameData.ITEMS[material]["weight"] * per_unit
 	var by_space: int = 99999
@@ -184,7 +207,7 @@ func craft(item_id: String, count: int) -> bool:
 	var material: String = GameData.ITEMS[item_id]["material"]
 	var per_unit: int = material_cost_per_unit(item_id)
 	var material_used: int = per_unit * count
-	var fee: int = GameData.CRAFT_FEE * count
+	var fee: int = craft_fee_per_unit() * count
 
 	silver -= fee
 	_reduce_cargo(material, material_used)
@@ -204,6 +227,24 @@ func craft(item_id: String, count: int) -> bool:
 	return true
 
 
+# --- ギルド仲間 ---
+
+## 同行者を切り替える（""を渡すと解除）。無料・即時で、日数は消費しない。
+func set_companion(companion_id: String) -> bool:
+	if companion_id != GameData.COMPANION_NONE and not GameData.COMPANIONS.has(companion_id):
+		return false
+	if companion_id == active_companion:
+		return false
+	active_companion = companion_id
+	if companion_id == GameData.COMPANION_NONE:
+		_log("同行者と別れ、一人旅に戻った。")
+	else:
+		_log("%s が同行することになった（%s）。" % [
+			GameData.COMPANIONS[companion_id]["name"], GameData.COMPANIONS[companion_id]["desc"]])
+	companion_changed.emit(active_companion)
+	return true
+
+
 # --- 移動 ---
 
 ## その都市へ移動するのに必要な日数・費用を返す。
@@ -213,10 +254,14 @@ func route_to(destination: String) -> Dictionary:
 		return {}
 	var is_black_zone: bool = destination == GameData.CAERLEON or current_city == GameData.CAERLEON
 	if is_black_zone:
+		# ロッコが同行していれば襲撃率が下がる（下限は0）。
+		var raid_chance: float = GameData.RAID_CHANCE
+		if active_companion == "rocco":
+			raid_chance = maxf(0.0, raid_chance - GameData.COMPANION_RAID_REDUCTION)
 		return {
 			"days": GameData.MOVE_BLACK_ZONE_DAYS,
 			"cost": GameData.MOVE_BLACK_ZONE_COST,
-			"raid_chance": GameData.RAID_CHANCE,
+			"raid_chance": raid_chance,
 		}
 	if GameData.is_adjacent(current_city, destination):
 		return {
@@ -412,8 +457,11 @@ func _record_memo() -> void:
 
 
 ## その都市の記録が古い（MEMO_STALE_DAYS 以上経過）か。未訪問なら false。
+## セラフィーナが同行していれば記録は古くならない。
 func is_memo_stale(city_id: String) -> bool:
 	if not memo.has(city_id):
+		return false
+	if active_companion == "serafina":
 		return false
 	return day - memo[city_id]["day"] >= GameData.MEMO_STALE_DAYS
 
@@ -457,6 +505,7 @@ func to_dict() -> Dictionary:
 		"current_city": current_city,
 		"mount": mount,
 		"island_level": island_level,
+		"active_companion": active_companion,
 		"cargo": cargo.duplicate(true),
 		"warehouse": warehouse.duplicate(true),
 		"memo": memo.duplicate(true),
@@ -489,6 +538,8 @@ func from_dict(data: Dictionary) -> void:
 		mount = str(data["mount"])
 	if data.has("island_level"):
 		island_level = int(data["island_level"])
+	if data.has("active_companion"):
+		active_companion = str(data["active_companion"])
 
 	if data.has("cargo"):
 		cargo = _restore_counts(data["cargo"])

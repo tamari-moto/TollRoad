@@ -303,7 +303,12 @@ mkdir -p exports   # 出力先が無いとエクスポートは失敗する
 構造の説明は [architecture.md](docs/architecture.md) にある。
 CLAUDE.md は作業時の規約、architecture.md は構造の説明という分担。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m19.gd` の19本。
+**ギルド仲間（同行者）を実装済み**（2026-08-11）。4人（フィナ/ガドルフ/セラフィーナ/ロッコ）
+から同時に1人だけ選んで同行させる。加入・切り替えは無料・即時（日数を消費しない）。
+効果は `game_session.gd` が companion id を直接見て適用しており、汎用の効果ディスパッチは
+作っていない。詳細は [game_design.md](docs/game_design.md) の「7.3 ギルド仲間（同行者）」。
+
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m20.gd` の20本。
 新しい機能を足したら対応するシナリオも足し、`scenario_all.gd` の
 `SCENARIO_COUNT` を更新すること（忘れてもランナーが本数を照合して止める）。
 

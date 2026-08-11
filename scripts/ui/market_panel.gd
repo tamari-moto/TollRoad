@@ -157,7 +157,10 @@ func refresh() -> void:
 	if _session == null or _rows.is_empty():
 		return
 	if is_instance_valid(_title):
-		_title.text = "市場 — %s" % GameData.CITIES[_session.current_city]["name"]
+		var companion_note: String = ""
+		if _session.active_companion == "fina":
+			companion_note = "（フィナ同行中・買値-8%）"
+		_title.text = "市場 — %s%s" % [GameData.CITIES[_session.current_city]["name"], companion_note]
 
 	var over: bool = _session.is_over()
 
