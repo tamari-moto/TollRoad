@@ -29,6 +29,18 @@ const RELAXATION_INITIAL_TEMPERATURE: float = CITY_SPACING * 0.5
 ## 強すぎるとばねと反発の均衡を崩し、弱すぎると配置が全体に広がりすぎる。
 const CENTERING_STRENGTH: float = 0.02
 
+## --- 空・霧・グロウ ---
+## GL Compatibility でも動作する範囲（プロシージャルな空、ボリューメトリック
+## でない深度フォグ、グロウ）に絞ってある。数値は初期値であり、実際の見え方
+## は実機のGUIでしか判断できない（CLAUDE.md参照）。
+const SKY_TOP_COLOR := Color(0.08, 0.09, 0.15)
+const SKY_HORIZON_COLOR := Color(0.30, 0.26, 0.28)
+const SKY_GROUND_COLOR := Color(0.05, 0.05, 0.07)
+const AMBIENT_LIGHT_ENERGY: float = 0.6
+const FOG_DENSITY: float = 0.01
+const GLOW_INTENSITY: float = 0.8
+const GLOW_BLOOM: float = 0.15
+
 ## 配置全体の半径（3D 空間の単位）。緩和後の実際の座標の広がりから
 ## _compute_scale() が算出する（環のような閉形式の計算はしない）。
 var _ring_radius: float = 0.0
@@ -46,9 +58,30 @@ const BASIN_DEPTH: float = 2.2
 ## 盆地の広がり。_compute_scale() で算出する。
 var _basin_radius: float = 0.0
 
-## 都市の柱の高さと太さ。
+## 地形の頂点カラーに使う3色。盆地に近いほど暗く危険な色、外周に近いほど
+## 明るい色を基調にし、傾斜が急なところほど岩肌寄りの色を混ぜる。
+const TERRAIN_BASIN_COLOR := Color(0.16, 0.16, 0.20)
+const TERRAIN_UPLAND_COLOR := Color(0.30, 0.34, 0.30)
+const TERRAIN_ROCK_COLOR := Color(0.24, 0.22, 0.22)
+
+## 都市の構造物（土台＋尖塔）が使える高さの予算と太さの基準。
+## 現在地リングは地形の高さ + RING_LIFT に浮かぶ固定位置で、構造物の実際の
+## 高さには追従しない。構造物がめり込んで見えないよう、パーツを増やしても
+## 最高点がこの値を超えないようにすること
+## （scenario_m17.gd の「柱より上に架かる」検査もこの前提）。
 const CITY_HEIGHT: float = 1.5
 const CITY_RADIUS: float = 0.55
+## 土台が使う高さの割合。残りを尖塔に配分する。
+const CITY_BASE_HEIGHT_RATIO: float = 0.5
+## 尖塔が使う高さの割合（土台を除いた残りに対する比率）。本数を増やしても
+## 個々の高さはほぼ揃えたままにする（本数で密度を、高さで危険度を示さない）。
+const CITY_SPIRE_HEIGHT_RATIO: float = 0.85
+## 尖塔の本数（中心都市以外）。city_id のハッシュから決定的に決める
+## （真の乱数は使わない。同じ都市は毎回同じ見た目になる）。
+const CITY_SPIRE_MIN: int = 1
+const CITY_SPIRE_MAX: int = 2
+## 中心都市の尖塔本数。密集させて、他と違う特別な場所だと分かるようにする。
+const CAERLEON_SPIRE_COUNT: int = 4
 
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
@@ -97,11 +130,46 @@ func _build() -> void:
 	var flat_positions: Dictionary = _relax_positions()
 	_compute_scale(flat_positions)
 	_compute_positions(flat_positions)
+	_build_environment()
 	_build_terrain()
 	_build_cities()
 	_build_routes()
 	_build_selection_ring()
 	_build_light()
+
+
+## 空・霧・グロウをまとめた環境設定。own_world_3d の SubViewport 内で
+## 完結するので、本編の2D世界には影響しない。
+func _build_environment() -> void:
+	var environment := Environment.new()
+
+	environment.background_mode = Environment.BG_SKY
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = SKY_TOP_COLOR
+	sky_material.sky_horizon_color = SKY_HORIZON_COLOR
+	sky_material.ground_bottom_color = SKY_GROUND_COLOR
+	sky_material.ground_horizon_color = SKY_HORIZON_COLOR
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+	environment.sky = sky
+
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	environment.ambient_light_energy = AMBIENT_LIGHT_ENERGY
+
+	# 地形の縁が霧に溶け、閉塞感（黒ゾーンを匂わせる雰囲気）を出す。
+	environment.fog_enabled = true
+	environment.fog_light_color = SKY_HORIZON_COLOR
+	environment.fog_density = FOG_DENSITY
+
+	# 都市の柱・現在地リングは自己発光しているので、グロウで街明かりのように滲む。
+	environment.glow_enabled = true
+	environment.glow_intensity = GLOW_INTENSITY
+	environment.glow_bloom = GLOW_BLOOM
+
+	var world_environment := WorldEnvironment.new()
+	world_environment.name = "Environment"
+	world_environment.environment = environment
+	add_child(world_environment)
 
 
 ## 王国都市の水平面(X-Z)配置を、GameData.ROYAL_ROAD_EDGES に沿った決定的な
@@ -209,11 +277,16 @@ func _build_terrain() -> void:
 	# 法線を引き直さないと陰影が平らに見える。
 	_recalculate_normals(arrays)
 
+	# 傾斜（法線）と中心からの距離（盆地との近さ）から頂点カラーを塗る。
+	# 法線再計算の後でないと傾斜が求まらないので、この順序を守ること。
+	_assign_terrain_colors(arrays)
+
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.22, 0.26, 0.30)
+	material.albedo_color = Color.WHITE
+	material.vertex_color_use_as_albedo = true
 	material.roughness = 0.95
 	material.metallic = 0.0
 	mesh.surface_set_material(0, material)
@@ -222,6 +295,26 @@ func _build_terrain() -> void:
 	_terrain.name = "Terrain"
 	_terrain.mesh = mesh
 	add_child(_terrain)
+
+
+## 高さ（盆地への近さ）と傾斜から頂点カラーを塗る。
+## 盆地に近いほど TERRAIN_BASIN_COLOR、外周に近いほど TERRAIN_UPLAND_COLOR
+## を基調にし、急斜面ほど TERRAIN_ROCK_COLOR を混ぜる。
+func _assign_terrain_colors(arrays: Array) -> void:
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var colors := PackedColorArray()
+	colors.resize(vertices.size())
+
+	for i: int in vertices.size():
+		var v: Vector3 = vertices[i]
+		# height_at() の basin と同じ考え方（中心に近いほど1.0）。
+		var basin: float = clampf(1.0 - Vector2(v.x, v.z).length() / _basin_radius, 0.0, 1.0)
+		var base: Color = TERRAIN_BASIN_COLOR.lerp(TERRAIN_UPLAND_COLOR, 1.0 - basin)
+		var slope: float = clampf(1.0 - normals[i].y, 0.0, 1.0)
+		colors[i] = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
+
+	arrays[Mesh.ARRAY_COLOR] = colors
 
 
 ## 頂点を動かした後の法線を求め直す。面の向きから平均する。
@@ -252,29 +345,74 @@ func _recalculate_normals(arrays: Array) -> void:
 
 func _build_cities() -> void:
 	for city_id: String in positions:
-		var pillar := MeshInstance3D.new()
-		pillar.name = city_id
+		var container := Node3D.new()
+		container.name = city_id
+		container.position = positions[city_id]
+		add_child(container)
+		_cities[city_id] = container
 
-		var mesh := CylinderMesh.new()
-		mesh.top_radius = CITY_RADIUS * 0.6
-		mesh.bottom_radius = CITY_RADIUS
-		mesh.height = CITY_HEIGHT
-		mesh.radial_segments = 6
-		pillar.mesh = mesh
+		for part: MeshInstance3D in _city_structure_parts(city_id):
+			container.add_child(part)
 
-		var material := StandardMaterial3D.new()
-		material.albedo_color = _city_color(city_id)
-		material.roughness = 0.6
-		# 暗い地形の中でも都市が目立つよう、わずかに自己発光させる。
-		material.emission_enabled = true
-		material.emission = _city_color(city_id)
-		material.emission_energy_multiplier = 0.35
-		mesh.surface_set_material(0, material)
 
-		var point: Vector3 = positions[city_id]
-		pillar.position = point + Vector3(0.0, CITY_HEIGHT * 0.5, 0.0)
-		add_child(pillar)
-		_cities[city_id] = pillar
+## 都市ごとの構造物（土台＋尖塔）を組み立てる。真の乱数は使わず、city_id の
+## ハッシュから決定的にばらつきを付ける（同じ都市は毎回同じ見た目になる。
+## --script 検査と save/load の再現性を壊さないため）。
+func _city_structure_parts(city_id: String) -> Array[MeshInstance3D]:
+	var color: Color = _city_color(city_id)
+	var is_hub: bool = city_id == GameData.CAERLEON
+	var parts: Array[MeshInstance3D] = []
+
+	# 土台。中心都市は少しだけ太くする。
+	var base_height: float = CITY_HEIGHT * CITY_BASE_HEIGHT_RATIO
+	var base_mesh := CylinderMesh.new()
+	base_mesh.top_radius = CITY_RADIUS * (0.85 if is_hub else 0.75)
+	base_mesh.bottom_radius = CITY_RADIUS * (1.3 if is_hub else 1.0)
+	base_mesh.height = base_height
+	base_mesh.radial_segments = 6
+	var base: MeshInstance3D = _make_city_part(base_mesh, color)
+	base.position = Vector3(0.0, base_height * 0.5, 0.0)
+	parts.append(base)
+
+	# 尖塔。中心都市は本数を増やして密集させる（高さの予算は他都市と共通。
+	# CITY_HEIGHT を超えると現在地リングにめり込むため、本数を増やしても
+	# 個々の高さはほぼ揃えたままにする）。
+	var spire_count: int = CAERLEON_SPIRE_COUNT if is_hub \
+		else CITY_SPIRE_MIN + int(city_id.hash() % (CITY_SPIRE_MAX - CITY_SPIRE_MIN + 1))
+	var spire_height: float = (CITY_HEIGHT - base_height) * CITY_SPIRE_HEIGHT_RATIO
+	var cluster_radius: float = CITY_RADIUS * 0.4
+
+	for i: int in spire_count:
+		var spire_mesh := CylinderMesh.new()
+		spire_mesh.top_radius = CITY_RADIUS * 0.12
+		spire_mesh.bottom_radius = CITY_RADIUS * 0.3
+		spire_mesh.height = spire_height
+		spire_mesh.radial_segments = 6
+		var spire: MeshInstance3D = _make_city_part(spire_mesh, color)
+		# 複数本あるときは土台の中心周りに均等配置する（決定的、乱数不使用）。
+		var angle: float = TAU * float(i) / float(spire_count)
+		var offset: Vector2 = Vector2.ZERO if spire_count == 1 \
+			else Vector2(cos(angle), sin(angle)) * cluster_radius
+		spire.position = Vector3(offset.x, base_height + spire_height * 0.5, offset.y)
+		parts.append(spire)
+
+	return parts
+
+
+## パーツ1つぶんの MeshInstance3D を作る。マテリアルは自己発光つき
+## （暗い地形の中でも都市が目立つように。グロウで街明かりのように滲む）。
+func _make_city_part(mesh: Mesh, color: Color) -> MeshInstance3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.6
+	material.emission_enabled = true
+	material.emission = color
+	material.emission_energy_multiplier = 0.35
+	mesh.surface_set_material(0, material)
+
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	return part
 
 
 static func _city_color(city_id: String) -> Color:
@@ -429,25 +567,31 @@ func ring_height(center: Vector3) -> float:
 func _build_light() -> void:
 	var light := DirectionalLight3D.new()
 	light.name = "Sun"
-	# 斜め上から当てて起伏に陰影を付ける。影は gl_compatibility の
-	# 制約と負荷を考えて無効のまま。
+	# 斜め上から当てて起伏に陰影を付ける。
 	light.rotation_degrees = Vector3(-52.0, -38.0, 0.0)
 	light.light_energy = 1.1
+	# シーンが小さい（都市10×パーツ数個＋地形1枚）ため負荷は軽いはずだが、
+	# シャドウアクネ等が出ないかは実機のGUIでしか判断できない（要確認）。
+	light.shadow_enabled = true
 	add_child(light)
 
 
-## 現在地を示す。都市の色を状態に合わせて塗り替える。
+## 現在地を示す。都市の色を状態に合わせて塗り替える（構造物の全パーツぶん）。
 func set_current_city(city_id: String) -> void:
 	for id: String in _cities:
-		var pillar: MeshInstance3D = _cities[id]
-		if not is_instance_valid(pillar) or pillar.mesh == null:
-			continue
-		var material: StandardMaterial3D = pillar.mesh.surface_get_material(0)
-		if material == null:
+		var container: Node3D = _cities[id]
+		if not is_instance_valid(container):
 			continue
 		var color: Color = UiTheme.FOCUS if id == city_id else _city_color(id)
-		material.albedo_color = color
-		material.emission = color
+		for part: Node in container.get_children():
+			var mesh_part: MeshInstance3D = part as MeshInstance3D
+			if mesh_part == null or mesh_part.mesh == null:
+				continue
+			var material: StandardMaterial3D = mesh_part.mesh.surface_get_material(0)
+			if material == null:
+				continue
+			material.albedo_color = color
+			material.emission = color
 
 	# 足元のリングを現在地へ移す。地面の高さが都市ごとに違うので引き直す。
 	if positions.has(city_id):
