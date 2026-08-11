@@ -45,7 +45,9 @@ const CRAFT_MATERIAL_COUNT: int = 3
 # --- 都市 ---
 ## specialty はその都市で安い資源、bonus はその都市で安い（かつ製作還元がある）装備。
 ## explore_flavor は探索の演出文（討伐/遺跡探索のどちらの体裁かを都市ごとに変える）。
-## 接続関係（どの都市と王道で直接つながるか）は ROYAL_ROAD_EDGES を参照。
+## 接続関係（どの都市と王道で直接つながるか）は ROYAL_ROAD_EDGES を、
+## レイヴンスパイアと黒ゾーンで直結するか（黒ゾーンのゲート）は
+## BLACK_ZONE_GATES を参照。
 const CITIES: Dictionary = {
 	"oakhaven":   {"name": "オークヘイヴン",   "specialty": "wood",  "bonus": "bow",
 		"explore_flavor": "森に潜む狼の群れの討伐"},
@@ -86,6 +88,12 @@ const ROYAL_ROAD_EDGES: Array = [
 	["fenwick", "silvermere"],
 	["silvermere", "wyndham"],
 ]
+
+## レイヴンスパイアと黒ゾーンで直結する（＝1区間で到達できる）王国都市。
+## それ以外の王国都市は、王道でこのいずれかへ着いてから黒ゾーンに入る
+## 必要がある（経路探索が自動で合成する。game_session.gd 参照）。
+## 王道での中心寄りの交差点3つを選んである。
+const BLACK_ZONE_GATES: Array[String] = ["ironhollow", "foxmere", "silvermere"]
 
 # --- 価格 ---
 const JITTER_MIN: float = 0.86

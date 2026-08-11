@@ -285,6 +285,8 @@ static func _city_color(city_id: String) -> Color:
 
 ## 経路を地形の上に沿わせて描く。
 ## 王道は実線、黒ゾーンは切れ目のある線にして、2D 版と同じ区別を保つ。
+## 黒ゾーンの破線は GameData.BLACK_ZONE_GATES の都市からのみ引く
+## （それ以外の王国都市は中心都市と直結していない）。
 func _build_routes() -> void:
 	var mesh := ImmediateMesh.new()
 	var material := StandardMaterial3D.new()
@@ -297,9 +299,8 @@ func _build_routes() -> void:
 		_add_route(mesh, positions[edge[0]], positions[edge[1]],
 			Color(0.45, 0.42, 0.36), false)
 
-	var ring: Array[String] = GameData.royal_city_ids()
 	var center: Vector3 = positions[GameData.CAERLEON]
-	for city_id: String in ring:
+	for city_id: String in GameData.BLACK_ZONE_GATES:
 		_add_route(mesh, positions[city_id], center, UiTheme.WARN, true)
 
 	mesh.surface_end()

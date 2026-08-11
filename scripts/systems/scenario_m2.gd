@@ -16,7 +16,7 @@ func _init() -> void:
 	_test_black_zone_route()
 	_test_raid_outcome()
 	_test_raid_rate()
-	_test_multi_leg_raid()
+	_test_multi_leg_from_hub()
 	_finish()
 
 
@@ -116,22 +116,40 @@ func _test_black_zone_route() -> void:
 	_check(route["cost"] == 400, "黒ゾーンの費用は400", str(route["cost"]))
 	_check(is_equal_approx(route["raid_chance"], 0.22), "襲撃率は22%", str(route["raid_chance"]))
 
-	# どの王国都市からでも同条件（往路・復路とも）。
-	for city_id: String in GameData.royal_city_ids():
+	# ゲート都市（GameData.BLACK_ZONE_GATES）は全て実在の王国都市。
+	for gate: String in GameData.BLACK_ZONE_GATES:
+		_check(GameData.royal_city_ids().has(gate), "ゲート %s は実在の王国都市" % gate, "不明な都市")
+
+	# ゲート都市からは直接1日/400（往路・復路とも）。
+	for city_id: String in GameData.BLACK_ZONE_GATES:
 		var t: GameSession = GameSession.new(1007)
 		if t.current_city != city_id:
 			t.move_to(city_id)
 		var r: Dictionary = t.route_to(GameData.CAERLEON)
-		_check(r["cost"] == 400 and r["days"] == 1, "%s からも同条件" % city_id, str(r))
+		_check(r["cost"] == 400 and r["days"] == 1, "ゲート都市 %s からは直接1日/400" % city_id, str(r))
 
-	# 中心都市発の帰路も黒ゾーン扱い。
-	var back: GameSession = GameSession.new(1008)
+	# ゲートでない都市は、ゲートまでの王道区間＋黒ゾーン1区間の合成になる。
+	# 黒ゾーン区間は最後の1つだけなので、襲撃率は22%のまま変わらない。
+	for city_id: String in GameData.royal_city_ids():
+		if GameData.BLACK_ZONE_GATES.has(city_id):
+			continue
+		var t: GameSession = GameSession.new(1008)
+		if t.current_city != city_id:
+			t.move_to(city_id)
+		var r: Dictionary = t.route_to(GameData.CAERLEON)
+		_check(r["days"] > 1 and r["cost"] > 400,
+			"非ゲート都市 %s からは複数区間になる" % city_id, str(r))
+		_check(is_equal_approx(r["raid_chance"], 0.22),
+			"%s からも襲撃率は22%%のまま" % city_id, str(r["raid_chance"]))
+
+	# 中心都市発の帰路も黒ゾーン扱い（初期都市はゲートなので直接1区間）。
+	var back: GameSession = GameSession.new(1009)
 	back.move_to(GameData.CAERLEON)
 	var ret: Dictionary = back.route_to(GameData.INITIAL_CITY)
 	_check(is_equal_approx(ret["raid_chance"], 0.22), "帰路も襲撃判定がある", str(ret["raid_chance"]))
 
 	# 王道では襲撃しない。
-	var safe: GameSession = GameSession.new(1009)
+	var safe: GameSession = GameSession.new(1010)
 	var neighbor: String = _adjacent_royal_city(safe.current_city)
 	_check(is_equal_approx(safe.route_to(neighbor)["raid_chance"], 0.0), "王道は襲撃なし", "襲撃あり")
 
@@ -169,52 +187,44 @@ func _test_raid_outcome() -> void:
 	_check(found_log, "襲撃が航海日誌に記録される", "記録なし")
 
 
-## 王道で迂回するより中心都市を2回経由した方が安い都市ペアでは、1回の
-## move_to() が黒ゾーン区間を2つ含む。途中の区間で被弾しても旅程は最終
-## 目的地まで続き、費用・日数は経路全体の合計どおりになることを検査する。
-func _test_multi_leg_raid() -> void:
-	print("--- 複数区間の移動（黒ゾーンを2回経由） ---")
-	# そのような都市ペアは、route_to() の raid_chance が単発の黒ゾーン移動
-	# （0.22）より高くなる（2区間ぶんの襲撃判定が合成されるため）。
-	# この特徴でペアを動的に探す（都市名は直書きしない）。
-	var ring: Array[String] = GameData.royal_city_ids()
-	var start_city: String = ""
-	var end_city: String = ""
-	var expected_route: Dictionary = {}
-	for a: String in ring:
-		var probe: GameSession = GameSession.new(0)
-		if probe.current_city != a:
-			probe.move_to(a)
-		for b: String in ring:
-			if b == a:
-				continue
-			var route: Dictionary = probe.route_to(b)
-			if route.get("raid_chance", 0.0) > GameData.RAID_CHANCE + 0.01:
-				start_city = a
-				end_city = b
-				expected_route = route
-				break
-		if start_city != "":
+## 中心都市（レイヴンスパイア）発でゲートでない都市着の移動は、必ず
+## 「黒ゾーン1区間（襲撃判定あり、最初の区間）＋王道の安全区間1つ以上」
+## という複数区間になる（GameData.BLACK_ZONE_GATES がゲートを絞って
+## いるため）。道中（最初の区間）で被弾しても、旅程は最終目的地まで続き、
+## 費用・日数は経路全体の合計どおりになることを検査する。
+func _test_multi_leg_from_hub() -> void:
+	print("--- 複数区間の移動（中心都市発、道中に黒ゾーン区間を含む） ---")
+	# ゲートでない王国都市を1つ選ぶ（都市名は直書きしない）。
+	var destination: String = ""
+	for city_id: String in GameData.royal_city_ids():
+		if not GameData.BLACK_ZONE_GATES.has(city_id):
+			destination = city_id
 			break
-
-	_check(start_city != "", "中心都市を2回経由する都市ペアが存在する", "見つからない")
-	if start_city == "":
+	_check(destination != "", "ゲートでない王国都市が存在する", "見つからない")
+	if destination == "":
 		return
 
-	# そのペアで、実際に襲撃が起きるシードを探す。
+	var probe: GameSession = GameSession.new(0)
+	if probe.current_city != GameData.CAERLEON:
+		probe.move_to(GameData.CAERLEON)
+	var expected_route: Dictionary = probe.route_to(destination)
+	_check(expected_route["days"] > 1 and expected_route["cost"] > 400,
+		"中心都市からゲートでない都市へは複数区間になる", str(expected_route))
+
+	# 実際に襲撃が起きるシードを探す。
 	var raided_session: GameSession = null
 	var silver_at_departure: int = 0
 	var day_before: int = 0
 	for seed_value: int in range(1, 500):
 		var s: GameSession = GameSession.new(seed_value)
-		if s.current_city != start_city:
-			s.move_to(start_city)
+		if s.current_city != GameData.CAERLEON:
+			s.move_to(GameData.CAERLEON)
 		s.buy("ore", 10)
 		if s.cargo_count("ore") != 10:
 			continue
 		silver_at_departure = s.silver
 		day_before = s.day
-		s.move_to(end_city)
+		s.move_to(destination)
 		if s.cargo.is_empty():
 			raided_session = s
 			break
@@ -223,8 +233,8 @@ func _test_multi_leg_raid() -> void:
 	if raided_session == null:
 		return
 
-	_check(raided_session.current_city == end_city,
-		"経路の途中で被弾しても最終目的地まで旅程が続く", raided_session.current_city)
+	_check(raided_session.current_city == destination,
+		"道中（黒ゾーン区間）で被弾しても最終目的地まで旅程が続く", raided_session.current_city)
 	_check(raided_session.cargo.is_empty(), "襲撃で積荷を全て失う", "残っている")
 	_check(raided_session.silver == silver_at_departure - expected_route["cost"],
 		"被弾しても費用は経路の合計どおり引かれる", str(raided_session.silver))

@@ -215,7 +215,11 @@ func craft(item_id: String, count: int) -> bool:
 func _direct_leg(from_city: String, to_city: String) -> Dictionary:
 	if from_city == to_city:
 		return {}
-	var is_black_zone: bool = to_city == GameData.CAERLEON or from_city == GameData.CAERLEON
+	# 黒ゾーンで直結するのは GameData.BLACK_ZONE_GATES のみ。
+	var is_black_zone: bool = (
+		(to_city == GameData.CAERLEON and GameData.BLACK_ZONE_GATES.has(from_city))
+		or (from_city == GameData.CAERLEON and GameData.BLACK_ZONE_GATES.has(to_city))
+	)
 	if is_black_zone:
 		return {
 			"days": GameData.MOVE_BLACK_ZONE_DAYS,
@@ -231,13 +235,15 @@ func _direct_leg(from_city: String, to_city: String) -> Dictionary:
 	return {}
 
 
-## city_id から1ホップで行ける全都市（王道の隣接都市 + 中心都市）。
-## 中心都市自身からは全王国都市が1ホップ。
+## city_id から1ホップで行ける全都市（王道の隣接都市 + ゲートなら中心都市）。
+## 中心都市自身からは GameData.BLACK_ZONE_GATES のみが1ホップ
+## （ゲートでない王国都市へは、まずいずれかのゲートまで王道で歩く必要がある）。
 func _leg_neighbors(city_id: String) -> Array[String]:
 	if city_id == GameData.CAERLEON:
-		return GameData.royal_city_ids()
+		return GameData.BLACK_ZONE_GATES.duplicate()
 	var neighbors: Array[String] = GameData.road_neighbors(city_id).duplicate()
-	neighbors.append(GameData.CAERLEON)
+	if GameData.BLACK_ZONE_GATES.has(city_id):
+		neighbors.append(GameData.CAERLEON)
 	return neighbors
 
 
