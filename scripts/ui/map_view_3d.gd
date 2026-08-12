@@ -128,6 +128,18 @@ const VEGETATION_BARREN_PENALTY: float = 0.5
 const VEGETATION_ROCK_THRESHOLD: float = -0.1
 const VEGETATION_ROCK_COLOR := TERRAIN_ROCK_COLOR
 
+## 木・低木・岩は底が平らなメッシュなので、傾斜地にそのまま真上向きで置くと
+## 登り側の底面が地面にめり込んで見える。地形の局所法線に部分的に合わせて
+## 傾けることでめり込みを減らす（1.0で完全に地面へ倣わせる。急斜面で横倒しに
+## 見えて不自然になるため、直立感を残す値に留める）。
+const VEGETATION_SLOPE_ALIGNMENT: float = 0.6
+## 法線を数値微分で求める際のサンプリング幅（水平方向の微小距離）。
+const NORMAL_SAMPLE_EPSILON: float = 0.05
+## 地形は TERRAIN_SUBDIVISIONS 分割のメッシュとして描画されるため、連続関数
+## height_at() を直接サンプリングする草木の設置高さとの間にわずかなズレが
+## 出うる。道の LIFT と同じ理由で、保険として少しだけ浮かせる。
+const VEGETATION_LIFT: float = 0.03
+
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
 const RING_OUTER_RADIUS: float = 2.1
@@ -531,7 +543,7 @@ func _build_vegetation() -> void:
 				var biome: Dictionary = _nearest_biome(Vector2(px, pz))
 				var fertile: bool = FERTILE_SPECIALTIES.has(GameData.CITIES[biome["city_id"]]["specialty"])
 				var density: float = _noise.get_noise_2d(px * 0.6, pz * 0.6)
-				var instance_transform := Transform3D(Basis(), Vector3(px, height_at(px, pz), pz))
+				var instance_transform := _vegetation_transform(px, pz)
 
 				if fertile:
 					if density > VEGETATION_BUSH_THRESHOLD:
@@ -555,6 +567,33 @@ func _build_vegetation() -> void:
 	_add_vegetation_multimesh(_make_tree_mesh(), tree_transforms, "Trees")
 	_add_vegetation_multimesh(_make_bush_mesh(), bush_transforms, "Bushes")
 	_add_vegetation_multimesh(_make_rock_mesh(), rock_transforms, "Rocks")
+
+
+## その地点の設置トランスフォームを、局所法線に部分的に合わせて傾けて返す。
+## 木・低木・岩はいずれも底が平らなメッシュ（ローカル y=0 が底面）なので、
+## 傾斜地に真上向きのまま置くと登り側の底面が地面にめり込んで見える
+## （VEGETATION_SLOPE_ALIGNMENT のコメント参照）。
+func _vegetation_transform(x: float, z: float) -> Transform3D:
+	var normal: Vector3 = _terrain_normal_at(x, z)
+	var axis: Vector3 = Vector3.UP.cross(normal)
+	var basis := Basis()
+	if axis.length() > 0.0001:
+		var tilt := Basis(axis.normalized(), Vector3.UP.angle_to(normal))
+		basis = Basis().slerp(tilt, VEGETATION_SLOPE_ALIGNMENT)
+	var y: float = height_at(x, z) + VEGETATION_LIFT
+	return Transform3D(basis, Vector3(x, y, z))
+
+
+## その地点の地形の法線を、height_at() の中心差分で求める。
+## _recalculate_normals() はメッシュの頂点・インデックスから面法線を求めるが、
+## こちらは任意の連続座標に対して height_at() を直接サンプリングする版
+## （草木は地形メッシュの頂点に乗っているとは限らないため）。
+func _terrain_normal_at(x: float, z: float) -> Vector3:
+	var h_left: float = height_at(x - NORMAL_SAMPLE_EPSILON, z)
+	var h_right: float = height_at(x + NORMAL_SAMPLE_EPSILON, z)
+	var h_back: float = height_at(x, z - NORMAL_SAMPLE_EPSILON)
+	var h_front: float = height_at(x, z + NORMAL_SAMPLE_EPSILON)
+	return Vector3(h_left - h_right, 2.0 * NORMAL_SAMPLE_EPSILON, h_back - h_front).normalized()
 
 
 ## 木・低木を生やしてよい候補地か。盆地・都市・道に近すぎる場所は除外する。
