@@ -70,6 +70,13 @@ const TERRAIN_BASIN_COLOR := Color(0.16, 0.16, 0.20)
 const TERRAIN_UPLAND_COLOR := Color(0.30, 0.34, 0.30)
 const TERRAIN_ROCK_COLOR := Color(0.24, 0.22, 0.22)
 
+## バイオーム（最寄り都市の特産色）が地形に効く範囲。CITY_SPACING より
+## やや広めに取り、隣接都市どうしの色がにじみ合って自然に混ざるようにする
+## （Voronoi的な硬い境界は引かない）。
+const BIOME_INFLUENCE_RADIUS: float = CITY_SPACING * 1.3
+## 特産色をそのまま使うと地形の中で浮くため、少し暗くしてから混ぜる。
+const BIOME_COLOR_DARKEN: float = 0.35
+
 ## 都市の構造物（土台＋尖塔）が使える高さの予算と太さの基準。
 ## 現在地リングは地形の高さ + RING_LIFT に浮かぶ固定位置で、構造物の実際の
 ## 高さには追従しない。構造物がめり込んで見えないよう、パーツを増やしても
@@ -109,6 +116,17 @@ const VEGETATION_BUSH_THRESHOLD: float = -0.1
 const VEGETATION_TREE_THRESHOLD: float = 0.4
 const VEGETATION_TRUNK_COLOR := Color(0.32, 0.24, 0.18)
 const VEGETATION_FOLIAGE_COLOR := Color(0.22, 0.32, 0.20)
+
+## この特産を持つ都市の周辺は「豊か」な土地として木・低木を茂らせる
+## （木材・繊維・皮・羊毛＝生き物由来の資源）。それ以外（鉱石・石材・石炭・
+## 水晶・粘土＝鉱物系）は「不毛」とし、植生を減らして岩を代わりに置く。
+const FERTILE_SPECIALTIES: Array[String] = ["wood", "fiber", "hide", "wool"]
+## 不毛な土地での木・低木の出現閾値の底上げ量。閾値を上げるほど出にくくなる。
+const VEGETATION_BARREN_PENALTY: float = 0.5
+## 岩がちな土地でのみ置く。木・低木と同程度の頻度になるよう、豊かな土地の
+## 閾値とほぼ揃えてある。
+const VEGETATION_ROCK_THRESHOLD: float = -0.1
+const VEGETATION_ROCK_COLOR := TERRAIN_ROCK_COLOR
 
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
@@ -328,7 +346,9 @@ func _build_terrain() -> void:
 
 ## 高さ（盆地への近さ）と傾斜から頂点カラーを塗る。
 ## 盆地に近いほど TERRAIN_BASIN_COLOR、外周に近いほど TERRAIN_UPLAND_COLOR
-## を基調にし、急斜面ほど TERRAIN_ROCK_COLOR を混ぜる。さらに配置の広がり
+## を基調にし、急斜面ほど TERRAIN_ROCK_COLOR を混ぜる。続けて、最寄りの
+## 王国都市の特産色を近いほど強くにじませ（バイオーム。危険地帯の盆地色を
+## 覆い隠さないよう basin の外側でのみ効かせる）、さらに配置の広がり
 ## （_ring_radius）を超えたあたりから地形の縁に向けて空の色（霧と同じ色）
 ## へフェードさせ、縁が定規で切ったような直線に見えないようにする
 ## （アルファ透過は使わない。頂点カラーの補間だけで済ませる）。
@@ -349,11 +369,36 @@ func _assign_terrain_colors(arrays: Array) -> void:
 		var slope: float = clampf(1.0 - normals[i].y, 0.0, 1.0)
 		var color: Color = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
 
+		var biome: Dictionary = _nearest_biome(Vector2(v.x, v.z))
+		var biome_t: float = clampf(1.0 - biome["distance"] / BIOME_INFLUENCE_RADIUS, 0.0, 1.0)
+		color = color.lerp(biome["color"], biome_t * (1.0 - basin))
+
 		var edge_t: float = clampf(
 			(distance_from_center - _ring_radius) / (half_extent - _ring_radius), 0.0, 1.0)
 		colors[i] = color.lerp(SKY_HORIZON_COLOR, edge_t)
 
 	arrays[Mesh.ARRAY_COLOR] = colors
+
+
+## 水平面上でその地点に最も近い王国都市（レイヴンスパイアは対象外。中心の
+## 危険地帯は既存の盆地色がそのまま担う）と、その特産資源の色を返す。
+## 地形の色にも植生の豊か/不毛の判定にも使う共通のバイオーム判定。
+func _nearest_biome(point: Vector2) -> Dictionary:
+	var nearest_id: String = ""
+	var nearest_distance: float = INF
+	for city_id: String in GameData.royal_city_ids():
+		var city_pos: Vector3 = positions[city_id]
+		var distance: float = point.distance_to(Vector2(city_pos.x, city_pos.z))
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_id = city_id
+
+	var specialty: String = GameData.CITIES[nearest_id]["specialty"]
+	return {
+		"city_id": nearest_id,
+		"color": UiTheme.item_color(specialty).darkened(BIOME_COLOR_DARKEN),
+		"distance": nearest_distance,
+	}
 
 
 ## 頂点を動かした後の法線を求め直す。面の向きから平均する。
@@ -468,6 +513,7 @@ static func _city_color(city_id: String) -> Color:
 func _build_vegetation() -> void:
 	var tree_transforms: Array[Transform3D] = []
 	var bush_transforms: Array[Transform3D] = []
+	var rock_transforms: Array[Transform3D] = []
 
 	var half_extent: float = _ring_radius + VEGETATION_OUTER_MARGIN
 	var x: float = -half_extent
@@ -482,18 +528,33 @@ func _build_vegetation() -> void:
 			var pz: float = z + VEGETATION_GRID_STEP * 0.5 + jitter_z
 
 			if _is_vegetation_site(px, pz):
+				var biome: Dictionary = _nearest_biome(Vector2(px, pz))
+				var fertile: bool = FERTILE_SPECIALTIES.has(GameData.CITIES[biome["city_id"]]["specialty"])
 				var density: float = _noise.get_noise_2d(px * 0.6, pz * 0.6)
-				if density > VEGETATION_BUSH_THRESHOLD:
-					var instance_transform := Transform3D(Basis(), Vector3(px, height_at(px, pz), pz))
-					if density > VEGETATION_TREE_THRESHOLD:
-						tree_transforms.append(instance_transform)
-					else:
-						bush_transforms.append(instance_transform)
+				var instance_transform := Transform3D(Basis(), Vector3(px, height_at(px, pz), pz))
+
+				if fertile:
+					if density > VEGETATION_BUSH_THRESHOLD:
+						if density > VEGETATION_TREE_THRESHOLD:
+							tree_transforms.append(instance_transform)
+						else:
+							bush_transforms.append(instance_transform)
+				else:
+					# 不毛な土地は木・低木の閾値を大きく引き上げてまばらにし、
+					# 代わりに岩を同程度の頻度でばら撒く。
+					if density > VEGETATION_BUSH_THRESHOLD + VEGETATION_BARREN_PENALTY:
+						if density > VEGETATION_TREE_THRESHOLD + VEGETATION_BARREN_PENALTY:
+							tree_transforms.append(instance_transform)
+						else:
+							bush_transforms.append(instance_transform)
+					elif density > VEGETATION_ROCK_THRESHOLD:
+						rock_transforms.append(instance_transform)
 			z += VEGETATION_GRID_STEP
 		x += VEGETATION_GRID_STEP
 
 	_add_vegetation_multimesh(_make_tree_mesh(), tree_transforms, "Trees")
 	_add_vegetation_multimesh(_make_bush_mesh(), bush_transforms, "Bushes")
+	_add_vegetation_multimesh(_make_rock_mesh(), rock_transforms, "Rocks")
 
 
 ## 木・低木を生やしてよい候補地か。盆地・都市・道に近すぎる場所は除外する。
@@ -566,6 +627,18 @@ func _make_bush_mesh() -> ArrayMesh:
 	bush.height = 0.3
 	bush.radial_segments = 6
 	_append_primitive_surface(mesh, bush, Vector3(0.0, 0.15, 0.0), VEGETATION_FOLIAGE_COLOR)
+
+	return mesh
+
+
+## 岩のメッシュ。不毛な土地（鉱物系の特産を持つ都市の周辺）で木・低木の
+## 代わりに置く。角錐に近い低いシルエットにして、木と見分けが付くようにする。
+func _make_rock_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+
+	var rock := PrismMesh.new()
+	rock.size = Vector3(0.4, 0.28, 0.32)
+	_append_primitive_surface(mesh, rock, Vector3(0.0, 0.14, 0.0), VEGETATION_ROCK_COLOR)
 
 	return mesh
 
