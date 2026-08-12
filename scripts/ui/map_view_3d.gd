@@ -11,12 +11,18 @@ extends Node3D
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
 ## 王道でつながる都市間の目標間隔（3D 空間の単位）。ばね緩和の引力が
 ## この距離に収束させようとする（旧・環状配置時代の値をそのまま踏襲）。
 const CITY_SPACING: float = 10.58
-## 地形の一辺に足す余白（配置全体の直径の外側）。
-const TERRAIN_MARGIN: float = 16.0
+## 地形の一辺に足す余白（配置全体の直径の外側）。_build() で
+## MapCamera.MAX_DISTANCE から動的に算出する（_terrain_margin 参照）。
+## 固定値だと都市配置が広がった時にカメラの限界より余白が狭くなり、
+## 地形の縁が視界に入ってしまうことがあったため。
+var _terrain_margin: float = 0.0
+## カメラの最大距離に足す余裕（縁が完全にフォグへ溶けるぶんの猶予）。
+const TERRAIN_MARGIN_BUFFER: float = 15.0
 ## 盆地の半径に足す余白（配置全体の半径の外側）。
 const BASIN_MARGIN: float = 2.0
 
@@ -83,6 +89,27 @@ const CITY_SPIRE_MAX: int = 2
 ## 中心都市の尖塔本数。密集させて、他と違う特別な場所だと分かるようにする。
 const CAERLEON_SPIRE_COUNT: int = 4
 
+## --- 草木 ---
+## 候補地を走査する格子の間隔。狭いほど密になる。
+const VEGETATION_GRID_STEP: float = 1.4
+## 草木をばら撒く範囲。配置の広がり（_ring_radius）にこの余白を足した
+## 円の内側だけに生やす（地形の縁のフェード領域まではみ出さない）。
+const VEGETATION_OUTER_MARGIN: float = 6.0
+## 盆地指標（height_at() と同じ、中心に近いほど1.0）がこれを超える場所には
+## 生やさない。黒ゾーン寄りは不毛な土地として読める。
+const VEGETATION_BASIN_LIMIT: float = 0.45
+## 都市の構造物からこの距離より近づけない。
+const VEGETATION_CITY_CLEARANCE: float = 1.8
+## 道（王道・黒ゾーン）からこの距離より近づけない。
+const VEGETATION_ROAD_CLEARANCE: float = 1.0
+## ノイズ値がこれを超えた候補地に低木を生やす。
+const VEGETATION_BUSH_THRESHOLD: float = -0.1
+## ノイズ値がこれを超えた候補地は低木の代わりに木を生やす
+## （木の方が密度は低い＝目立つアクセントとして使う）。
+const VEGETATION_TREE_THRESHOLD: float = 0.4
+const VEGETATION_TRUNK_COLOR := Color(0.32, 0.24, 0.18)
+const VEGETATION_FOLIAGE_COLOR := Color(0.22, 0.32, 0.20)
+
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
 const RING_OUTER_RADIUS: float = 2.1
@@ -123,6 +150,7 @@ func _build() -> void:
 	_noise = FastNoiseLite.new()
 	_noise.seed = 20260802
 	_noise.frequency = TERRAIN_NOISE_SCALE
+	_terrain_margin = (MapCamera.MAX_DISTANCE + TERRAIN_MARGIN_BUFFER) * 2.0
 
 	# 高さ（height_at()）は _basin_radius に依存するため、まず水平面
 	# （X-Z）の配置をばね緩和で決め、その広がりから空間定数を算出してから
@@ -132,6 +160,7 @@ func _build() -> void:
 	_compute_positions(flat_positions)
 	_build_environment()
 	_build_terrain()
+	_build_vegetation()
 	_build_cities()
 	_build_routes()
 	_build_selection_ring()
@@ -238,7 +267,7 @@ func _compute_scale(flat_positions: Dictionary) -> void:
 	for city_id: String in flat_positions:
 		max_radius = maxf(max_radius, flat_positions[city_id].length())
 	_ring_radius = max_radius
-	_terrain_size = _ring_radius * 2.0 + TERRAIN_MARGIN
+	_terrain_size = _ring_radius * 2.0 + _terrain_margin
 	_basin_radius = _ring_radius + BASIN_MARGIN
 
 
@@ -299,20 +328,30 @@ func _build_terrain() -> void:
 
 ## 高さ（盆地への近さ）と傾斜から頂点カラーを塗る。
 ## 盆地に近いほど TERRAIN_BASIN_COLOR、外周に近いほど TERRAIN_UPLAND_COLOR
-## を基調にし、急斜面ほど TERRAIN_ROCK_COLOR を混ぜる。
+## を基調にし、急斜面ほど TERRAIN_ROCK_COLOR を混ぜる。さらに配置の広がり
+## （_ring_radius）を超えたあたりから地形の縁に向けて空の色（霧と同じ色）
+## へフェードさせ、縁が定規で切ったような直線に見えないようにする
+## （アルファ透過は使わない。頂点カラーの補間だけで済ませる）。
 func _assign_terrain_colors(arrays: Array) -> void:
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var colors := PackedColorArray()
 	colors.resize(vertices.size())
 
+	var half_extent: float = _terrain_size * 0.5
 	for i: int in vertices.size():
 		var v: Vector3 = vertices[i]
+		var distance_from_center: float = Vector2(v.x, v.z).length()
+
 		# height_at() の basin と同じ考え方（中心に近いほど1.0）。
-		var basin: float = clampf(1.0 - Vector2(v.x, v.z).length() / _basin_radius, 0.0, 1.0)
+		var basin: float = clampf(1.0 - distance_from_center / _basin_radius, 0.0, 1.0)
 		var base: Color = TERRAIN_BASIN_COLOR.lerp(TERRAIN_UPLAND_COLOR, 1.0 - basin)
 		var slope: float = clampf(1.0 - normals[i].y, 0.0, 1.0)
-		colors[i] = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
+		var color: Color = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
+
+		var edge_t: float = clampf(
+			(distance_from_center - _ring_radius) / (half_extent - _ring_radius), 0.0, 1.0)
+		colors[i] = color.lerp(SKY_HORIZON_COLOR, edge_t)
 
 	arrays[Mesh.ARRAY_COLOR] = colors
 
@@ -421,27 +460,202 @@ static func _city_color(city_id: String) -> Color:
 	return UiTheme.PIN_FRAME
 
 
-## 経路を地形の上に沿わせて描く。
-## 王道は実線、黒ゾーンは切れ目のある線にして、2D 版と同じ区別を保つ。
-## 黒ゾーンの破線は GameData.BLACK_ZONE_GATES の都市からのみ引く
-## （それ以外の王国都市は中心都市と直結していない）。
-func _build_routes() -> void:
-	var mesh := ImmediateMesh.new()
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.vertex_color_use_as_albedo = true
+## 草木を決定的にばら撒く。真の乱数は使わず、_noise から得られる値だけで
+## 密度・位置を決める（都市構造物の city_id.hash() と同じ理由: 再現性・
+## --script 検査との整合）。盆地（黒ゾーン寄り）・都市・道の近くには
+## 生やさない。個体ごとに MeshInstance3D は作らず、MultiMeshInstance3D で
+## まとめて複製する（数百本規模になりうるため描画負荷を抑える）。
+func _build_vegetation() -> void:
+	var tree_transforms: Array[Transform3D] = []
+	var bush_transforms: Array[Transform3D] = []
 
-	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
+	var half_extent: float = _ring_radius + VEGETATION_OUTER_MARGIN
+	var x: float = -half_extent
+	while x < half_extent:
+		var z: float = -half_extent
+		while z < half_extent:
+			# 格子点そのままだと不自然に整列して見えるので、ノイズで
+			# 決定的にジッターさせる。
+			var jitter_x: float = _noise.get_noise_2d(x * 4.0 + 13.0, z * 4.0 + 71.0) * VEGETATION_GRID_STEP * 0.5
+			var jitter_z: float = _noise.get_noise_2d(x * 4.0 + 71.0, z * 4.0 + 13.0) * VEGETATION_GRID_STEP * 0.5
+			var px: float = x + VEGETATION_GRID_STEP * 0.5 + jitter_x
+			var pz: float = z + VEGETATION_GRID_STEP * 0.5 + jitter_z
+
+			if _is_vegetation_site(px, pz):
+				var density: float = _noise.get_noise_2d(px * 0.6, pz * 0.6)
+				if density > VEGETATION_BUSH_THRESHOLD:
+					var instance_transform := Transform3D(Basis(), Vector3(px, height_at(px, pz), pz))
+					if density > VEGETATION_TREE_THRESHOLD:
+						tree_transforms.append(instance_transform)
+					else:
+						bush_transforms.append(instance_transform)
+			z += VEGETATION_GRID_STEP
+		x += VEGETATION_GRID_STEP
+
+	_add_vegetation_multimesh(_make_tree_mesh(), tree_transforms, "Trees")
+	_add_vegetation_multimesh(_make_bush_mesh(), bush_transforms, "Bushes")
+
+
+## 木・低木を生やしてよい候補地か。盆地・都市・道に近すぎる場所は除外する。
+func _is_vegetation_site(x: float, z: float) -> bool:
+	var point := Vector2(x, z)
+
+	# height_at() の basin と同じ考え方（中心に近いほど1.0）。
+	var basin: float = clampf(1.0 - point.length() / _basin_radius, 0.0, 1.0)
+	if basin > VEGETATION_BASIN_LIMIT:
+		return false
+
+	for city_id: String in positions:
+		var city_pos: Vector3 = positions[city_id]
+		if point.distance_to(Vector2(city_pos.x, city_pos.z)) < VEGETATION_CITY_CLEARANCE:
+			return false
 
 	for edge: Array in GameData.ROYAL_ROAD_EDGES:
-		_add_route(mesh, positions[edge[0]], positions[edge[1]],
-			Color(0.45, 0.42, 0.36), false)
+		var a: Vector3 = positions[edge[0]]
+		var b: Vector3 = positions[edge[1]]
+		if _distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z)) < VEGETATION_ROAD_CLEARANCE:
+			return false
+
+	var center: Vector3 = positions[GameData.CAERLEON]
+	for gate: String in GameData.BLACK_ZONE_GATES:
+		var gate_pos: Vector3 = positions[gate]
+		if _distance_to_segment(point, Vector2(gate_pos.x, gate_pos.z), Vector2(center.x, center.z)) < VEGETATION_ROAD_CLEARANCE:
+			return false
+
+	return true
+
+
+## 点と線分の最短距離（水平面）。道からの距離判定に使う。
+func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var length_sq: float = ab.length_squared()
+	if length_sq < 0.0001:
+		return point.distance_to(a)
+	var t: float = clampf((point - a).dot(ab) / length_sq, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
+
+
+## 木のメッシュ（幹＋葉）を1つだけ作る。MultiMeshInstance3D で複製する。
+func _make_tree_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.05
+	trunk.bottom_radius = 0.08
+	trunk.height = 0.5
+	trunk.radial_segments = 5
+	_append_primitive_surface(mesh, trunk, Vector3(0.0, 0.25, 0.0), VEGETATION_TRUNK_COLOR)
+
+	var foliage := CylinderMesh.new()
+	foliage.top_radius = 0.0
+	foliage.bottom_radius = 0.32
+	foliage.height = 0.65
+	foliage.radial_segments = 6
+	_append_primitive_surface(mesh, foliage, Vector3(0.0, 0.75, 0.0), VEGETATION_FOLIAGE_COLOR)
+
+	return mesh
+
+
+## 低木のメッシュ（葉のみ、木より小さい）。
+func _make_bush_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+
+	var bush := CylinderMesh.new()
+	bush.top_radius = 0.05
+	bush.bottom_radius = 0.22
+	bush.height = 0.3
+	bush.radial_segments = 6
+	_append_primitive_surface(mesh, bush, Vector3(0.0, 0.15, 0.0), VEGETATION_FOLIAGE_COLOR)
+
+	return mesh
+
+
+## source の形状を position だけずらして target の新しいサーフェスとして
+## 追加する。単色のパーツなので頂点カラーではなく専用マテリアルで塗る。
+func _append_primitive_surface(target: ArrayMesh, source: PrimitiveMesh, offset: Vector3, color: Color) -> void:
+	var arrays: Array = source.get_mesh_arrays()
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	for i: int in vertices.size():
+		vertices[i] += offset
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+
+	target.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.9
+	target.surface_set_material(target.get_surface_count() - 1, material)
+
+
+## transforms ぶんの木/低木を MultiMeshInstance3D として複製する。
+func _add_vegetation_multimesh(mesh: ArrayMesh, transforms: Array[Transform3D], node_name: String) -> void:
+	if transforms.is_empty():
+		return
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = mesh
+	multimesh.instance_count = transforms.size()
+	for i: int in transforms.size():
+		multimesh.set_instance_transform(i, transforms[i])
+
+	var instance := MultiMeshInstance3D.new()
+	instance.name = node_name
+	instance.multimesh = multimesh
+	add_child(instance)
+
+
+## 道の幅（3D 空間の単位）。
+const ROAD_WIDTH: float = 0.5
+## 黒ゾーンの道は細めにして、王道と見分けが付くようにする。
+const BLACK_ZONE_ROAD_WIDTH: float = 0.32
+const ROAD_COLOR := Color(0.45, 0.42, 0.36)
+
+## 経路を地形の上に沿わせて描く、幅を持った帯（道）。
+## 王道は連続した帯、黒ゾーンは切れ目のある帯にして、2D 版と同じ
+## 実線／破線の区別を保つ。黒ゾーンの帯は GameData.BLACK_ZONE_GATES の
+## 都市からのみ引く（それ以外の王国都市は中心都市と直結していない）。
+func _build_routes() -> void:
+	# 各区間は _build_road_ribbon() が自前の配列を組んで返す
+	# （PackedArray を関数の引数越しに書き換えても呼び出し元には反映されない
+	# ことがあるため、必ず戻り値で受け取って呼び出し側でつなぎ合わせる）。
+	var segments: Array[Dictionary] = []
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		segments.append(_build_road_ribbon(positions[edge[0]], positions[edge[1]],
+			ROAD_WIDTH, ROAD_COLOR, false))
 
 	var center: Vector3 = positions[GameData.CAERLEON]
 	for city_id: String in GameData.BLACK_ZONE_GATES:
-		_add_route(mesh, positions[city_id], center, UiTheme.WARN, true)
+		segments.append(_build_road_ribbon(positions[city_id], center,
+			BLACK_ZONE_ROAD_WIDTH, UiTheme.WARN, true))
 
-	mesh.surface_end()
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for segment: Dictionary in segments:
+		var offset: int = vertices.size()
+		vertices.append_array(segment["vertices"])
+		normals.append_array(segment["normals"])
+		colors.append_array(segment["colors"])
+		for idx: int in segment["indices"]:
+			indices.append(idx + offset)
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 0.9
+	# 三角形の巻き順を厳密に合わせなくても両面とも描画されるようにする
+	# （このファイルで一度踏んだ「外積の順序」の落とし穴を避けるため）。
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_set_material(0, material)
 
 	_routes = MeshInstance3D.new()
 	_routes.name = "Routes"
@@ -449,25 +663,54 @@ func _build_routes() -> void:
 	add_child(_routes)
 
 
-## 地形に沿った線を引く。dashed なら区切って破線にする。
-func _add_route(mesh: ImmediateMesh, from_point: Vector3, to_point: Vector3,
-		color: Color, dashed: bool) -> void:
+## from_point から to_point まで、地形に沿った帯（道）1区間ぶんの頂点・法線・
+## 色・インデックスを組み立てて返す。dashed なら区切って破線状の帯にする。
+## インデックスはこの帯の中だけで0始まり（呼び出し側で全体の頂点配列に
+## つなぎ合わせる際にオフセットする）。
+func _build_road_ribbon(from_point: Vector3, to_point: Vector3, width: float,
+		color: Color, dashed: bool) -> Dictionary:
 	const STEPS: int = 24
-	const LIFT: float = 0.12
+	const LIFT: float = 0.08
+
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+
+	var direction: Vector2 = Vector2(to_point.x - from_point.x, to_point.z - from_point.z)
+	if direction.length() < 0.001:
+		return {"vertices": vertices, "normals": normals, "colors": colors, "indices": indices}
+	direction = direction.normalized()
+	# 進行方向に対して垂直な向き（水平面）。帯の左右の縁をこれで作る。
+	var right: Vector2 = Vector2(-direction.y, direction.x) * (width * 0.5)
+
 	for i: int in STEPS:
 		if dashed and i % 2 == 1:
 			continue
 		var t0: float = float(i) / float(STEPS)
 		var t1: float = float(i + 1) / float(STEPS)
-		var a: Vector3 = from_point.lerp(to_point, t0)
-		var b: Vector3 = from_point.lerp(to_point, t1)
+		var c0: Vector3 = from_point.lerp(to_point, t0)
+		var c1: Vector3 = from_point.lerp(to_point, t1)
 		# 地面にめり込まないよう、その地点の高さに合わせて少し浮かせる。
-		a.y = height_at(a.x, a.z) + LIFT
-		b.y = height_at(b.x, b.z) + LIFT
-		mesh.surface_set_color(color)
-		mesh.surface_add_vertex(a)
-		mesh.surface_set_color(color)
-		mesh.surface_add_vertex(b)
+		c0.y = height_at(c0.x, c0.z) + LIFT
+		c1.y = height_at(c1.x, c1.z) + LIFT
+
+		var base_index: int = vertices.size()
+		vertices.append(c0 + Vector3(-right.x, 0.0, -right.y))
+		vertices.append(c0 + Vector3(right.x, 0.0, right.y))
+		vertices.append(c1 + Vector3(-right.x, 0.0, -right.y))
+		vertices.append(c1 + Vector3(right.x, 0.0, right.y))
+		for j: int in 4:
+			normals.append(Vector3.UP)
+			colors.append(color)
+		indices.append(base_index)
+		indices.append(base_index + 1)
+		indices.append(base_index + 2)
+		indices.append(base_index + 1)
+		indices.append(base_index + 3)
+		indices.append(base_index + 2)
+
+	return {"vertices": vertices, "normals": normals, "colors": colors, "indices": indices}
 
 
 ## 現在地を囲むリング。入れ物だけ先に作り、中身は到着のたびに引き直す。
