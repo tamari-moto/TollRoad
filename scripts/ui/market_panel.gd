@@ -27,16 +27,17 @@ const BADGE_BEST_SELL: String = "◎高値"
 
 ## 画面を大きく・タップしやすくするためのサイズ。既定のGodotテーマは
 ## 16px相当で、プロジェクト全体を上書きするテーマは無いため、ここで
-## 品目行だけ個別に拡大する。
-const ROW_FONT_SIZE: int = 20
-const HEADER_FONT_SIZE: int = 15
-const ROW_ICON_SIZE: int = 28
-const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(64, 44)
+## 品目行だけ個別に拡大する。列が7つあり右端のボタンまで収める必要があるため、
+## サイドパネル幅（580px）に収まる範囲に抑える。
+const ROW_FONT_SIZE: int = 16
+const HEADER_FONT_SIZE: int = 13
+const ROW_ICON_SIZE: int = 20
+const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(52, 40)
 
 ## 価格の欄は買値と売値を並べるため、他より小さくする。
-const PRICE_FONT_SIZE: int = 17
+const PRICE_FONT_SIZE: int = 14
 ## 在庫と需要の欄は2つの数字を上下に並べるため、さらに小さくする。
-const SUPPLY_FONT_SIZE: int = 15
+const SUPPLY_FONT_SIZE: int = 12
 
 ## 品目 / 価格 / 基準比 / 在庫と需要 / 所持 / 買う / 売る。
 ## MarketPanel.tscn の columns と必ず一致させること（ずれると行が崩れる）。
@@ -135,7 +136,7 @@ func _build_row(item_id: String) -> Dictionary:
 	# （ROW_FONT_SIZE のままだと列が広がり、右端のボタンがはみ出す）。
 	var price_cell := VBoxContainer.new()
 	price_cell.add_theme_constant_override("separation", 2)
-	price_cell.custom_minimum_size = Vector2(124, 0)
+	price_cell.custom_minimum_size = Vector2(84, 0)
 
 	var price_label := Label.new()
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -155,7 +156,7 @@ func _build_row(item_id: String) -> Dictionary:
 	# 在庫（買える上限）と需要（売れる上限）を上下に並べる。列は増やさない。
 	var supply_cell := VBoxContainer.new()
 	supply_cell.add_theme_constant_override("separation", 0)
-	supply_cell.custom_minimum_size = Vector2(72, 0)
+	supply_cell.custom_minimum_size = Vector2(48, 0)
 
 	var stock_label := Label.new()
 	stock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
