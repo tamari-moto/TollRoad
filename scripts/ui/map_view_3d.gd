@@ -198,6 +198,9 @@ const VEGETATION_BUSH_LIFT: float = -0.05
 ## 人型シルエットに落とし込む。都市の柱のような発光や草木のような脈動は
 ## 付けない（完全に静止させ、不動・無反応の不気味さを出す）。
 ##
+## 平常時は隠しておき、ゲーム終了（60日終了のリザルト画面）でだけ姿を
+## 見せる（ユーザー指定）。表示の切り替えは set_giants_visible() で行う。
+##
 ## 配置は地形の半径（半分の一辺）に対する割合で決める。_ring_radius への
 ## 固定の足し算（旧実装）だと、都市配置が広がった際に地形からはみ出す
 ## 恐れがあった。1.0 が地形メッシュそのものの縁で、それを超えると
@@ -247,6 +250,9 @@ var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
 var _selection_ring: MeshInstance3D
+## 謎の巨人2体の入れ物。ゲーム終了まで隠しておき、set_giants_visible() で
+## まとめて出す。
+var _giants: Array[Node3D] = []
 ## 脈動のためにリングを引き直し続けるので、現在地を覚えておく。
 var _ring_city: String = ""
 var _pulse_time: float = 0.0
@@ -629,10 +635,12 @@ static func _city_color(city_id: String) -> Color:
 
 
 ## 謎の巨人を2体、地形の外周・霧の中に立たせる。中心（レイヴンスパイア）の
-## 方を向かせ、世界を見下ろしているように見せる。
+## 方を向かせ、世界を見下ろしているように見せる。ゲーム終了までは隠す
+## （set_giants_visible() 参照。ユーザー指定で「ゲーム終了時に表示」）。
 func _build_giants() -> void:
 	var center: Vector3 = positions[GameData.CAERLEON]
 	var radius: float = (_terrain_size * 0.5) * GIANT_EDGE_FRACTION
+	_giants.clear()
 	for index: int in GIANT_ANGLES_DEG.size():
 		var angle: float = deg_to_rad(GIANT_ANGLES_DEG[index])
 		var x: float = cos(angle) * radius
@@ -646,10 +654,20 @@ func _build_giants() -> void:
 		# （CLAUDE.md参照）。look_at_from_position() はローカル transform を
 		# 直接組むので、--script のハーネスでも同じ向きになる。
 		container.look_at_from_position(base, Vector3(center.x, base.y, center.z), Vector3.UP)
+		container.visible = false
 		add_child(container)
+		_giants.append(container)
 
 		for part: MeshInstance3D in _giant_parts():
 			container.add_child(part)
+
+
+## 巨人の表示・非表示をまとめて切り替える。main.gd の _refresh_status() が
+## GameSession.is_over()（60日終了）と同期させる、唯一の公開入口。
+func set_giants_visible(value: bool) -> void:
+	for giant: Node3D in _giants:
+		if is_instance_valid(giant):
+			giant.visible = value
 
 
 ## 巨人1体ぶんの上半身パーツ（胴・腕2・頭）を組み立てる。脚は作らない

@@ -28,6 +28,7 @@ func _init() -> void:
 	_test_giants_exist_and_placed()
 	_test_giants_face_center()
 	_test_giants_read_as_silhouette()
+	_test_giants_hidden_until_shown()
 	_finish()
 
 
@@ -154,5 +155,37 @@ func _test_giants_read_as_silhouette() -> void:
 		_check(luminance < basin_luminance,
 			"%s が地形の最暗色より暗い（霧に沈むシルエット）" % mesh_part.name,
 			"輝度 %.3f >= 地形 %.3f" % [luminance, basin_luminance])
+
+	world.free()
+
+
+## 平常時は隠れていて、ゲーム終了時（main.gd の _refresh_status() が
+## GameSession.is_over() と同期させる）にだけ姿を見せる、というユーザー
+## 指定の検証。set_giants_visible() を直接呼び、main.gd を経由せず
+## MapView3D 単体の契約として確かめる（main.gd 側の配線は薄い呼び出し
+## 1本なので、ソースを読めば正しさが分かる）。
+func _test_giants_hidden_until_shown() -> void:
+	print("--- 巨人の表示・非表示 ---")
+	var world: MapView3D = MapView3D.new()
+
+	for index: int in MapView3D.GIANT_ANGLES_DEG.size():
+		var giant: Node3D = world.get_node_or_null("Giant%d" % index) as Node3D
+		_check(giant != null and not giant.visible,
+			"Giant%d が初期状態では隠れている" % index,
+			"ない" if giant == null else "見えている")
+
+	world.set_giants_visible(true)
+	for index: int in MapView3D.GIANT_ANGLES_DEG.size():
+		var giant: Node3D = world.get_node_or_null("Giant%d" % index) as Node3D
+		_check(giant != null and giant.visible,
+			"set_giants_visible(true) でGiant%d が見える" % index,
+			"ない" if giant == null else "隠れたまま")
+
+	world.set_giants_visible(false)
+	for index: int in MapView3D.GIANT_ANGLES_DEG.size():
+		var giant: Node3D = world.get_node_or_null("Giant%d" % index) as Node3D
+		_check(giant != null and not giant.visible,
+			"set_giants_visible(false) でGiant%d が再び隠れる" % index,
+			"ない" if giant == null else "見えたまま")
 
 	world.free()

@@ -18,6 +18,7 @@ const GameStateScript = preload("res://scripts/autoload/game_state.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
+const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
@@ -49,6 +50,7 @@ var _result_button: Button
 var _status_label: Label
 var _result_dialog: Window
 var _briefing_dialog: Window
+var _map_panel: Control
 
 var _session: GameSession
 
@@ -137,6 +139,7 @@ func _resolve_nodes() -> void:
 	_status_label = UiUtil.find_node(self, "StatusLabel")
 	_result_dialog = UiUtil.find_node(self, "ResultDialog")
 	_briefing_dialog = UiUtil.find_node(self, "BriefingDialog")
+	_map_panel = UiUtil.find_node(self, "大陸図")
 
 	_tab_strip_buttons.clear()
 	for node_name: String in ["MarketTabButton", "CargoTabButton",
@@ -295,15 +298,14 @@ func _on_continue_requested() -> void:
 ## 不透明な地色を与えない。大陸図の自前の Sky が不透明に描画されるため
 ## （SubViewport.transparent_bg = false）、この背後に別の下地は要らない。
 func _apply_backdrop() -> void:
-	var map_panel: Control = UiUtil.find_node(self, "大陸図")
-	map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
+	_map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
 
 	UiTheme.apply_panel_style(_hud)
 	UiTheme.apply_panel_style(UiUtil.find_node(self, "TabStrip") as Control)
 	UiTheme.apply_panel_style(_side_panel)
 	UiTheme.apply_panel_style(UiUtil.find_node(self, "LogActions") as Control)
 	for panel: Node in _panels:
-		if panel == map_panel:
+		if panel == _map_panel:
 			continue
 		UiTheme.apply_panel_style(panel as Control)
 
@@ -432,7 +434,21 @@ func _on_day_advanced(_day: int) -> void:
 		_show_result()
 
 
+## 大陸図の謎の巨人の表示を、ゲームの終了状態と同期させる。60日終了
+## （リザルト画面）でだけ見せ、進行中・新規開始では隠す（ユーザー指定）。
+## _refresh_status() は日送りのたびと、続きから読み込んだ直後の両方で
+## 呼ばれるため、ここに置けば「終了済みのセーブを読み込んだ」場合も
+## 素通りしない。
+func _sync_giants_visibility() -> void:
+	if not is_instance_valid(_map_panel):
+		return
+	var world: MapView3D = _map_panel.world()
+	if world != null:
+		world.set_giants_visible(_session.is_over())
+
+
 func _refresh_status() -> void:
+	_sync_giants_visibility()
 	if _session.is_over():
 		_rest_button.disabled = true
 		_result_button.visible = true
