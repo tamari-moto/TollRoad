@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://brocco0companion01"
-path="res://.godot/imported/rocco.svg-479cc82dae743fce5876f2ee1a8c5beb.ctex"
+uid="uid://cdmv8cpclbpjk"
+path="res://.godot/imported/rocco.svg-a509b0fedcb3edec5be9574c64ce6a2c.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/sprites/companions/rocco.svg"
-dest_files=["res://.godot/imported/rocco.svg-479cc82dae743fce5876f2ee1a8c5beb.ctex"]
+dest_files=["res://.godot/imported/rocco.svg-a509b0fedcb3edec5be9574c64ce6a2c.ctex"]
 
 [params]
 

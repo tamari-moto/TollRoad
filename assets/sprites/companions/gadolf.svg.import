@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bgadolf0companion1"
-path="res://.godot/imported/gadolf.svg-2d867350deede8f4868224422bb0e26c.ctex"
+uid="uid://dra80g2vdy5au"
+path="res://.godot/imported/gadolf.svg-98d750877e6a7a60b0ed10ca4bc4bf45.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/sprites/companions/gadolf.svg"
-dest_files=["res://.godot/imported/gadolf.svg-2d867350deede8f4868224422bb0e26c.ctex"]
+dest_files=["res://.godot/imported/gadolf.svg-98d750877e6a7a60b0ed10ca4bc4bf45.ctex"]
 
 [params]
 

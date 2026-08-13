@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bfina0companion01"
-path="res://.godot/imported/fina.svg-89f90d0720b48ea0b9b84d6ca70c7666.ctex"
+uid="uid://c6o3ab1cm7aqq"
+path="res://.godot/imported/fina.svg-86938d5ebecd16fe656627da300cfcca.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/sprites/companions/fina.svg"
-dest_files=["res://.godot/imported/fina.svg-89f90d0720b48ea0b9b84d6ca70c7666.ctex"]
+dest_files=["res://.godot/imported/fina.svg-86938d5ebecd16fe656627da300cfcca.ctex"]
 
 [params]
 

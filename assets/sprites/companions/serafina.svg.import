@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bserafina0compani1"
-path="res://.godot/imported/serafina.svg-bd86c44b915ca17d2e4d063ff3cc162a.ctex"
+uid="uid://djr7bbx3or5ug"
+path="res://.godot/imported/serafina.svg-4a23d1bddc80403629359e6aca6b06e6.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/sprites/companions/serafina.svg"
-dest_files=["res://.godot/imported/serafina.svg-bd86c44b915ca17d2e4d063ff3cc162a.ctex"]
+dest_files=["res://.godot/imported/serafina.svg-4a23d1bddc80403629359e6aca6b06e6.ctex"]
 
 [params]
 
