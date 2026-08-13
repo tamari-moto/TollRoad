@@ -29,9 +29,6 @@ const COLOR_DANGER := UiTheme.WARN
 const MAP_MIN_HEIGHT: int = 300
 ## 都市ノード1つの大きさ。ピンと都市名が収まる高さを取る。
 const NODE_SIZE := Vector2(104, 96)
-## 円周の半径を領域の短辺に対してどれだけ取るか。
-## 斜め見下ろしで縦が潰れるぶん、横は大きめに取る。
-const RADIUS_RATIO: float = 0.40
 
 ## クリック判定の半径（3D空間の単位）。都市の柱（半径0.55・高さ1.5、
 ## map_view_3d.gd 参照）より一回り大きく取り、狙いやすくする。

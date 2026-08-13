@@ -102,9 +102,13 @@ func _test_panel_style() -> void:
 	_check(style.corner_radius_top_left == UiTheme.PANEL_RADIUS, "角が丸められる",
 		str(style.corner_radius_top_left))
 
-	# 下地は不透明（後ろが透けない）。
-	var backdrop: StyleBoxFlat = UiTheme.make_backdrop_style()
-	_check(backdrop.bg_color.a >= 0.99, "下地は不透明", str(backdrop.bg_color.a))
+	# 下地は上から下へのグラデーションで、両端とも不透明（後ろが透けない）。
+	var backdrop: StyleBoxTexture = UiTheme.make_backdrop_style()
+	var gradient: Gradient = (backdrop.texture as GradientTexture2D).gradient
+	_check(gradient.get_color(0) == UiTheme.BACKDROP_TOP, "上端がBACKDROP_TOP", str(gradient.get_color(0)))
+	_check(gradient.get_color(1) == UiTheme.BACKDROP_BOTTOM, "下端がBACKDROP_BOTTOM", str(gradient.get_color(1)))
+	_check(gradient.get_color(0).a >= 0.99 and gradient.get_color(1).a >= 0.99,
+		"下地は不透明", "%s / %s" % [gradient.get_color(0).a, gradient.get_color(1).a])
 
 	# 適用すると override が付き、二重適用しても壊れない。
 	var panel := PanelContainer.new()

@@ -94,17 +94,6 @@ const ROW_STRIPE := Color(1.0, 1.0, 1.0, 0.03)
 
 # --- 大陸図 ---
 
-## 斜め見下ろしの圧縮率。円周配置の Y をこの割合に潰して楕円にする。
-## 1.0 で真上から、小さいほど浅い角度から見た形になる。
-const MAP_TILT: float = 0.52
-
-## 都市の足元に敷く同心円。
-const GROUND_RING := Color(0.34, 0.36, 0.42, 0.55)
-## 現在地の地盤。他より明るくして居場所を示す。
-const GROUND_RING_CURRENT := Color(0.55, 0.8, 0.95, 0.75)
-## レイヴンスパイアの地盤。黒ゾーンであることを地面でも示す。
-const GROUND_RING_DANGER := Color(0.95, 0.6, 0.45, 0.6)
-
 ## ピンの軸（マーカーから地盤へ伸びる線）。
 const PIN_STEM := Color(0.55, 0.57, 0.64)
 ## 紋章を囲む菱形の枠。
@@ -157,12 +146,19 @@ static func make_panel_style() -> StyleBoxFlat:
 	return style
 
 
-## 画面全体の下地。上から下へわずかに暗くする。
-static func make_backdrop_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = BACKDROP_TOP
-	style.set_border_width_all(0)
-	style.set_corner_radius_all(0)
+## 画面全体の下地。上から下へわずかに暗くする。StyleBoxFlat.bg_color は
+## 単色しか持てないため、GradientTexture2D を敷いた StyleBoxTexture で作る。
+static func make_backdrop_style() -> StyleBoxTexture:
+	var gradient := Gradient.new()
+	gradient.set_color(0, BACKDROP_TOP)
+	gradient.set_color(1, BACKDROP_BOTTOM)
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_LINEAR
+	texture.fill_from = Vector2(0.0, 0.0)
+	texture.fill_to = Vector2(0.0, 1.0)
+	var style := StyleBoxTexture.new()
+	style.texture = texture
 	return style
 
 

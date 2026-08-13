@@ -12,8 +12,6 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 signal restart_requested
 
 const COLOR_LEGENDARY := UiTheme.RANK_LEGENDARY
-const COLOR_MASTER := UiTheme.RANK_MASTER
-const COLOR_NORMAL := UiTheme.RANK_NORMAL
 const COLOR_BANKRUPT := UiTheme.RANK_BANKRUPT
 
 var _session: GameSession
