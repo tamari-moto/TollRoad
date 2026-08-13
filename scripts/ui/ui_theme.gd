@@ -69,17 +69,24 @@ const RANK_BANKRUPT := Color(0.9, 0.55, 0.5)
 const CHEAP_RATIO: float = 0.95
 const DEAR_RATIO: float = 1.05
 
+## 在庫・需要の残りがこの割合を下回ったら「尽きかけている」として警戒色にする。
+## 0 のときは品切れとして、さらに読みにくい色（TEXT_UNKNOWN）へ落とす。
+const SUPPLY_LOW_RATIO: float = 0.34
+
 # --- 価格バー ---
 
 ## バーの目盛り。基準価格に対する比率で表す。
 ##
-## 実際に取りうる幅は資源が 62〜123%、装備が 76〜144%（都市補正 ×
-## ゆらぎ 0.86〜1.16 による）。全ケースを含む値に固定しておく。
+## 建値だけなら資源 62〜123%、装備 76〜144%（都市補正 × ゆらぎ 0.86〜1.16）
+## に収まるが、実際の買値・売値はさらに在庫と需要の掛け率が乗る
+## （GameData.PRICE_SCARCITY_MAX / PRICE_GLUT_MIN）。最悪の組み合わせは
+## 中心都市の装備 × ゆらぎ上限 × 在庫切れ = 165%、
+## 特産 × ゆらぎ下限 × 需要切れ = 54%。両端を含む値に広げてある。
 ##
 ## **品目ごとに目盛りを変えないこと。** 変えると同じバー位置が別の意味に
 ## なり、行をまたいで「どれが安いか」を比べられなくなる。
-const PRICE_SCALE_MIN: float = 0.60
-const PRICE_SCALE_MAX: float = 1.45
+const PRICE_SCALE_MIN: float = 0.50
+const PRICE_SCALE_MAX: float = 1.70
 
 ## バーの地色。
 const BAR_TRACK := Color(0.16, 0.17, 0.21)
@@ -129,6 +136,16 @@ static func ratio_color(ratio: float) -> Color:
 	if ratio >= DEAR_RATIO:
 		return WARN
 	return TEXT
+
+
+## 在庫・需要の残り具合に応じた色。尽きかけていることを数字を読まずに示す。
+## 品切れ（0）は「もう取引できない」ので、警戒色より一段落として区別する。
+static func supply_color(fullness: float) -> Color:
+	if fullness <= 0.0:
+		return TEXT_UNKNOWN
+	if fullness <= SUPPLY_LOW_RATIO:
+		return WARN
+	return TEXT_DIM
 
 
 ## パネルの外観。地色と細い縁で、区画の切れ目を分かりやすくする。

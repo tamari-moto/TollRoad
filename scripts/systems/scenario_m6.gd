@@ -9,6 +9,7 @@ extends "res://scripts/systems/scenario_base.gd"
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const MarketPanel = preload("res://scripts/ui/market_panel.gd")
 
 
 func _init() -> void:
@@ -51,19 +52,26 @@ func _test_market_panel() -> void:
 		_despawn(panel)
 		return
 
-	# ヘッダ6列 + 全品目 × 6列
-	var expected: int = 6 + GameData.ITEMS.size() * 6
+	# ヘッダ1行 + 全品目 × 列数。列数は直書きせず GRID_COLUMNS から引く。
+	var columns: int = MarketPanel.GRID_COLUMNS
+	var expected: int = columns + GameData.ITEMS.size() * columns
 	_check(grid.get_child_count() == expected, "全品目の行が生成される",
 		"%d / 期待 %d" % [grid.get_child_count(), expected])
 
 	var title: Label = UiUtil.find_node(panel, "MarketTitle")
 	_check(title.text.contains(GameData.CITIES[GameData.INITIAL_CITY]["name"]), "現在地が題名に出る", title.text)
 
-	# 価格表示が実際の相場と一致する。行の並びは ITEMS の順。
+	# 価格欄は建値ではなく実際の単価を「買値 / 売値」で出す。
+	# 在庫が薄いと買値が上がり需要が尽きると売値が下がるため、建値のままだと
+	# 押した結果と食い違う（market_panel.gd の refresh() 参照）。
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var actual_price: int = session.prices.get_price(session.current_city, first_item)
-	_check(panel.price_text_for(first_item) == UiUtil.format_number(actual_price),
-		"価格が相場と一致する", "%s vs %d" % [panel.price_text_for(first_item), actual_price])
+	var expected_price: String = "%s / %s" % [
+		UiUtil.format_number(session.buy_price(first_item)),
+		UiUtil.format_number(session.sell_price(first_item)),
+	]
+	_check(panel.price_text_for(first_item) == expected_price,
+		"価格欄が実際の買値と売値を示す",
+		"%s vs %s" % [panel.price_text_for(first_item), expected_price])
 
 	# 買うボタンで実際に購入できる。個数指定は無く、常に1個。
 	var buy_button: Button = panel.buy_button_for(first_item)

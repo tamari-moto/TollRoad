@@ -157,16 +157,27 @@ func _test_trade_arithmetic() -> void:
 	_check(s.free_capacity() == 30, "空きは30", str(s.free_capacity()))
 
 	# 売却: 総額の5%が税として引かれる（Q2）。
+	# 売れるのは都市の需要までなので、需要の範囲内の個数で算術を確かめる。
+	# 初期都市の特産（鉱石）は現地では余っており、需要が薄い側に置いてある。
+	var sell_count: int = s.max_sellable("ore")
+	_check(sell_count > 0, "需要がある範囲では売却できる", str(sell_count))
 	var silver_before_sell: int = s.silver
-	var sell_price: int = s.prices.get_price(GameData.INITIAL_CITY, "ore")
-	var expected_gross: int = sell_price * 10
+	var sell_price: int = s.sell_price("ore")
+	var expected_gross: int = sell_price * sell_count
 	var expected_tax: int = int(round(expected_gross * 0.05))
 	var expected_net: int = expected_gross - expected_tax
-	s.sell("ore", 10)
+	var held_before_sell: int = s.cargo_count("ore")
+	s.sell("ore", sell_count)
 	_check(s.silver == silver_before_sell + expected_net,
 		"売却の手取りは総額の95%", "期待 %d, 実際 %d" % [silver_before_sell + expected_net, s.silver])
-	_check(s.cargo_count("ore") == 0, "積荷が空になる", str(s.cargo_count("ore")))
+	_check(s.cargo_count("ore") == held_before_sell - sell_count,
+		"売った分だけ積荷が減る", str(s.cargo_count("ore")))
+	# 需要を使い切ったので、同じ日にこれ以上は売れない。
+	_check(s.demand_count("ore") == 0, "需要を使い切った", str(s.demand_count("ore")))
+	_check(not s.sell("ore", 1), "需要が尽きたらそれ以上売れない", "通ってしまった")
 
+	# 残りを手放してから、持っていない品目の売却が拒否されることを見る。
+	s.cargo.erase("ore")
 	# 上限を超える取引は拒否される。
 	_check(not s.buy("ore", 99999), "資金を超える購入は拒否", "通ってしまった")
 	_check(not s.sell("ore", 1), "持っていない品目の売却は拒否", "通ってしまった")

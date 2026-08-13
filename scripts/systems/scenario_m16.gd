@@ -9,6 +9,7 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const PriceBar = preload("res://scripts/ui/price_bar.gd")
+const MarketPanel = preload("res://scripts/ui/market_panel.gd")
 
 
 
@@ -85,10 +86,13 @@ func _test_bar_in_market() -> void:
 	panel.bind(session)
 
 	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
-	# 個数指定UIを撤去したので列数は6のまま。
-	_check(grid.columns == 6, "列数は6のまま", str(grid.columns))
-	_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
-		"要素数は従来どおり", str(grid.get_child_count()))
+	# 列数は market_panel.gd の GRID_COLUMNS から引く。数字を直書きすると
+	# 列を足すたびに複数のシナリオが道連れになる（実際に6→7で3本落ちた）。
+	# ここで見たいのは「.tscn とスクリプトの列数が食い違っていないこと」。
+	var columns: int = MarketPanel.GRID_COLUMNS
+	_check(grid.columns == columns, "列数が GRID_COLUMNS と一致する", str(grid.columns))
+	_check(grid.get_child_count() == columns + GameData.ITEMS.size() * columns,
+		"ヘッダ1行＋全品目ぶんのセルが並ぶ", str(grid.get_child_count()))
 
 	# 各行にバーがある。
 	var bar_count: int = 0
