@@ -2,8 +2,16 @@ extends "res://scripts/systems/scenario_base.gd"
 ## 謎の巨人（背景のシルエット2体）の検証。
 ##
 ## 描画結果そのものはヘッドレスで確認できないため、ここで見るのは配置
-## （地形の上・王国都市の輪の外側・中心を向く）と、シルエットとして読める
-## ための色・陰影設定（地形のどの色より暗い・unshaded・発光なし）。
+## （地形の縁付近・GIANT_EDGE_FRACTION どおりの半径・中心を向く）と、
+## シルエットとして読めるための色・陰影設定（地形のどの色より暗い・
+## unshaded・発光なし）。
+##
+## 配置の半径は _terrain_size（内部変数）を直接見ず、_ring_radius と
+## 同じ値のはずの「王国都市の最大半径」（world.positions から自前で
+## 求める、公開API）と、_build() と同じ式（MapCamera.MAX_DISTANCE と
+## MapView3D.TERRAIN_MARGIN_BUFFER から terrain_margin を組み立てる）から
+## 独立に再計算する。アンダースコア付きの内部変数はシナリオから触らない
+## 規約のため（CLAUDE.md参照）。
 ##
 ## 実行:
 ##   godot --headless --path . --script scripts/systems/scenario_m22.gd
@@ -27,12 +35,19 @@ func _test_giants_exist_and_placed() -> void:
 	print("--- 巨人の配置 ---")
 	var world: MapView3D = MapView3D.new()
 
-	# 王国都市の輪の広がりは world.positions（公開）から自前で求める。
+	# 王国都市の輪の広がり（= _ring_radius と同じ値。Caerleon は原点なので
+	# 最大値には効かない）を world.positions（公開）から自前で求める。
 	# _ring_radius など内部変数はシナリオから触らない規約（CLAUDE.md参照）。
 	var max_city_radius: float = 0.0
 	for city_id: String in GameData.royal_city_ids():
 		var p: Vector3 = world.positions[city_id]
 		max_city_radius = maxf(max_city_radius, Vector2(p.x, p.z).length())
+
+	# _build() の _terrain_margin / _terrain_size と同じ式で、地形の半径を
+	# 独立に再計算する（map_view_3d.gd の _build() 冒頭・_compute_scale() 参照）。
+	var terrain_margin: float = (MapCamera.MAX_DISTANCE + MapView3D.TERRAIN_MARGIN_BUFFER) * 2.0
+	var expected_half_extent: float = max_city_radius + terrain_margin * 0.5
+	var expected_giant_radius: float = expected_half_extent * MapView3D.GIANT_EDGE_FRACTION
 
 	var giants: Array[Node3D] = []
 	for index: int in MapView3D.GIANT_ANGLES_DEG.size():
@@ -59,11 +74,14 @@ func _test_giants_exist_and_placed() -> void:
 		_check(flat_distance > max_city_radius, "%s が都市の輪の外にいる" % giant.name,
 			"%.2f / 都市の最大半径 %.2f" % [flat_distance, max_city_radius])
 
-		# 座標が暴走していない、大まかな目安（カメラの最大距離の何倍も
-		# 先へ飛んでいたら、地形の外へはみ出している可能性が高い）。
-		_check(flat_distance < MapCamera.MAX_DISTANCE * 5.0,
-			"%s の距離が常識的な範囲" % giant.name,
-			"%.2f" % flat_distance)
+		# GIANT_EDGE_FRACTION どおり、地形の縁付近（半径の92%）に置かれている。
+		_check(absf(flat_distance - expected_giant_radius) < 0.05,
+			"%s が地形の縁付近（半径の%.0f%%）にいる" % [giant.name, MapView3D.GIANT_EDGE_FRACTION * 100.0],
+			"%.2f / 期待 %.2f" % [flat_distance, expected_giant_radius])
+
+		# 地形の内側に収まっている（GIANT_EDGE_FRACTION < 1.0 の前提の再確認）。
+		_check(flat_distance < expected_half_extent, "%s が地形の内側にいる" % giant.name,
+			"%.2f / 地形の半分 %.2f" % [flat_distance, expected_half_extent])
 
 	# 2体は中心から見て概ね反対側（カメラを回すと一体ずつ現れる設計）。
 	if giants.size() == 2:

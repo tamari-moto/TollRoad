@@ -198,23 +198,29 @@ const VEGETATION_BUSH_LIFT: float = -0.05
 ## 人型シルエットに落とし込む。都市の柱のような発光や草木のような脈動は
 ## 付けない（完全に静止させ、不動・無反応の不気味さを出す）。
 ##
-## 配置は _ring_radius（都市配置の広がり）からの相対値にしてあり、王国都市が
-## 増減しても追従する。VEGETATION_OUTER_MARGIN(=6) より外側に置き、草木の
-## 群生とは重ならない。
-const GIANT_RADIUS_MARGIN: float = 14.0
+## 配置は地形の半径（半分の一辺）に対する割合で決める。_ring_radius への
+## 固定の足し算（旧実装）だと、都市配置が広がった際に地形からはみ出す
+## 恐れがあった。地形の縁に近いほど頂点カラーが霧の色へ溶け込み
+## （_assign_terrain_colors() の edge_t）、フォグも濃くなる。この割合を
+## 1.0 に近づけるほど「地形にはちゃんと立ちつつ、霧の中に沈んで見える」
+## 遠景の巨人に寄っていく（ユーザー指定で「もっと遠く」に対応した値）。
+const GIANT_EDGE_FRACTION: float = 0.92
 ## 中心から見た向き（度）。180度反対側に置き、カメラを回したときに
 ## 一体ずつ視界に入るようにする（常に両方同時に見えると威圧感が薄れる）。
 const GIANT_ANGLES_DEG: Array[float] = [55.0, 235.0]
 
-## 全高。CITY_HEIGHT（都市の柱、1.5）や TERRAIN_HEIGHT（起伏、2.4）より
-## 一桁大きくし、「巨人」の名にふさわしい大きさにする。
-const GIANT_HEIGHT: float = 10.0
+## 全高。都市の柱（CITY_HEIGHT=1.5）の40倍。遠景・霧の中に置くぶん、
+## 手前の要素と同程度の大きさでは画面上でほぼ点になって存在感が消える
+## ため、大幅に引き上げてある（ユーザー指定の「かなりデカく」に対応）。
+const GIANT_HEIGHT: float = 60.0
 const GIANT_LEG_HEIGHT_RATIO: float = 0.45
 const GIANT_TORSO_HEIGHT_RATIO: float = 0.38
 const GIANT_HEAD_RADIUS_RATIO: float = 0.085
-const GIANT_SHOULDER_WIDTH: float = 2.4
-const GIANT_LEG_RADIUS: float = 0.42
-const GIANT_ARM_RADIUS: float = 0.32
+## 胴回り・脚・腕の太さも GIANT_HEIGHT に対する比率で持たせる。固定値の
+## ままだと GIANT_HEIGHT を上げたときに細すぎる棒人間になってしまうため。
+const GIANT_SHOULDER_WIDTH_RATIO: float = 0.24
+const GIANT_LEG_RADIUS_RATIO: float = 0.042
+const GIANT_ARM_RADIUS_RATIO: float = 0.032
 
 ## 霧に沈むシルエットとして読めるよう、地形のどの色よりも暗く保つ
 ## （TERRAIN_BASIN_COLOR ですら輝度0.17前後あるのに対しこちらは0.05程度）。
@@ -624,7 +630,7 @@ static func _city_color(city_id: String) -> Color:
 ## 方を向かせ、世界を見下ろしているように見せる。
 func _build_giants() -> void:
 	var center: Vector3 = positions[GameData.CAERLEON]
-	var radius: float = _ring_radius + GIANT_RADIUS_MARGIN
+	var radius: float = (_terrain_size * 0.5) * GIANT_EDGE_FRACTION
 	for index: int in GIANT_ANGLES_DEG.size():
 		var angle: float = deg_to_rad(GIANT_ANGLES_DEG[index])
 		var x: float = cos(angle) * radius
@@ -652,21 +658,24 @@ func _giant_parts() -> Array[MeshInstance3D]:
 	var leg_height: float = GIANT_HEIGHT * GIANT_LEG_HEIGHT_RATIO
 	var torso_height: float = GIANT_HEIGHT * GIANT_TORSO_HEIGHT_RATIO
 	var head_radius: float = GIANT_HEIGHT * GIANT_HEAD_RADIUS_RATIO
+	var shoulder_width: float = GIANT_HEIGHT * GIANT_SHOULDER_WIDTH_RATIO
+	var leg_radius: float = GIANT_HEIGHT * GIANT_LEG_RADIUS_RATIO
+	var arm_radius: float = GIANT_HEIGHT * GIANT_ARM_RADIUS_RATIO
 	var sides: Array[float] = [-1.0, 1.0]
 
 	for side: float in sides:
 		var leg := CylinderMesh.new()
-		leg.top_radius = GIANT_LEG_RADIUS
-		leg.bottom_radius = GIANT_LEG_RADIUS * 1.15
+		leg.top_radius = leg_radius
+		leg.bottom_radius = leg_radius * 1.15
 		leg.height = leg_height
 		leg.radial_segments = 6
 		var leg_part: MeshInstance3D = _make_giant_part(leg)
-		leg_part.position = Vector3(side * GIANT_SHOULDER_WIDTH * 0.28, leg_height * 0.5, 0.0)
+		leg_part.position = Vector3(side * shoulder_width * 0.28, leg_height * 0.5, 0.0)
 		parts.append(leg_part)
 
 	var torso := CylinderMesh.new()
-	torso.top_radius = GIANT_SHOULDER_WIDTH * 0.5
-	torso.bottom_radius = GIANT_SHOULDER_WIDTH * 0.36
+	torso.top_radius = shoulder_width * 0.5
+	torso.bottom_radius = shoulder_width * 0.36
 	torso.height = torso_height
 	torso.radial_segments = 8
 	var torso_part: MeshInstance3D = _make_giant_part(torso)
@@ -676,13 +685,13 @@ func _giant_parts() -> Array[MeshInstance3D]:
 	var arm_height: float = leg_height + torso_height * 0.75
 	for side: float in sides:
 		var arm := CylinderMesh.new()
-		arm.top_radius = GIANT_ARM_RADIUS
-		arm.bottom_radius = GIANT_ARM_RADIUS * 0.85
+		arm.top_radius = arm_radius
+		arm.bottom_radius = arm_radius * 0.85
 		arm.height = arm_height
 		arm.radial_segments = 6
 		var arm_part: MeshInstance3D = _make_giant_part(arm)
 		arm_part.position = Vector3(
-			side * GIANT_SHOULDER_WIDTH * 0.62, leg_height + torso_height - arm_height * 0.5, 0.0)
+			side * shoulder_width * 0.62, leg_height + torso_height - arm_height * 0.5, 0.0)
 		parts.append(arm_part)
 
 	var head := SphereMesh.new()
