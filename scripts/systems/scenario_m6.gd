@@ -61,13 +61,12 @@ func _test_market_panel() -> void:
 
 	# 価格表示が実際の相場と一致する。行の並びは ITEMS の順。
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var price_label: Label = grid.get_child(6 + 1) as Label
 	var actual_price: int = session.prices.get_price(session.current_city, first_item)
-	_check(price_label.text == UiUtil.format_number(actual_price),
-		"価格が相場と一致する", "%s vs %d" % [price_label.text, actual_price])
+	_check(panel.price_text_for(first_item) == UiUtil.format_number(actual_price),
+		"価格が相場と一致する", "%s vs %d" % [panel.price_text_for(first_item), actual_price])
 
 	# 買うボタンで実際に購入できる。個数指定は無く、常に1個。
-	var buy_button: Button = grid.get_child(6 + 4) as Button
+	var buy_button: Button = panel.buy_button_for(first_item)
 	_check(not buy_button.disabled, "買うボタンが押せる", "無効")
 	var silver_before: int = session.silver
 	buy_button.pressed.emit()
@@ -75,11 +74,10 @@ func _test_market_panel() -> void:
 	_check(session.cargo_count(first_item) == 1, "1回押すと1個買える", str(session.cargo_count(first_item)))
 
 	# 所持数の表示が追従する。
-	var held_label: Label = grid.get_child(6 + 3) as Label
-	_check(held_label.text == "1", "所持数の表示が追従する", held_label.text)
+	_check(panel.held_text_for(first_item) == "1", "所持数の表示が追従する", panel.held_text_for(first_item))
 
 	# 売るボタンが有効になり、売却できる。
-	var sell_button: Button = grid.get_child(6 + 5) as Button
+	var sell_button: Button = panel.sell_button_for(first_item)
 	_check(not sell_button.disabled, "所持していれば売るボタンが押せる", "無効")
 	sell_button.pressed.emit()
 	_check(session.cargo_count(first_item) == 0, "売るボタンで売却される", str(session.cargo_count(first_item)))
@@ -101,10 +99,9 @@ func _test_quantity_selection() -> void:
 	var session: GameSession = GameSession.new(6002)
 	panel.bind(session)
 
-	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var buy_button: Button = grid.get_child(6 + 4) as Button
-	var sell_button: Button = grid.get_child(6 + 5) as Button
+	var buy_button: Button = panel.buy_button_for(first_item)
+	var sell_button: Button = panel.sell_button_for(first_item)
 
 	# 個数指定のUIは無い。買うボタンを5回連打すると5個買える。
 	for i in range(5):
