@@ -337,10 +337,35 @@ func _update_button_positions() -> void:
 ## 都市の3D座標（柱の頭あたり）を画面座標へ投影する。
 ## ラベルの追従・ツールチップの位置決め・当たり判定の検査に共用する。
 func screen_position_for(city_id: String) -> Vector2:
+	return _camera.unproject_position(_label_anchor_for(city_id))
+
+
+## その都市がカメラの背後にあるか。unproject_position() は背後の点も
+## 前方へ折り返した座標を返すため、これで弾かないと地図の裏側の都市が
+## 画面上に紛れ込む（カメラが周回すると常に半数が背後に来る）。
+func is_behind_camera(city_id: String) -> bool:
+	if _world == null or _camera == null:
+		return false
+	if not is_instance_valid(_world) or not is_instance_valid(_camera):
+		return false
+	if not _world.positions.has(city_id):
+		return false
+
+	# Camera3D.is_position_behind() は使わない。global_transform を引くため
+	# ツリー外では警告を出して単位行列を返す（--script のハーネスがこれに
+	# 当たる）。カメラは SubViewport 直下で親に変換が無いので、transform を
+	# そのまま使って near 平面との前後を自前で見る。
+	var eye: Transform3D = _camera.transform
+	var forward: Vector3 = -eye.basis.z.normalized()
+	var depth: float = (_label_anchor_for(city_id) - eye.origin).dot(forward)
+	return depth < _camera.near
+
+
+## ラベルが狙う 3D 座標。柱の頭あたり（地面すれすれだとラベルが埋もれる）。
+func _label_anchor_for(city_id: String) -> Vector3:
 	var world_point: Vector3 = _world.positions[city_id]
-	# 柱の頭あたりを狙う。地面すれすれだとラベルが埋もれる。
 	world_point.y += MapView3D.CITY_HEIGHT
-	return _camera.unproject_position(world_point)
+	return world_point
 
 
 ## クリック/ホバー位置が当たる都市を返す。3D 空間でレイと各都市の柱の
@@ -394,6 +419,8 @@ func _place(city_id: String, point: Vector2) -> void:
 	var node: Control = _nodes.get(city_id)
 	if is_instance_valid(node):
 		node.position = point - NODE_SIZE * 0.5
+		# 背後の都市は投影が折り返した嘘の座標なので、置いた上で隠す。
+		node.visible = not is_behind_camera(city_id)
 
 
 # --- 都市ノードを外から見る入口 ---

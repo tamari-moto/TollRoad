@@ -443,6 +443,45 @@ func _test_projection() -> void:
 	_check(zoom_before.distance_to(panel.screen_position_for(home)) > 1.0,
 		"拡大でも投影位置が追従する", "動かない")
 
+	# カメラの背後にある都市のラベルは隠れる。
+	#
+	# unproject_position() は背後の点も前方へ折り返した座標を返すため、
+	# 弾かないと地図の裏側の都市が画面上に紛れ込む。近づいて見下ろすと
+	# 遠い都市が背後へ回るので、その状態で検査する。
+	panel.camera().zoom_by(-MapCamera.MAX_DISTANCE)
+	panel.update_node_positions()
+	var behind: Array[String] = []
+	for city_id: String in panel.world().positions:
+		if panel.is_behind_camera(city_id):
+			behind.append(city_id)
+	_check(not behind.is_empty(),
+		"最接近すると背後に回る都市がある（検査の前提）", "1つも背後に無い")
+
+	var hidden_ok: bool = true
+	var shown_ok: bool = true
+	for city_id: String in panel.world().positions:
+		var node: Control = panel.node_for(city_id)
+		if node == null:
+			continue
+		if panel.is_behind_camera(city_id):
+			if node.visible:
+				hidden_ok = false
+		elif not node.visible:
+			shown_ok = false
+	_check(hidden_ok, "背後の都市のラベルは表示されない", "背後なのに出ている")
+	_check(shown_ok, "前方の都市のラベルは表示される", "前方なのに消えている")
+
+	# 背後の都市はクリックでも当たらない（レイキャストが t<0 を弾く）。
+	var behind_pick_ok: bool = true
+	for city_id: String in behind:
+		if panel.pick_city_at(panel.screen_position_for(city_id)) == city_id:
+			behind_pick_ok = false
+	_check(behind_pick_ok, "背後の都市は折り返した座標でも当たらない", "当たってしまう")
+
+	# 引き戻して以降の検査を通常の視点で行う。
+	panel.camera().zoom_by(MapCamera.MAX_DISTANCE)
+	panel.update_node_positions()
+
 	# 移動しても操作は従来どおり効く（レイキャストへ移行した設計の担保）。
 	var neighbor: String = _adjacent_royal_city(session.current_city)
 	session.move_to(neighbor)
