@@ -213,13 +213,14 @@ const GIANT_ANGLES_DEG: Array[float] = [55.0, 235.0]
 ## 手前の要素と同程度の大きさでは画面上でほぼ点になって存在感が消える
 ## ため、大幅に引き上げてある（ユーザー指定の「かなりデカく」に対応）。
 const GIANT_HEIGHT: float = 60.0
-const GIANT_LEG_HEIGHT_RATIO: float = 0.45
+## 上半身（胴・腕・頭）だけを作る。脚は作らない（ユーザー指定）。地面の
+## ちょうど高さから胴が始まるので、地形の向こうに埋まった巨人の上半身
+## だけが地面を突き破って出ているように見える。
 const GIANT_TORSO_HEIGHT_RATIO: float = 0.38
 const GIANT_HEAD_RADIUS_RATIO: float = 0.085
-## 胴回り・脚・腕の太さも GIANT_HEIGHT に対する比率で持たせる。固定値の
+## 胴回り・腕の太さも GIANT_HEIGHT に対する比率で持たせる。固定値の
 ## ままだと GIANT_HEIGHT を上げたときに細すぎる棒人間になってしまうため。
 const GIANT_SHOULDER_WIDTH_RATIO: float = 0.24
-const GIANT_LEG_RADIUS_RATIO: float = 0.042
 const GIANT_ARM_RADIUS_RATIO: float = 0.032
 
 ## 霧に沈むシルエットとして読めるよう、地形のどの色よりも暗く保つ
@@ -650,39 +651,32 @@ func _build_giants() -> void:
 			container.add_child(part)
 
 
-## 巨人1体ぶんの人型パーツ（脚2・胴・腕2・頭）を組み立てる。
+## 巨人1体ぶんの上半身パーツ（胴・腕2・頭）を組み立てる。脚は作らない
+## （ユーザー指定。地面のちょうど高さから胴が始まるので、地形の向こうに
+## 埋まった巨人の上半身だけが突き出ているように見える）。
 ## 都市の構造物と同じく円柱主体だが、こちらは発光させない
 ## （不動・無反応の存在として、都市の生きた明かりと対照させる）。
 func _giant_parts() -> Array[MeshInstance3D]:
 	var parts: Array[MeshInstance3D] = []
-	var leg_height: float = GIANT_HEIGHT * GIANT_LEG_HEIGHT_RATIO
 	var torso_height: float = GIANT_HEIGHT * GIANT_TORSO_HEIGHT_RATIO
 	var head_radius: float = GIANT_HEIGHT * GIANT_HEAD_RADIUS_RATIO
 	var shoulder_width: float = GIANT_HEIGHT * GIANT_SHOULDER_WIDTH_RATIO
-	var leg_radius: float = GIANT_HEIGHT * GIANT_LEG_RADIUS_RATIO
 	var arm_radius: float = GIANT_HEIGHT * GIANT_ARM_RADIUS_RATIO
 	var sides: Array[float] = [-1.0, 1.0]
 
-	for side: float in sides:
-		var leg := CylinderMesh.new()
-		leg.top_radius = leg_radius
-		leg.bottom_radius = leg_radius * 1.15
-		leg.height = leg_height
-		leg.radial_segments = 6
-		var leg_part: MeshInstance3D = _make_giant_part(leg)
-		leg_part.position = Vector3(side * shoulder_width * 0.28, leg_height * 0.5, 0.0)
-		parts.append(leg_part)
-
+	# 胴は地面（y=0）から生やす。下端が地形の内側に隠れている想定なので、
+	# 下細り（下の方が太い一般的な胴のシルエット）にはせず、地面から
+	# 均等な太さで突き出た円柱にする。
 	var torso := CylinderMesh.new()
 	torso.top_radius = shoulder_width * 0.5
-	torso.bottom_radius = shoulder_width * 0.36
+	torso.bottom_radius = shoulder_width * 0.5
 	torso.height = torso_height
 	torso.radial_segments = 8
 	var torso_part: MeshInstance3D = _make_giant_part(torso)
-	torso_part.position = Vector3(0.0, leg_height + torso_height * 0.5, 0.0)
+	torso_part.position = Vector3(0.0, torso_height * 0.5, 0.0)
 	parts.append(torso_part)
 
-	var arm_height: float = leg_height + torso_height * 0.75
+	var arm_height: float = torso_height * 0.75
 	for side: float in sides:
 		var arm := CylinderMesh.new()
 		arm.top_radius = arm_radius
@@ -691,7 +685,7 @@ func _giant_parts() -> Array[MeshInstance3D]:
 		arm.radial_segments = 6
 		var arm_part: MeshInstance3D = _make_giant_part(arm)
 		arm_part.position = Vector3(
-			side * shoulder_width * 0.62, leg_height + torso_height - arm_height * 0.5, 0.0)
+			side * shoulder_width * 0.62, torso_height - arm_height * 0.5, 0.0)
 		parts.append(arm_part)
 
 	var head := SphereMesh.new()
@@ -700,7 +694,7 @@ func _giant_parts() -> Array[MeshInstance3D]:
 	head.radial_segments = 10
 	head.rings = 6
 	var head_part: MeshInstance3D = _make_giant_part(head)
-	head_part.position = Vector3(0.0, leg_height + torso_height + head_radius * 0.85, 0.0)
+	head_part.position = Vector3(0.0, torso_height + head_radius * 0.85, 0.0)
 	parts.append(head_part)
 
 	return parts

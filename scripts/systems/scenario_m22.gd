@@ -20,7 +20,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
-const GIANT_PART_COUNT: int = 6  ## 脚2 + 胴1 + 腕2 + 頭1
+const GIANT_PART_COUNT: int = 4  ## 胴1 + 腕2 + 頭1（脚は作らない。ユーザー指定で上半身のみ）
 
 
 
@@ -60,7 +60,7 @@ func _test_giants_exist_and_placed() -> void:
 
 	for giant: Node3D in giants:
 		_check(giant.get_child_count() == GIANT_PART_COUNT,
-			"%s が脚2+胴+腕2+頭のパーツを持つ" % giant.name,
+			"%s が胴+腕2+頭のパーツを持つ（脚は無い）" % giant.name,
 			str(giant.get_child_count()))
 
 		# 地面に乗っている（都市や草木と同じ height_at() 基準）。
