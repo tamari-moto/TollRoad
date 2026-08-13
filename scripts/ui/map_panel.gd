@@ -119,7 +119,11 @@ func _build_viewport() -> void:
 	_viewport.name = "MapSubViewport"
 	# 本編の 2D 世界を映さないよう、独自の 3D 世界を持たせる。
 	_viewport.own_world_3d = true
-	_viewport.transparent_bg = true
+	# 大陸図は画面全体の背景（CLAUDE.md参照）で、後ろに透過して見せるべき
+	# 2D 要素はない。transparent_bg=true にすると Sky が描画されず、地形の
+	# 向こうがアプリのクリアカラー（黒）に抜けて、フォグが溶け込む相手を
+	# 失って地形の縁が黒バックにくっきり切り立って見えていた（実測）。
+	_viewport.transparent_bg = false
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	container.add_child(_viewport)
 
