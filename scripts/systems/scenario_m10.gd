@@ -117,13 +117,18 @@ func _test_panels_keep_layout() -> void:
 		_check(first_cell is HBoxContainer, "品目セルはアイコン付き", str(first_cell.get_class()))
 		_despawn(market)
 
+	var equipment_count: int = 0
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT:
+			equipment_count += 1
+
 	var workshop: Node = _spawn("res://scenes/ui/WorkshopPanel.tscn")
 	if workshop != null:
 		var session: GameSession = GameSession.new(10002)
 		workshop.bind(session)
 		var grid: GridContainer = UiUtil.find_node(workshop, "RecipeGrid")
 		_check(grid.columns == 5, "製作所の列数は5のまま", str(grid.columns))
-		_check(grid.get_child_count() == 5 + 4 * 5, "製作所の要素数は従来どおり",
+		_check(grid.get_child_count() == 5 + equipment_count * 5, "製作所の要素数は従来どおり",
 			str(grid.get_child_count()))
 		_despawn(workshop)
 
@@ -132,8 +137,9 @@ func _test_panels_keep_layout() -> void:
 		var session: GameSession = GameSession.new(10003)
 		memo.bind(session)
 		var grid: GridContainer = UiUtil.find_node(memo, "MemoGrid")
-		_check(grid.columns == 7, "相場メモの列数は7のまま", str(grid.columns))
-		_check(grid.get_child_count() == 7 + GameData.ITEMS.size() * 7,
+		var expected_columns: int = GameData.CITIES.size() + 1
+		_check(grid.columns == expected_columns, "相場メモの列数は都市数+1のまま", str(grid.columns))
+		_check(grid.get_child_count() == expected_columns + GameData.ITEMS.size() * expected_columns,
 			"相場メモの要素数は従来どおり", str(grid.get_child_count()))
 		_despawn(memo)
 
