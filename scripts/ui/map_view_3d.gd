@@ -56,6 +56,15 @@ const AMBIENT_LIGHT_ENERGY: float = 0.6
 const FOG_DENSITY: float = 0.01
 const GLOW_INTENSITY: float = 0.8
 const GLOW_BLOOM: float = 0.15
+## グローがHDRとして扱う輝度の下限。既定は1.0だが、明示しないとエンジンの
+## 既定値変更で CITY_EMISSION_ENERGY との関係が黙って崩れるため定数化する。
+const GLOW_HDR_THRESHOLD: float = 1.0
+## 都市パーツの発光エネルギー。旧値0.35では発光色（PIN_FRAME等、輝度0.66〜0.76）
+## を掛けても最大0.3程度にしかならず、GLOW_HDR_THRESHOLD を一度も超えられず
+## グローが実際には出ていなかった（実機で確認）。輝度×この値が閾値を確実に
+## 超えるよう引き上げる。閾値側を下げる手もあるが、空・フォグの色（輝度0.27
+## 程度）に波及しない保証がその都度必要になるため、発光源側だけを直す方を選んだ。
+const CITY_EMISSION_ENERGY: float = 3.0
 
 ## 配置全体の半径（3D 空間の単位）。緩和後の実際の座標の広がりから
 ## _compute_scale() が算出する（環のような閉形式の計算はしない）。
@@ -263,10 +272,14 @@ func _build_environment() -> void:
 	environment.fog_light_color = SKY_HORIZON_COLOR
 	environment.fog_density = FOG_DENSITY
 
-	# 都市の柱・現在地リングは自己発光しているので、グロウで街明かりのように滲む。
+	# 都市の柱は自己発光しているので、グロウで街明かりのように滲む
+	# （現在地リングは vertex_color_use_as_albedo の unshaded で、発光ではない）。
+	# glow_hdr_threshold はエンジン既定値(1.0)に頼らず明示する。既定が変わると
+	# CITY_EMISSION_ENERGY との関係が黙って崩れるため。
 	environment.glow_enabled = true
 	environment.glow_intensity = GLOW_INTENSITY
 	environment.glow_bloom = GLOW_BLOOM
+	environment.glow_hdr_threshold = GLOW_HDR_THRESHOLD
 
 	var world_environment := WorldEnvironment.new()
 	world_environment.name = "Environment"
@@ -563,7 +576,7 @@ func _make_city_part(mesh: Mesh, color: Color) -> MeshInstance3D:
 	material.roughness = 0.6
 	material.emission_enabled = true
 	material.emission = color
-	material.emission_energy_multiplier = 0.35
+	material.emission_energy_multiplier = CITY_EMISSION_ENERGY
 	mesh.surface_set_material(0, material)
 
 	var part := MeshInstance3D.new()

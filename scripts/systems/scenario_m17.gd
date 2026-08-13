@@ -10,6 +10,7 @@ extends "res://scripts/systems/scenario_base.gd"
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
@@ -21,6 +22,7 @@ func _init() -> void:
 	_test_selection_ring()
 	_test_camera_limits()
 	await _test_projection()
+	_test_glow()
 	_finish()
 
 
@@ -437,3 +439,21 @@ func _test_projection() -> void:
 		"現在地がツールチップに出る", panel.tooltip_text_for(neighbor))
 
 	_despawn(panel)
+
+
+## 都市パーツの発光が実際にグローの HDR 閾値を超えるか。
+##
+## 「動くか」ではなく「妥当か」を見る検査（CLAUDE.md参照）: 輝度×発光エネルギー
+## が閾値を上回っていることそのものを確かめる。値だけ揃っていても閾値の方が
+## 高ければ無効化されたのと同じになるため、二値の関係を直接見る必要がある。
+## 一度、旧値（発光エネルギー0.35）ではどの色も閾値を超えず、グローが実際には
+## 出ていなかった不具合があった（実機で発見）。
+func _test_glow() -> void:
+	print("--- 都市の発光グロー ---")
+	# 都市パーツに使われる色（map_view_3d.gd の _city_color() 参照）。
+	var city_colors: Array[Color] = [UiTheme.PIN_FRAME, UiTheme.WARN, UiTheme.FOCUS]
+	for color: Color in city_colors:
+		var luminance: float = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+		var glow_value: float = luminance * MapView3D.CITY_EMISSION_ENERGY
+		_check(glow_value > MapView3D.GLOW_HDR_THRESHOLD,
+			"%s の発光がHDR閾値を超える" % color, "%.2f <= 閾値%.2f" % [glow_value, MapView3D.GLOW_HDR_THRESHOLD])
