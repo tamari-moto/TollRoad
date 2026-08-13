@@ -47,9 +47,7 @@ func refresh() -> void:
 		_title.text = "積荷 — %s（%d / %d）" % [
 			GameData.MOUNTS[_session.mount]["name"], used, capacity]
 
-	for child: Node in _bar.get_children():
-		_bar.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_bar)
 
 	# 品目ごとに重量ぶんの幅を占める矩形を並べ、残りを空きとして表示する。
 	var detail_parts: PackedStringArray = []
@@ -73,9 +71,7 @@ func refresh() -> void:
 func _refresh_icons() -> void:
 	if not is_instance_valid(_icons):
 		return
-	for child: Node in _icons.get_children():
-		_icons.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_icons)
 	for item_id: String in _session.cargo:
 		_icons.add_child(UiIcons.make_labeled_item(
 			item_id, "×%d" % _session.cargo[item_id]))

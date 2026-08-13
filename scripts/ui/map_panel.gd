@@ -101,11 +101,7 @@ func _build_viewport() -> void:
 	var container := SubViewportContainer.new()
 	container.name = "MapViewport"
 	container.stretch = true
-	container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	container.anchor_right = 1.0
-	container.anchor_bottom = 1.0
-	container.offset_right = 0.0
-	container.offset_bottom = 0.0
+	UiUtil.fill_parent(container)
 	# 3D の上でドラッグ・ホイール・クリックを拾う。
 	container.mouse_filter = Control.MOUSE_FILTER_STOP
 	container.gui_input.connect(_on_map_input)
@@ -238,21 +234,13 @@ func _build_node(city_id: String) -> Control:
 	# 枠と軸を描くピン。中身より先に足して背面に置く。
 	var pin: MapPin = MapPin.new()
 	pin.name = "Pin"
-	pin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	pin.anchor_right = 1.0
-	pin.anchor_bottom = 1.0
-	pin.offset_right = 0.0
-	pin.offset_bottom = 0.0
+	UiUtil.fill_parent(pin)
 	pin.danger = city_id == GameData.CAERLEON
 	node.add_child(pin)
 
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.set_anchors_preset(Control.PRESET_FULL_RECT)
-	column.anchor_right = 1.0
-	column.anchor_bottom = 1.0
-	column.offset_right = 0.0
-	column.offset_bottom = 0.0
+	UiUtil.fill_parent(column)
 	column.add_theme_constant_override("separation", 0)
 
 	# 紋章を菱形の枠の中に収める。枠の中心に合わせて上に寄せる。

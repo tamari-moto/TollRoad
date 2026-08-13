@@ -16,6 +16,39 @@ static func find_node(owner_node: Node, node_name: String) -> Node:
 	return owner_node.find_child(node_name, true, false)
 
 
+## 子ノードをすべて取り除く。リストを組み直す前に呼ぶ。
+##
+## remove_child() と queue_free() の**両方**を行うのが要点。queue_free() だけだと
+## 解放は次フレームまで遅れ、その間 get_child_count() に残り続ける。ツリー外
+## （--script のハーネス）ではフレームが進まないため、行数を数える検査から
+## 消えたはずの子が見えてしまう。
+static func clear_children(node: Node) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	for child: Node in node.get_children():
+		node.remove_child(child)
+		child.queue_free()
+
+
+## Control を親いっぱいに広げる。
+##
+## set_anchors_preset() はアンカーに応じてオフセットも書き換えるため、
+## preset だけでは意図した値にならないことがある。fill_window() と同じく
+## アンカー4つとオフセット4つを明示代入して、どの入口から来ても同じ結果に
+## なるようにしてある（サイズ 0 で描画されない罠を避ける）。
+static func fill_parent(control: Control) -> void:
+	if control == null or not is_instance_valid(control):
+		return
+	control.anchor_left = 0.0
+	control.anchor_top = 0.0
+	control.anchor_right = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_left = 0.0
+	control.offset_top = 0.0
+	control.offset_right = 0.0
+	control.offset_bottom = 0.0
+
+
 ## ツリー外でサイズが失われた際に使う既定のダイアログサイズ。
 const DEFAULT_DIALOG_SIZE := Vector2i(520, 480)
 

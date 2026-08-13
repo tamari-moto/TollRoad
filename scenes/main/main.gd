@@ -482,9 +482,7 @@ func _disconnect_session() -> void:
 
 
 func _clear_log() -> void:
-	for child: Node in _log_list.get_children():
-		_log_list.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_log_list)
 
 
 func _append_log(message: String, with_sound: bool = true) -> void:
