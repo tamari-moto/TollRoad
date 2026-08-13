@@ -103,10 +103,6 @@ const PIN_UNDERLINE := Color(0.6, 0.62, 0.68)
 
 # --- 背景 ---
 
-## 画面全体の下地。深い藍色で、羊皮紙の上の帳簿を思わせる暗さにする。
-const BACKDROP_TOP := Color(0.10, 0.11, 0.15)
-const BACKDROP_BOTTOM := Color(0.07, 0.08, 0.11)
-
 ## パネルの地色と縁。
 const PANEL_FILL := Color(0.14, 0.15, 0.19, 0.93)
 const PANEL_BORDER := Color(0.28, 0.30, 0.36)
@@ -143,22 +139,6 @@ static func make_panel_style() -> StyleBoxFlat:
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(PANEL_RADIUS)
 	style.set_content_margin_all(0)
-	return style
-
-
-## 画面全体の下地。上から下へわずかに暗くする。StyleBoxFlat.bg_color は
-## 単色しか持てないため、GradientTexture2D を敷いた StyleBoxTexture で作る。
-static func make_backdrop_style() -> StyleBoxTexture:
-	var gradient := Gradient.new()
-	gradient.set_color(0, BACKDROP_TOP)
-	gradient.set_color(1, BACKDROP_BOTTOM)
-	var texture := GradientTexture2D.new()
-	texture.gradient = gradient
-	texture.fill = GradientTexture2D.FILL_LINEAR
-	texture.fill_from = Vector2(0.0, 0.0)
-	texture.fill_to = Vector2(0.0, 1.0)
-	var style := StyleBoxTexture.new()
-	style.texture = texture
 	return style
 
 
