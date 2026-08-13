@@ -42,7 +42,10 @@ func _test_world_geometry() -> void:
 	var min_radius: float = radii.min()
 	var max_radius: float = radii.max()
 	_check(min_radius > 1.0, "半径がゼロでない", str(min_radius))
-	_check(max_radius < min_radius * 3.0, "都市間で半径が極端にばらつかない",
+	# oakhaven/wyndham は次数1の行き止まり都市で、わざと他より外側に来る
+	# 設計（scenario_m11.gd の同名検査のコメント参照）。閾値は緩めに取り、
+	# 0で急に増える暴走だけを検出する。
+	_check(max_radius < min_radius * 6.0, "都市間で半径が極端にばらつかない",
 		"最小 %.2f / 最大 %.2f" % [min_radius, max_radius])
 
 	var overlap: bool = false

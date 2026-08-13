@@ -35,6 +35,16 @@ const RELAXATION_INITIAL_TEMPERATURE: float = CITY_SPACING * 0.5
 ## 強すぎるとばねと反発の均衡を崩し、弱すぎると配置が全体に広がりすぎる。
 const CENTERING_STRENGTH: float = 0.02
 
+## 次数1（行き止まり）の都市が絡む王道にかける引力の倍率。倍率1.0（無補正）
+## だと oakhaven が反発に押し負けて半径49.8まで飛ばされ、カメラの
+## MAX_DISTANCE(34.0) を大きく超えていた。2〜3倍程度でも半径は下がるが、
+## 都市クリックの投影→逆投影の往復（map_panel.pick_city_at()）がその近辺で
+## 符号が反転する境界に乗ってしまい、値によって成功・失敗が入れ替わる
+## 不安定な帯だった（実測）。5倍で安定して往復が成立し、10倍まで上げると
+## 今度は別の行き止まり都市（wyndham）側が近すぎて誤検出を始めたため、
+## 安定帯の中央寄りにあるこの値で止めてある。
+const PENDANT_EDGE_PULL_MULTIPLIER: float = 5.0
+
 ## --- 空・霧・グロウ ---
 ## GL Compatibility でも動作する範囲（プロシージャルな空、ボリューメトリック
 ## でない深度フォグ、グロウ）に絞ってある。数値は初期値であり、実際の見え方
@@ -52,8 +62,18 @@ const GLOW_BLOOM: float = 0.15
 var _ring_radius: float = 0.0
 ## 地形の一辺。都市が乗る範囲より広く取る。_compute_scale() で算出する。
 var _terrain_size: float = 0.0
-## 地形の分割数。多いほど滑らかだが重い。
-const TERRAIN_SUBDIVISIONS: int = 64
+## 地形メッシュの1マスの一辺がこれを超えないよう _terrain_subdivisions を
+## _compute_scale() で決める。草木の間隔(VEGETATION_GRID_STEP=1.4)や
+## footprint(半径0.32)より十分小さい値にしないと、height_at() の連続値
+## （草木の設置高さ）と実際に描画されるメッシュの補間値がズレ、草木が
+## 地面から浮いたり埋まったりして見える（実測: 固定64分割だと1マスが約2.9
+## あり、トランク底面の縁で描画面との誤差が最大1m近く出ていた）。
+## 都市配置が広がって _terrain_size が伸びるほど分割数も自動で増える
+## （固定値だと過去に都市数が増えた際と同じ理由で再び陳腐化するため）。
+const TERRAIN_MAX_QUAD_SIZE: float = 0.8
+## 地形の分割数。_compute_scale() が _terrain_size と TERRAIN_MAX_QUAD_SIZE
+## から算出する。
+var _terrain_subdivisions: int = 64
 
 ## 起伏の高さ。
 const TERRAIN_HEIGHT: float = 2.4
@@ -129,15 +149,27 @@ const VEGETATION_ROCK_THRESHOLD: float = -0.1
 const VEGETATION_ROCK_COLOR := TERRAIN_ROCK_COLOR
 
 ## 木・低木・岩は底が平らなメッシュなので、傾斜地にそのまま真上向きで置くと
-## 登り側の底面が地面にめり込んで見える。地形の局所法線に部分的に合わせて
-## 傾けることでめり込みを減らす（1.0で完全に地面へ倣わせる。急斜面で横倒しに
-## 見えて不自然になるため、直立感を残す値に留める）。
-const VEGETATION_SLOPE_ALIGNMENT: float = 0.6
+## 接地面の片側が地面にめり込み、反対側は宙に浮く（ユーザー報告のスクショで
+## 実際に両方が同時に見えていた）。地形の局所法線に合わせて傾けることで
+## この接地誤差はほぼゼロにできる（実測: 1.0で5cm超のずれが0.2%まで低下）。
+##
+## ただし木を傾けると、実物の木のように常に上を向いて育つ見え方が失われ、
+## 急斜面ほど幹ごと横倒しに近づく（ユーザー指定でこの見た目を避けたいと
+## 判明）。そのため向きは常に直立（0.0=無回転）に固定し、接地誤差は
+## VEGETATION_MAX_SLOPE_NORMAL_Y で急斜面そのものを候補地から外すことで
+## 抑える（無回転でも実測で最大 gap 14cm / embed 7.5cm に収まる。1.0のときの
+## 0.2%には及ばないが、幹が細く目立ちにくいため許容範囲とした）。
+const VEGETATION_SLOPE_ALIGNMENT: float = 0.0
+## 法線の y 成分がこれを下回る（≒斜度がこれより急な）候補地には草木を
+## 生やさない。cos(50°)≈0.643。VEGETATION_SLOPE_ALIGNMENT が0.0（常に直立）
+## なので、急斜面ほど接地面のめり込み・浮きが大きくなる。そう見えるほどの
+## 急斜面はそもそも植生の対象から外す（切り立った岩肌として読める）。
+const VEGETATION_MAX_SLOPE_NORMAL_Y: float = 0.643
 ## 法線を数値微分で求める際のサンプリング幅（水平方向の微小距離）。
 const NORMAL_SAMPLE_EPSILON: float = 0.05
-## 地形は TERRAIN_SUBDIVISIONS 分割のメッシュとして描画されるため、連続関数
-## height_at() を直接サンプリングする草木の設置高さとの間にわずかなズレが
-## 出うる。道の LIFT と同じ理由で、保険として少しだけ浮かせる。
+## 草木は terrain_mesh_height_at() で描画メッシュの補間値に合わせて設置するが、
+## それでも対角線の分割（双線形近似と実際の三角形補間の差）ぶんのわずかな
+## ズレは残る。道の LIFT と同じ理由で、保険として少しだけ浮かせる。
 const VEGETATION_LIFT: float = 0.03
 
 ## 現在地を囲むリング。内外の二重で描く。
@@ -244,6 +276,17 @@ func _relax_positions() -> Dictionary:
 		var angle: float = -PI / 2.0 + TAU * float(index) / float(ring.size())
 		flat[ring[index]] = Vector2(cos(angle), sin(angle)) * seed_radius
 
+	# 次数1（行き止まり）の都市が絡む王道は、綱引きの相手が1本しかない。
+	# 通常の引力のままだと反発力に押し負けてカメラの MAX_DISTANCE を大きく
+	# 超える位置まで飛ばされる（実測: oakhaven 半径49.8。詳細は下の
+	# PENDANT_EDGE_PULL_MULTIPLIER 参照）。
+	var degree: Dictionary = {}
+	for city_id: String in ring:
+		degree[city_id] = 0
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		degree[edge[0]] += 1
+		degree[edge[1]] += 1
+
 	var k: float = CITY_SPACING
 	for iteration: int in RELAXATION_ITERATIONS:
 		var forces: Dictionary = {}
@@ -267,7 +310,9 @@ func _relax_positions() -> Dictionary:
 			var b: String = edge[1]
 			var delta: Vector2 = flat[b] - flat[a]
 			var dist: float = maxf(delta.length(), 0.01)
-			var pull: Vector2 = delta.normalized() * (dist * dist / k)
+			var strength: float = PENDANT_EDGE_PULL_MULTIPLIER \
+				if (degree[a] == 1 or degree[b] == 1) else 1.0
+			var pull: Vector2 = delta.normalized() * (dist * dist / k) * strength
 			forces[a] += pull
 			forces[b] -= pull
 
@@ -299,6 +344,10 @@ func _compute_scale(flat_positions: Dictionary) -> void:
 	_ring_radius = max_radius
 	_terrain_size = _ring_radius * 2.0 + _terrain_margin
 	_basin_radius = _ring_radius + BASIN_MARGIN
+	# PlaneMesh(subdivide_width=N) は N+1 マス（N+2 頂点）を生成する
+	# （Godot 4.7.1で実測確認済み。Nをそのままマス数として扱うと1マスぶん
+	# 過大評価してマス目がずれる）。
+	_terrain_subdivisions = maxi(1, ceili(_terrain_size / TERRAIN_MAX_QUAD_SIZE) - 1)
 
 
 ## 緩和済みの水平面座標に高さ（height_at()）を足して最終的な 3D 座標にする。
@@ -321,8 +370,8 @@ func height_at(x: float, z: float) -> float:
 func _build_terrain() -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(_terrain_size, _terrain_size)
-	plane.subdivide_width = TERRAIN_SUBDIVISIONS
-	plane.subdivide_depth = TERRAIN_SUBDIVISIONS
+	plane.subdivide_width = _terrain_subdivisions
+	plane.subdivide_depth = _terrain_subdivisions
 
 	# 頂点を高さで動かして起伏を作る。
 	var arrays: Array = plane.get_mesh_arrays()
@@ -539,11 +588,11 @@ func _build_vegetation() -> void:
 			var px: float = x + VEGETATION_GRID_STEP * 0.5 + jitter_x
 			var pz: float = z + VEGETATION_GRID_STEP * 0.5 + jitter_z
 
-			if _is_vegetation_site(px, pz):
+			if is_vegetation_site(px, pz):
 				var biome: Dictionary = _nearest_biome(Vector2(px, pz))
 				var fertile: bool = FERTILE_SPECIALTIES.has(GameData.CITIES[biome["city_id"]]["specialty"])
 				var density: float = _noise.get_noise_2d(px * 0.6, pz * 0.6)
-				var instance_transform := _vegetation_transform(px, pz)
+				var instance_transform := vegetation_transform_at(px, pz)
 
 				if fertile:
 					if density > VEGETATION_BUSH_THRESHOLD:
@@ -569,26 +618,80 @@ func _build_vegetation() -> void:
 	_add_vegetation_multimesh(_make_rock_mesh(), rock_transforms, "Rocks")
 
 
-## その地点の設置トランスフォームを、局所法線に部分的に合わせて傾けて返す。
-## 木・低木・岩はいずれも底が平らなメッシュ（ローカル y=0 が底面）なので、
-## 傾斜地に真上向きのまま置くと登り側の底面が地面にめり込んで見える
-## （VEGETATION_SLOPE_ALIGNMENT のコメント参照）。
-func _vegetation_transform(x: float, z: float) -> Transform3D:
-	var normal: Vector3 = _terrain_normal_at(x, z)
+## その地点の設置トランスフォームを、局所法線に VEGETATION_SLOPE_ALIGNMENT の
+## 割合だけ合わせて傾けて返す（現状は0.0固定で常に直立。詳細は
+## VEGETATION_SLOPE_ALIGNMENT のコメント参照）。傾ける仕組み自体は残して
+## あるので、将来また調整したくなった時にこの定数を変えるだけで戻せる。
+##
+## 公開しているのは、pulse_scale_at() と同じ理由で --script の検査から
+## 直接確かめられるようにするため（内部状態を持たない純関数）。
+func vegetation_transform_at(x: float, z: float) -> Transform3D:
+	var normal: Vector3 = terrain_normal_at(x, z)
 	var axis: Vector3 = Vector3.UP.cross(normal)
 	var basis := Basis()
 	if axis.length() > 0.0001:
 		var tilt := Basis(axis.normalized(), Vector3.UP.angle_to(normal))
 		basis = Basis().slerp(tilt, VEGETATION_SLOPE_ALIGNMENT)
-	var y: float = height_at(x, z) + VEGETATION_LIFT
+	var y: float = terrain_mesh_height_at(x, z) + VEGETATION_LIFT
 	return Transform3D(basis, Vector3(x, y, z))
+
+
+## height_at() は連続関数だが、実際に描画される地形は _terrain_subdivisions
+## 分割の平面メッシュ（1辺あたり _terrain_size / (_terrain_subdivisions+1) の
+## 格子）で、頂点間は補間される。固定64分割だった頃は現在の地形の広さ
+## （都市配置の拡張で1辺100超）に対して格子が粗すぎ（1マス約2.9、草木の
+## 間隔1.4より広い）、格子1マスの中で height_at() の細かい起伏（ノイズの
+## オクターブ由来）が何度も上下していた。height_at() をそのまま使うと草木が
+## 「実際に描画されている地面」とズレた高さに置かれ、実測でトランク底面の縁の
+## 9割以上が VEGETATION_LIFT(0.03) を超えてズレていた（浮き沈みの主因）。
+## _terrain_subdivisions を TERRAIN_MAX_QUAD_SIZE 基準の動的値にしたことで
+## 大きく改善したが、対角線の分割ぶんの残差は VEGETATION_LIFT で吸収する。
+##
+## この関数は height_at() を格子の4頂点でだけサンプリングし、実際の描画と
+## 同じ格子間隔で双線形補間する。草木の設置高さはこちらを使うことで、
+## 描画されている地形の起伏に沿う。
+##
+## 地形メッシュの1マスの一辺の実際の長さ。TERRAIN_MAX_QUAD_SIZE 以下になる
+## はず（_compute_scale() が _terrain_subdivisions をそう決めている）。
+## PlaneMesh(subdivide_width=N) は N+1 マスを生成する
+## （Godot 4.7.1で実測確認済み。N をそのままマス数として使うと格子がずれる）。
+func terrain_quad_size() -> float:
+	return _terrain_size / float(_terrain_subdivisions + 1)
+
+
+## 公開しているのは、pulse_scale_at() と同じ理由で --script の検査から
+## 直接確かめられるようにするため（内部状態を持たない純関数）。
+func terrain_mesh_height_at(x: float, z: float) -> float:
+	var segments: int = _terrain_subdivisions + 1
+	var quad: float = terrain_quad_size()
+	var half: float = _terrain_size * 0.5
+	var gx: float = clampf((x + half) / quad, 0.0, float(segments))
+	var gz: float = clampf((z + half) / quad, 0.0, float(segments))
+	var ix: int = clampi(int(gx), 0, segments - 1)
+	var iz: int = clampi(int(gz), 0, segments - 1)
+	var fx: float = gx - float(ix)
+	var fz: float = gz - float(iz)
+
+	var vx0: float = -half + float(ix) * quad
+	var vx1: float = vx0 + quad
+	var vz0: float = -half + float(iz) * quad
+	var vz1: float = vz0 + quad
+
+	var h00: float = height_at(vx0, vz0)
+	var h10: float = height_at(vx1, vz0)
+	var h01: float = height_at(vx0, vz1)
+	var h11: float = height_at(vx1, vz1)
+
+	var h0: float = lerpf(h00, h10, fx)
+	var h1: float = lerpf(h01, h11, fx)
+	return lerpf(h0, h1, fz)
 
 
 ## その地点の地形の法線を、height_at() の中心差分で求める。
 ## _recalculate_normals() はメッシュの頂点・インデックスから面法線を求めるが、
 ## こちらは任意の連続座標に対して height_at() を直接サンプリングする版
 ## （草木は地形メッシュの頂点に乗っているとは限らないため）。
-func _terrain_normal_at(x: float, z: float) -> Vector3:
+func terrain_normal_at(x: float, z: float) -> Vector3:
 	var h_left: float = height_at(x - NORMAL_SAMPLE_EPSILON, z)
 	var h_right: float = height_at(x + NORMAL_SAMPLE_EPSILON, z)
 	var h_back: float = height_at(x, z - NORMAL_SAMPLE_EPSILON)
@@ -596,13 +699,22 @@ func _terrain_normal_at(x: float, z: float) -> Vector3:
 	return Vector3(h_left - h_right, 2.0 * NORMAL_SAMPLE_EPSILON, h_back - h_front).normalized()
 
 
-## 木・低木を生やしてよい候補地か。盆地・都市・道に近すぎる場所は除外する。
-func _is_vegetation_site(x: float, z: float) -> bool:
+## 木・低木を生やしてよい候補地か。盆地・都市・道・急斜面には生やさない。
+##
+## 公開しているのは、pulse_scale_at() と同じ理由で --script の検査から
+## 直接確かめられるようにするため（内部状態を持たない純関数）。
+func is_vegetation_site(x: float, z: float) -> bool:
 	var point := Vector2(x, z)
 
 	# height_at() の basin と同じ考え方（中心に近いほど1.0）。
 	var basin: float = clampf(1.0 - point.length() / _basin_radius, 0.0, 1.0)
 	if basin > VEGETATION_BASIN_LIMIT:
+		return false
+
+	# VEGETATION_SLOPE_ALIGNMENT が1.0（完全追従）なので、急斜面ほど木が
+	# その傾きのぶん大きく傾いて横倒しに見える。見た目が破綻するほどの
+	# 急斜面には最初から生やさない（切り立った岩肌として読める）。
+	if terrain_normal_at(x, z).y < VEGETATION_MAX_SLOPE_NORMAL_Y:
 		return false
 
 	for city_id: String in positions:
