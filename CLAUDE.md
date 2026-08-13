@@ -317,7 +317,7 @@ CLAUDE.md は作業時の規約、architecture.md は構造の説明という分
 価格を書き換えると、どちらが効いたのか追えなくなる）。詳細は
 [game_design.md](docs/game_design.md) の「5.3 在庫と需要（生産量・販売数）」。
 
-検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m23.gd` の23本。
+検証シナリオは `scripts/systems/scenario_m1.gd` 〜 `scenario_m24.gd` の24本。
 新しい機能を足したら対応するシナリオも足し、`scenario_all.gd` の
 `SCENARIO_COUNT` を更新すること（忘れてもランナーが本数を照合して止める）。
 
