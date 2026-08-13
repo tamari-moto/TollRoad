@@ -280,6 +280,30 @@ func price_bar_for(item_id: String) -> PriceBar:
 	return _rows[item_id]["bar"] as PriceBar
 
 
+## その品目に表示中の価格の文言。無ければ空文字。
+func price_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "price")
+
+
+## その品目に表示中の所持数の文言。無ければ空文字。
+func held_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "held")
+
+
+## その品目の買うボタン。無ければ null。
+func buy_button_for(item_id: String) -> Button:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["buy"] as Button
+
+
+## その品目の売るボタン。無ければ null。
+func sell_button_for(item_id: String) -> Button:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["sell"] as Button
+
+
 ## その品目に出ているバッジの文言（特産・◎最安・◎高値など）。無ければ空文字。
 ## 隠れているバッジは「出ていない」として空文字を返す（文字だけ残って
 ## 非表示、という状態を検査が見逃さないようにするため）。

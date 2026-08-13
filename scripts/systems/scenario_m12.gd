@@ -17,7 +17,6 @@ func _init() -> void:
 	_test_island_textures()
 	_test_island_panel_art()
 	_test_panel_style()
-	_test_backdrop()
 	_finish()
 
 
@@ -102,10 +101,6 @@ func _test_panel_style() -> void:
 	_check(style.corner_radius_top_left == UiTheme.PANEL_RADIUS, "角が丸められる",
 		str(style.corner_radius_top_left))
 
-	# 下地は不透明（後ろが透けない）。
-	var backdrop: StyleBoxFlat = UiTheme.make_backdrop_style()
-	_check(backdrop.bg_color.a >= 0.99, "下地は不透明", str(backdrop.bg_color.a))
-
 	# 適用すると override が付き、二重適用しても壊れない。
 	var panel := PanelContainer.new()
 	UiTheme.apply_panel_style(panel)
@@ -114,23 +109,3 @@ func _test_panel_style() -> void:
 	UiTheme.apply_panel_style(panel)
 	_check(panel.get_theme_stylebox("panel") == applied, "二重適用で上書きしない", "上書きされた")
 	panel.free()
-
-
-func _test_backdrop() -> void:
-	print("--- 下地の敷き方 ---")
-	# Main.tscn の構造だけを確認する（_ready は autoload を要するため走らせない）。
-	var scene: PackedScene = load("res://scenes/main/Main.tscn")
-	_check(scene != null, "Main.tscn が読み込める", "失敗")
-	if scene == null:
-		return
-	var main: Node = scene.instantiate()
-
-	# 下地は _ready で動的に足すので、シーン上にはまだ無い。
-	var root_control: Node = main.get_node_or_null("UI/Root")
-	_check(root_control != null, "UI/Root がある", "ない")
-	if root_control != null:
-		_check(root_control.get_node_or_null("Backdrop") == null,
-			"下地は実行時に足される（シーンには持たない）", "シーンにある")
-		# HUD が Root の直下にあり、下地を差し込める構造になっている。
-		_check(main.get_node_or_null("%HUD") != null, "HUD が引ける", "ない")
-	main.free()

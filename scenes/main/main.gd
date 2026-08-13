@@ -291,24 +291,10 @@ func _on_continue_requested() -> void:
 	_bind_session(_state_session(), false)
 
 
-## 画面全体の下地を敷き、各パネルに共通の地色を与える。
-## パネルごとに書かず、ここでまとめて適用する。
+## 大陸図の3D世界がそのまま画面全体の背景として見えるよう、他パネルと同じ
+## 不透明な地色を与えない。大陸図の自前の Sky が不透明に描画されるため
+## （SubViewport.transparent_bg = false）、この背後に別の下地は要らない。
 func _apply_backdrop() -> void:
-	var root_control: Control = _hud.get_parent() if is_instance_valid(_hud) else null
-	if root_control == null:
-		return
-
-	# 下地は最背面に敷く。大陸図の外側（空）はここが透けて見える。
-	var backdrop := Panel.new()
-	backdrop.name = "Backdrop"
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	backdrop.add_theme_stylebox_override("panel", UiTheme.make_backdrop_style())
-	root_control.add_child(backdrop)
-	root_control.move_child(backdrop, 0)
-
-	# 大陸図は画面全体の背景として敷くため、他パネルと同じ不透明な地色は
-	# 与えない（3D世界がそのまま背景として見えるようにする）。
 	var map_panel: Control = UiUtil.find_node(self, "大陸図")
 	map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
 

@@ -16,8 +16,6 @@ const ISLAND_ICON_DIR: String = "res://assets/sprites/island"
 
 ## 一覧に並べる際の推奨サイズ。
 const LIST_ICON_SIZE: int = 20
-## 大陸図のノードに使う紋章のサイズ。
-const CITY_ICON_SIZE: int = 44
 ## 騎乗の図（横長）。
 const MOUNT_ICON_SIZE := Vector2(56, 42)
 ## 島の図（横長）。

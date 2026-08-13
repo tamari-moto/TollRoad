@@ -415,17 +415,20 @@ UI パネルは `bind(session)` と `refresh()` を持つ規約。ノード解�
 画像は `assets/sprites/` の4種別（`items` / `cities` / `mounts` / `island`）。
 `ui_icons.gd` が種別ごとに引く（`item_texture` / `city_texture` /
 `mount_texture` / `island_texture`）。**種別が違えば同名でも混ざらない**。
-背景とパネルの地色は `ui_theme.gd` の `apply_panel_style()` /
-`make_backdrop_style()` で、[main.gd](scenes/main/main.gd) の
-`_apply_backdrop()` がまとめて適用する（パネル側には書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
+パネルの地色は `ui_theme.gd` の `apply_panel_style()` で適用する
+（パネル側には書かない）。`bind()` は `UiUtil.rebind()` 経由にすること — 再プレイで
 古いセッションが繋がったままになるのを防ぐため。
 
 **大陸図は画面全体の背景。** `Main.tscn` の `%大陸図` は `Root` 直下に
 `PRESET_FULL_RECT` で敷き、他の画面はその上に浮かぶオーバーレイとして
-配置する。`_apply_backdrop()` は `%大陸図` だけ `apply_panel_style()` を
-かけず、代わりに `UiTheme.make_transparent_style()`（`StyleBoxEmpty`）を
-与える。他パネルと同じ不透明な地色を敷くと、3D世界の外側（空）を覆い
-隠して背景として機能しなくなるため。
+配置する。[main.gd](scenes/main/main.gd) の `_apply_backdrop()` は
+`%大陸図` だけ `apply_panel_style()` をかけず、代わりに
+`UiTheme.make_transparent_style()`（`StyleBoxEmpty`）を与える。他パネルと
+同じ不透明な地色を敷くと、3D世界の外側（空）を覆い隠して背景として
+機能しなくなるため。大陸図の `SubViewport` 自体が `transparent_bg = false`
+で自前の Sky を不透明に描画するので、この背後に別の下地パネルは不要
+（かつて敷いていたが、大陸図が常時画面全体を覆うため一度も見えない
+まま隠れていた。実測で発見し撤去した）。
 
 **Tween はツリー外では作れない。** `--script` のハーネスは
 `root.add_child()` してもツリー外扱いなので、`is_inside_tree()` が false の
