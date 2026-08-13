@@ -208,7 +208,10 @@ func refresh() -> void:
 	if is_instance_valid(_title):
 		var companion_note: String = ""
 		if _session.active_companion == "fina":
-			companion_note = "（フィナ同行中・買値-8%）"
+			# 割引率は GameData の定数から出す。ここに数値を直書きすると、
+			# 定数を変えたときに表示だけが嘘になる。
+			companion_note = "（フィナ同行中・買値-%d%%）" % int(round(
+				GameData.COMPANION_BUY_DISCOUNT * 100.0))
 		_title.text = "市場 — %s%s" % [GameData.CITIES[_session.current_city]["name"], companion_note]
 
 	var over: bool = _session.is_over()
@@ -337,11 +340,7 @@ func _add_stripe(control: Control) -> void:
 	stripe.name = "Stripe"
 	stripe.color = UiTheme.ROW_STRIPE
 	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stripe.set_anchors_preset(Control.PRESET_FULL_RECT)
-	stripe.anchor_right = 1.0
-	stripe.anchor_bottom = 1.0
-	stripe.offset_right = 0.0
-	stripe.offset_bottom = 0.0
+	UiUtil.fill_parent(stripe)
 	control.add_child(stripe)
 	control.move_child(stripe, 0)
 
