@@ -162,6 +162,18 @@ func _test_selection_ring() -> void:
 		world.free()
 		return
 
+	# 発光していないと都市の柱と違ってグロウが乗らず、地図上で浮いて見える
+	# （かつて unshaded だが emission は付いておらず、実際には光っていなかった）。
+	var ring_material: StandardMaterial3D = mesh.surface_get_material(0)
+	_check(ring_material != null and ring_material.emission_enabled,
+		"リングが発光している", "発光していない")
+	if ring_material != null:
+		var ring_luminance: float = 0.2126 * ring_material.emission.r \
+			+ 0.7152 * ring_material.emission.g + 0.0722 * ring_material.emission.b
+		_check(ring_luminance * ring_material.emission_energy_multiplier > MapView3D.GLOW_HDR_THRESHOLD,
+			"リングの発光がHDR閾値を超える",
+			"%.2f <= 閾値%.2f" % [ring_luminance * ring_material.emission_energy_multiplier, MapView3D.GLOW_HDR_THRESHOLD])
+
 	var arrays: Array = mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	# 二重の円。各円が RING_SEGMENTS 本の線分＝2頂点ずつ。

@@ -272,8 +272,7 @@ func _build_environment() -> void:
 	environment.fog_light_color = SKY_HORIZON_COLOR
 	environment.fog_density = FOG_DENSITY
 
-	# 都市の柱は自己発光しているので、グロウで街明かりのように滲む
-	# （現在地リングは vertex_color_use_as_albedo の unshaded で、発光ではない）。
+	# 都市の柱・現在地リングは自己発光しているので、グロウで街明かりのように滲む。
 	# glow_hdr_threshold はエンジン既定値(1.0)に頼らず明示する。既定が変わると
 	# CITY_EMISSION_ENERGY との関係が黙って崩れるため。
 	environment.glow_enabled = true
@@ -1118,6 +1117,12 @@ func _redraw_selection_ring(center: Vector3, scale: float) -> void:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.vertex_color_use_as_albedo = true
+	# unshaded でも emission は独立して効く。都市の柱と同じ発光エネルギーを
+	# 使い、グローの強さを揃える（両方とも UiTheme.FOCUS の単色なので
+	# 頂点ごとの色と emission の単一色がズレる心配はない）。
+	material.emission_enabled = true
+	material.emission = UiTheme.FOCUS
+	material.emission_energy_multiplier = CITY_EMISSION_ENERGY
 
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
 	_add_ring(mesh, center, RING_INNER_RADIUS * scale, UiTheme.FOCUS)
