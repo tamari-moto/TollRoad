@@ -54,8 +54,8 @@ const SKY_HORIZON_COLOR := Color(0.30, 0.26, 0.28)
 const SKY_GROUND_COLOR := Color(0.05, 0.05, 0.07)
 const AMBIENT_LIGHT_ENERGY: float = 0.6
 const FOG_DENSITY: float = 0.01
-const GLOW_INTENSITY: float = 0.8
-const GLOW_BLOOM: float = 0.15
+const GLOW_INTENSITY: float = 0.2
+const GLOW_BLOOM: float = 0.04
 ## グローがHDRとして扱う輝度の下限。既定は1.0だが、明示しないとエンジンの
 ## 既定値変更で CITY_EMISSION_ENERGY との関係が黙って崩れるため定数化する。
 const GLOW_HDR_THRESHOLD: float = 1.0
