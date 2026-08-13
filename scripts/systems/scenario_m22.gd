@@ -74,14 +74,19 @@ func _test_giants_exist_and_placed() -> void:
 		_check(flat_distance > max_city_radius, "%s が都市の輪の外にいる" % giant.name,
 			"%.2f / 都市の最大半径 %.2f" % [flat_distance, max_city_radius])
 
-		# GIANT_EDGE_FRACTION どおり、地形の縁付近（半径の92%）に置かれている。
+		# GIANT_EDGE_FRACTION どおりの半径に置かれている。
 		_check(absf(flat_distance - expected_giant_radius) < 0.05,
-			"%s が地形の縁付近（半径の%.0f%%）にいる" % [giant.name, MapView3D.GIANT_EDGE_FRACTION * 100.0],
+			"%s が式どおりの半径（地形の半径の%.0f%%）にいる" % [giant.name, MapView3D.GIANT_EDGE_FRACTION * 100.0],
 			"%.2f / 期待 %.2f" % [flat_distance, expected_giant_radius])
 
-		# 地形の内側に収まっている（GIANT_EDGE_FRACTION < 1.0 の前提の再確認）。
-		_check(flat_distance < expected_half_extent, "%s が地形の内側にいる" % giant.name,
-			"%.2f / 地形の半分 %.2f" % [flat_distance, expected_half_extent])
+		# GIANT_EDGE_FRACTION は現在1.0を超える値になっている（ユーザー指定で
+		# 「地形の外・霧の彼方」に置く設計）。1.0以下に戻された場合と挙動を
+		# 混同しないよう、どちら側にいるかを明示的に確かめる。
+		var expects_outside_terrain: bool = MapView3D.GIANT_EDGE_FRACTION > 1.0
+		_check((flat_distance > expected_half_extent) == expects_outside_terrain,
+			"%s が地形の外側/内側のどちらにいるかが GIANT_EDGE_FRACTION と一致する" % giant.name,
+			"%.2f / 地形の半分 %.2f（外側であるべき: %s）" % [
+				flat_distance, expected_half_extent, str(expects_outside_terrain)])
 
 	# 2体は中心から見て概ね反対側（カメラを回すと一体ずつ現れる設計）。
 	if giants.size() == 2:
