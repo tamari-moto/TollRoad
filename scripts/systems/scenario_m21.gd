@@ -5,8 +5,9 @@ extends "res://scripts/systems/scenario_base.gd"
 ## 2つあった:
 ##   1. 傾斜への追従が中途半端だと接地面の片側が埋まり反対側が浮く
 ##      （VEGETATION_SLOPE_ALIGNMENT を0.6→1.0→0.0の順に検討し、最終的に
-##      ユーザー指定で「木は常に直立」を優先し0.0にした。急斜面は
-##      VEGETATION_MAX_SLOPE_NORMAL_Y で候補地から外して埋まりを抑える）
+##      ユーザー指定で「木は常に直立」を優先し0.0にした。急斜面を候補地から
+##      外す足切りも一時追加したが、原因2を直したことでめり込みが縮み
+##      不要と判断してユーザー指定で外した）
 ##   2. height_at() は連続関数だが、実際に描画される地形メッシュは粗い格子
 ##      （頂点間は補間）なので、height_at() をそのまま設置高さに使うと
 ##      「実際に描画されている地面」とズレる（terrain_mesh_height_at() で
@@ -35,7 +36,6 @@ func _init() -> void:
 	_test_normal_is_unit_and_upward()
 	_test_position_matches_height_and_lift()
 	_test_partial_alignment_formula()
-	_test_steep_slopes_excluded()
 	_test_terrain_mesh_height_matches_grid()
 	_finish()
 
@@ -90,17 +90,43 @@ func _test_position_matches_height_and_lift() -> void:
 	_check(max_error < 0.0001, "y が terrain_mesh_height_at() + VEGETATION_LIFT と一致する",
 		"誤差 %.5f" % max_error)
 
+	# 低木用の lift 引数（負値＝少し埋める）も正しく足し込まれるか。
+	var bush_error: float = 0.0
+	x = -SAMPLE_RANGE
+	while x <= SAMPLE_RANGE:
+		var z: float = -SAMPLE_RANGE
+		while z <= SAMPLE_RANGE:
+			var transform: Transform3D = world.vegetation_transform_at(
+				x, z, MapView3D.VEGETATION_BUSH_SLOPE_ALIGNMENT, MapView3D.VEGETATION_BUSH_LIFT)
+			var expected_y: float = world.terrain_mesh_height_at(x, z) + MapView3D.VEGETATION_BUSH_LIFT
+			bush_error = maxf(bush_error, absf(transform.origin.y - expected_y))
+			z += SAMPLE_STEP
+		x += SAMPLE_STEP
+
+	_check(bush_error < 0.0001, "低木の y が terrain_mesh_height_at() + VEGETATION_BUSH_LIFT と一致する",
+		"誤差 %.5f" % bush_error)
+	_check(MapView3D.VEGETATION_BUSH_LIFT < 0.0, "VEGETATION_BUSH_LIFT が負（少し埋める設定になっている）",
+		"%.4f" % MapView3D.VEGETATION_BUSH_LIFT)
+
 	world.free()
 
 
 ## 実装（Basis().slerp()）とは別経路の Vector3.rotated() で期待値を組み立て、
-## 「法線への回転を ALIGNMENT の割合だけ混ぜる」が実装どおりかを突き合わせる。
-## 一致しないケースの主な原因は3つ想定される:
+## 「法線への回転を alignment の割合だけ混ぜる」が実装どおりかを突き合わせる。
+## 木・岩（VEGETATION_SLOPE_ALIGNMENT=0.0）と低木（VEGETATION_BUSH_
+## SLOPE_ALIGNMENT=1.0）の両方で流し、alignment を vegetation_transform_at()
+## の第3引数へ正しく渡せているかも確かめる。一致しないケースの主な原因は
+## 3つ想定される:
 ##   - 外積の順序を逆にした（法線と反対側へ傾く）
-##   - ALIGNMENT を掛け忘れて完全に地面へ倣わせた（急斜面で横倒しになる）
+##   - alignment を掛け忘れて完全に地面へ倣わせた（急斜面で横倒しになる）
 ##   - 法線が UP と一致する場合の分岐（axis がゼロベクトル）を壊した
 func _test_partial_alignment_formula() -> void:
-	print("--- 部分追従の角度 ---")
+	_test_alignment_formula_for(MapView3D.VEGETATION_SLOPE_ALIGNMENT, "木・岩")
+	_test_alignment_formula_for(MapView3D.VEGETATION_BUSH_SLOPE_ALIGNMENT, "低木")
+
+
+func _test_alignment_formula_for(alignment: float, label: String) -> void:
+	print("--- 部分追従の角度（%s, alignment=%.1f） ---" % [label, alignment])
 	var world: MapView3D = MapView3D.new()
 
 	var max_angle_error: float = 0.0
@@ -119,10 +145,9 @@ func _test_partial_alignment_formula() -> void:
 			var expected_up: Vector3 = Vector3.UP
 			var axis: Vector3 = Vector3.UP.cross(normal)
 			if axis.length() > 0.0001:
-				expected_up = Vector3.UP.rotated(axis.normalized(),
-					slope_angle * MapView3D.VEGETATION_SLOPE_ALIGNMENT)
+				expected_up = Vector3.UP.rotated(axis.normalized(), slope_angle * alignment)
 
-			var transform: Transform3D = world.vegetation_transform_at(x, z)
+			var transform: Transform3D = world.vegetation_transform_at(x, z, alignment)
 			var actual_up: Vector3 = transform.basis * Vector3.UP
 
 			max_angle_error = maxf(max_angle_error, expected_up.angle_to(actual_up))
@@ -137,53 +162,12 @@ func _test_partial_alignment_formula() -> void:
 
 	_check(max_slope_angle > 0.05, "検査範囲に十分な傾斜が含まれる（前提）",
 		"最大傾斜 %.3f rad" % max_slope_angle)
-	_check(max_angle_error < 0.01, "傾きが ALIGNMENT どおりの角度で法線へ部分追従する",
+	_check(max_angle_error < 0.01, "傾きが alignment どおりの角度で法線へ追従する",
 		"最大誤差 %.5f rad" % max_angle_error)
-	_check(not any_exceeds_full_slope, "傾きが地形の傾斜を超えない（ALIGNMENT<=1.0 の前提）",
+	_check(not any_exceeds_full_slope, "傾きが地形の傾斜を超えない（alignment<=1.0 の前提）",
 		"超えている点がある")
 	_check(not any_moves_away_from_normal, "傾く向きが法線に近づく側（反対側へ傾いていない）",
 		"法線から遠ざかる点がある")
-
-	world.free()
-
-
-## VEGETATION_SLOPE_ALIGNMENT が0.0（常に直立）なので、急斜面ほど接地面の
-## 埋まり・浮きが大きくなる。VEGETATION_MAX_SLOPE_NORMAL_Y を超える急斜面には
-## そもそも生やさないはずである。
-##
-## 盆地・都市・道の近くは緩斜面でも除外されるため、中心付近の SAMPLE_RANGE
-## では緩斜面の候補地が1件も残らない（実測で確認済み）。ここだけ盆地の外まで
-## 届く広い範囲を走査する。
-func _test_steep_slopes_excluded() -> void:
-	print("--- 急斜面には生やさない ---")
-	var world: MapView3D = MapView3D.new()
-
-	var steep_found: bool = false
-	var steep_all_excluded: bool = true
-	var flat_found: bool = false
-	var flat_and_included: bool = false
-
-	var wide_range: float = SAMPLE_RANGE * 4.0
-	var x: float = -wide_range
-	while x <= wide_range:
-		var z: float = -wide_range
-		while z <= wide_range:
-			var normal_y: float = world.terrain_normal_at(x, z).y
-			if normal_y < MapView3D.VEGETATION_MAX_SLOPE_NORMAL_Y:
-				steep_found = true
-				if world.is_vegetation_site(x, z):
-					steep_all_excluded = false
-			else:
-				flat_found = true
-				if world.is_vegetation_site(x, z):
-					flat_and_included = true
-			z += SAMPLE_STEP
-		x += SAMPLE_STEP
-
-	_check(steep_found, "検査範囲に急斜面が含まれる（前提）", "急斜面が見つからない")
-	_check(steep_all_excluded, "急斜面は候補地から除外される", "急斜面なのに含まれる点がある")
-	_check(flat_found, "検査範囲に緩斜面も含まれる（前提）", "緩斜面が見つからない")
-	_check(flat_and_included, "緩斜面まで除外はしていない", "緩斜面が1件も候補地に残っていない")
 
 	world.free()
 

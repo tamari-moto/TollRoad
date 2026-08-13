@@ -155,22 +155,33 @@ const VEGETATION_ROCK_COLOR := TERRAIN_ROCK_COLOR
 ##
 ## ただし木を傾けると、実物の木のように常に上を向いて育つ見え方が失われ、
 ## 急斜面ほど幹ごと横倒しに近づく（ユーザー指定でこの見た目を避けたいと
-## 判明）。そのため向きは常に直立（0.0=無回転）に固定し、接地誤差は
-## VEGETATION_MAX_SLOPE_NORMAL_Y で急斜面そのものを候補地から外すことで
-## 抑える（無回転でも実測で最大 gap 14cm / embed 7.5cm に収まる。1.0のときの
-## 0.2%には及ばないが、幹が細く目立ちにくいため許容範囲とした）。
+## 判明）。そのため向きは常に直立（0.0=無回転）に固定した。
+##
+## 直立化した当初は急斜面ほど接地面のめり込み・浮きが避けられないため
+## 候補地から外していたが（VEGETATION_MAX_SLOPE_NORMAL_Y）、その後に
+## 見つかった本当の原因（height_at() と実際の描画メッシュの解像度ミスマッチ、
+## terrain_mesh_height_at() 参照）を直したことでめり込み自体が大幅に縮んだ
+## ため、この足切りは不要と判断して外した（ユーザー指定）。急斜面での
+## 幹の footprint めり込み（半径×tanθ、無回転なので理論上は斜度が急なほど
+## 増える）は残るが、terrain_mesh_height_at() 適用後の実測では許容範囲。
 const VEGETATION_SLOPE_ALIGNMENT: float = 0.0
-## 法線の y 成分がこれを下回る（≒斜度がこれより急な）候補地には草木を
-## 生やさない。cos(50°)≈0.643。VEGETATION_SLOPE_ALIGNMENT が0.0（常に直立）
-## なので、急斜面ほど接地面のめり込み・浮きが大きくなる。そう見えるほどの
-## 急斜面はそもそも植生の対象から外す（切り立った岩肌として読める）。
-const VEGETATION_MAX_SLOPE_NORMAL_Y: float = 0.643
+## 低木だけはこちら（VEGETATION_SLOPE_ALIGNMENT の代わり）を使う。丈が低く
+## 丸いクラスターなので、木のように直立させ続ける理由がない。むしろ斜面に
+## 沿わせたほうが茂みらしく自然に見える（ユーザー指定）。1.0（完全追従）に
+## すると接地誤差もほぼゼロになる（VEGETATION_SLOPE_ALIGNMENT のコメントの
+## 実測値参照）。
+const VEGETATION_BUSH_SLOPE_ALIGNMENT: float = 1.0
 ## 法線を数値微分で求める際のサンプリング幅（水平方向の微小距離）。
 const NORMAL_SAMPLE_EPSILON: float = 0.05
 ## 草木は terrain_mesh_height_at() で描画メッシュの補間値に合わせて設置するが、
 ## それでも対角線の分割（双線形近似と実際の三角形補間の差）ぶんのわずかな
 ## ズレは残る。道の LIFT と同じ理由で、保険として少しだけ浮かせる。
 const VEGETATION_LIFT: float = 0.03
+## 低木だけはこちら（VEGETATION_LIFT の代わり）を使う。VEGETATION_BUSH_
+## SLOPE_ALIGNMENT=1.0 で接地誤差はほぼゼロになるが、誤差ゼロだと逆に
+## 「地面に乗っているだけ」に見える。少しだけ埋めて、土から生えている
+## ように見せる（ユーザー指定）。
+const VEGETATION_BUSH_LIFT: float = -0.05
 
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
@@ -592,47 +603,72 @@ func _build_vegetation() -> void:
 				var biome: Dictionary = _nearest_biome(Vector2(px, pz))
 				var fertile: bool = FERTILE_SPECIALTIES.has(GameData.CITIES[biome["city_id"]]["specialty"])
 				var density: float = _noise.get_noise_2d(px * 0.6, pz * 0.6)
-				var instance_transform := vegetation_transform_at(px, pz)
+				# 個体ごとの見た目のばらつき（大きさ・向き）。ローカル空間側で
+				# かけるので、木・低木で異なる傾き（alignment）とは独立に効く。
+				var decoration: Transform3D = _vegetation_decoration_at(px, pz)
 
-				if fertile:
-					if density > VEGETATION_BUSH_THRESHOLD:
-						if density > VEGETATION_TREE_THRESHOLD:
-							tree_transforms.append(instance_transform)
-						else:
-							bush_transforms.append(instance_transform)
-				else:
-					# 不毛な土地は木・低木の閾値を大きく引き上げてまばらにし、
-					# 代わりに岩を同程度の頻度でばら撒く。
-					if density > VEGETATION_BUSH_THRESHOLD + VEGETATION_BARREN_PENALTY:
-						if density > VEGETATION_TREE_THRESHOLD + VEGETATION_BARREN_PENALTY:
-							tree_transforms.append(instance_transform)
-						else:
-							bush_transforms.append(instance_transform)
-					elif density > VEGETATION_ROCK_THRESHOLD:
-						rock_transforms.append(instance_transform)
+				# 不毛な土地は木・低木の閾値を大きく引き上げてまばらにし、
+				# 代わりに岩を同程度の頻度でばら撒く。
+				var penalty: float = 0.0 if fertile else VEGETATION_BARREN_PENALTY
+				var bush_threshold: float = VEGETATION_BUSH_THRESHOLD + penalty
+				var tree_threshold: float = VEGETATION_TREE_THRESHOLD + penalty
+
+				if density > bush_threshold:
+					if density > tree_threshold:
+						tree_transforms.append(vegetation_transform_at(px, pz) * decoration)
+					else:
+						bush_transforms.append(
+							vegetation_transform_at(px, pz, VEGETATION_BUSH_SLOPE_ALIGNMENT, VEGETATION_BUSH_LIFT)
+							* decoration)
+				elif not fertile and density > VEGETATION_ROCK_THRESHOLD:
+					rock_transforms.append(vegetation_transform_at(px, pz) * decoration)
 			z += VEGETATION_GRID_STEP
 		x += VEGETATION_GRID_STEP
 
-	_add_vegetation_multimesh(_make_tree_mesh(), tree_transforms, "Trees")
+	_add_vegetation_multimesh(_make_tree_trunk_mesh(), tree_transforms, "TreeTrunks")
+	_add_vegetation_multimesh(_make_tree_foliage_mesh(), tree_transforms, "TreeFoliage")
 	_add_vegetation_multimesh(_make_bush_mesh(), bush_transforms, "Bushes")
 	_add_vegetation_multimesh(_make_rock_mesh(), rock_transforms, "Rocks")
 
 
-## その地点の設置トランスフォームを、局所法線に VEGETATION_SLOPE_ALIGNMENT の
-## 割合だけ合わせて傾けて返す（現状は0.0固定で常に直立。詳細は
-## VEGETATION_SLOPE_ALIGNMENT のコメント参照）。傾ける仕組み自体は残して
-## あるので、将来また調整したくなった時にこの定数を変えるだけで戻せる。
+## その地点の草木1個体ぶんの見た目のばらつき（大きさ・Y軸回りの向き）を
+## ローカル空間のトランスフォームとして返す。全個体が同じ大きさ・同じ向きだと
+## 量産品のように見えるため、_noise を位置ジッターや密度判定とは別の
+## オフセット・周波数でサンプリングして決定的に散らす（真の乱数は使わない。
+## 都市構造物の city_id.hash() と同じ理由）。原点はゼロのままなので、
+## vegetation_transform_at() が決める設置位置には影響しない
+## （拡大縮小・回転はどちらも原点を動かさない）。
+##
+## 岩（PrismMesh、四角い断面）は向きの効果がとくに大きい。木・低木は円柱で
+## 見た目上ほぼ回転対称だが、コストが小さいため同じ処理で揃えている。
+func _vegetation_decoration_at(x: float, z: float) -> Transform3D:
+	var scale_noise: float = _noise.get_noise_2d(x * 2.0 + 137.0, z * 2.0 + 253.0)
+	var scale: float = lerpf(0.82, 1.22, (scale_noise + 1.0) * 0.5)
+	var rotation_noise: float = _noise.get_noise_2d(x * 3.0 + 401.0, z * 3.0 + 601.0)
+	var angle: float = (rotation_noise + 1.0) * 0.5 * TAU
+	var basis := Basis(Vector3.UP, angle).scaled(Vector3.ONE * scale)
+	return Transform3D(basis, Vector3.ZERO)
+
+
+## その地点の設置トランスフォームを、局所法線に alignment の割合だけ
+## 合わせて傾けて返す。省略時は VEGETATION_SLOPE_ALIGNMENT / VEGETATION_LIFT
+## （現状0.0固定で常に直立。木・岩はこちら。詳細はコメント参照）。低木だけは
+## VEGETATION_BUSH_SLOPE_ALIGNMENT / VEGETATION_BUSH_LIFT を明示的に渡す
+## （_build_vegetation() 参照。丈が低く丸いクラスターなので、木と違って
+## 傾けても倒れたようには見えない。LIFT を負にして少し埋め、土から生えて
+## いるように見せる）。
 ##
 ## 公開しているのは、pulse_scale_at() と同じ理由で --script の検査から
 ## 直接確かめられるようにするため（内部状態を持たない純関数）。
-func vegetation_transform_at(x: float, z: float) -> Transform3D:
+func vegetation_transform_at(x: float, z: float, alignment: float = VEGETATION_SLOPE_ALIGNMENT,
+		lift: float = VEGETATION_LIFT) -> Transform3D:
 	var normal: Vector3 = terrain_normal_at(x, z)
 	var axis: Vector3 = Vector3.UP.cross(normal)
 	var basis := Basis()
 	if axis.length() > 0.0001:
 		var tilt := Basis(axis.normalized(), Vector3.UP.angle_to(normal))
-		basis = Basis().slerp(tilt, VEGETATION_SLOPE_ALIGNMENT)
-	var y: float = terrain_mesh_height_at(x, z) + VEGETATION_LIFT
+		basis = Basis().slerp(tilt, alignment)
+	var y: float = terrain_mesh_height_at(x, z) + lift
 	return Transform3D(basis, Vector3(x, y, z))
 
 
@@ -711,12 +747,6 @@ func is_vegetation_site(x: float, z: float) -> bool:
 	if basin > VEGETATION_BASIN_LIMIT:
 		return false
 
-	# VEGETATION_SLOPE_ALIGNMENT が1.0（完全追従）なので、急斜面ほど木が
-	# その傾きのぶん大きく傾いて横倒しに見える。見た目が破綻するほどの
-	# 急斜面には最初から生やさない（切り立った岩肌として読める）。
-	if terrain_normal_at(x, z).y < VEGETATION_MAX_SLOPE_NORMAL_Y:
-		return false
-
 	for city_id: String in positions:
 		var city_pos: Vector3 = positions[city_id]
 		if point.distance_to(Vector2(city_pos.x, city_pos.z)) < VEGETATION_CITY_CLEARANCE:
@@ -747,37 +777,93 @@ func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
 	return point.distance_to(a + ab * t)
 
 
-## 木のメッシュ（幹＋葉）を1つだけ作る。MultiMeshInstance3D で複製する。
-func _make_tree_mesh() -> ArrayMesh:
+## 木の幹のメッシュ。幹と葉は別々の MultiMeshInstance3D にする
+## （1つの ArrayMesh に2サーフェス＋別マテリアルで持たせて MultiMesh化すると、
+## 幹（サーフェス0）が描画されず葉だけになる不具合が実機で発生したため。
+## bush/rock は元々単一サーフェスで問題が出ていなかった）。
+func _make_tree_trunk_mesh() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 
 	var trunk := CylinderMesh.new()
 	trunk.top_radius = 0.05
 	trunk.bottom_radius = 0.08
 	trunk.height = 0.5
-	trunk.radial_segments = 5
+	trunk.radial_segments = 6
 	_append_primitive_surface(mesh, trunk, Vector3(0.0, 0.25, 0.0), VEGETATION_TRUNK_COLOR)
+
+	return mesh
+
+
+## 木の葉のメッシュ。_make_tree_trunk_mesh() と同じ transforms で重ねて描く。
+func _make_tree_foliage_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
 
 	var foliage := CylinderMesh.new()
 	foliage.top_radius = 0.0
 	foliage.bottom_radius = 0.32
 	foliage.height = 0.65
-	foliage.radial_segments = 6
+	foliage.radial_segments = 8
 	_append_primitive_surface(mesh, foliage, Vector3(0.0, 0.75, 0.0), VEGETATION_FOLIAGE_COLOR)
 
 	return mesh
 
 
-## 低木のメッシュ（葉のみ、木より小さい）。
+## 低木のメッシュ（葉のみ、木より小さい）。単一の半球だと輪郭が単調で
+## 「丸いだけ」に見えたため、小さな球を4つ重ねたクラスターにして輪郭を
+## 凸凹させ、ふわふわした茂みらしさを出す。
+##
+## 4つとも同じ ArrayMesh の1サーフェスへ頂点をマージする
+## （_merge_primitive_into() 参照）。_append_primitive_surface() のように
+## 呼ぶたびに新しいサーフェスを足す形にすると、MultiMeshInstance3D で
+## 幹だけ描画されなかった不具合（複数サーフェス＋複数マテリアルが原因）を
+## 再現しかねないため、あえて単一サーフェス・単一マテリアルで組む。
 func _make_bush_mesh() -> ArrayMesh:
-	var mesh := ArrayMesh.new()
+	var accum := {
+		"vertices": PackedVector3Array(), "normals": PackedVector3Array(), "indices": PackedInt32Array(),
+	}
 
-	var bush := CylinderMesh.new()
-	bush.top_radius = 0.05
-	bush.bottom_radius = 0.22
-	bush.height = 0.3
-	bush.radial_segments = 6
-	_append_primitive_surface(mesh, bush, Vector3(0.0, 0.15, 0.0), VEGETATION_FOLIAGE_COLOR)
+	# SphereMesh は高さ方向 ±height/2 の範囲で生成される（半径基準ではない。
+	# height を 2*radius からずらすと扁平な球になる）ので、底を y=0 に
+	# 揃えるオフセットは height/2 を使うこと（radius だと球が沈む）。
+	var center_radius: float = 0.15
+	var center_height: float = center_radius * 1.7
+	var center := SphereMesh.new()
+	center.radius = center_radius
+	center.height = center_height
+	center.radial_segments = 7
+	center.rings = 4
+	_merge_primitive_into(accum, center, Vector3(0.0, center_height * 0.5, 0.0))
+
+	# 中心球の周りに少し小さい球を3つ、重なる位置に置く。真の乱数は使わず
+	# 固定配置にする（大きさ・向きのばらつきは _vegetation_decoration_at() が
+	# 個体ごとに別途かけるため、クラスター自体の形は全個体で共通でよい）。
+	var satellite_radius: float = 0.12
+	var satellite_height: float = satellite_radius * 1.7
+	var satellite_horizontal_offsets: Array[Vector2] = [
+		Vector2(0.10, 0.0),
+		Vector2(-0.06, 0.09),
+		Vector2(-0.06, -0.09),
+	]
+	for h: Vector2 in satellite_horizontal_offsets:
+		var satellite := SphereMesh.new()
+		satellite.radius = satellite_radius
+		satellite.height = satellite_height
+		satellite.radial_segments = 6
+		satellite.rings = 3
+		_merge_primitive_into(accum, satellite, Vector3(h.x, satellite_height * 0.5, h.y))
+
+	var mesh := ArrayMesh.new()
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = accum["vertices"]
+	arrays[Mesh.ARRAY_NORMAL] = accum["normals"]
+	arrays[Mesh.ARRAY_INDEX] = accum["indices"]
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+	var material := StandardMaterial3D.new()
+	material.albedo_color = VEGETATION_FOLIAGE_COLOR
+	material.roughness = 0.9
+	mesh.surface_set_material(0, material)
 
 	return mesh
 
@@ -808,6 +894,26 @@ func _append_primitive_surface(target: ArrayMesh, source: PrimitiveMesh, offset:
 	material.albedo_color = color
 	material.roughness = 0.9
 	target.surface_set_material(target.get_surface_count() - 1, material)
+
+
+## source の形状を position だけずらして accum（vertices/normals/indices の
+## Dictionary）へ頂点データとして追加する。_append_primitive_surface() と
+## 違い、新しいサーフェスは作らず既存の1サーフェスへ merge する。
+## indices は accum に既に入っている頂点数ぶんオフセットしないと、
+## 結合後の配列で別の形状の頂点を指してしまうことに注意。
+func _merge_primitive_into(accum: Dictionary, source: PrimitiveMesh, offset: Vector3) -> void:
+	var arrays: Array = source.get_mesh_arrays()
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+
+	var base_index: int = accum["vertices"].size()
+	for v: Vector3 in vertices:
+		accum["vertices"].append(v + offset)
+	for n: Vector3 in normals:
+		accum["normals"].append(n)
+	for idx: int in indices:
+		accum["indices"].append(idx + base_index)
 
 
 ## transforms ぶんの木/低木を MultiMeshInstance3D として複製する。
