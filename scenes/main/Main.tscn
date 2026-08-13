@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://b0m1n3econ0my"]
+[gd_scene load_steps=13 format=3 uid="uid://b0m1n3econ0my"]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://cvh0d8tollhud" path="res://scenes/ui/HUD.tscn" id="2"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://dr35ultd14l0g" path="res://scenes/ui/ResultDialog.tscn" id="9"]
 [ext_resource type="PackedScene" uid="uid://cbr13f1ngd14l" path="res://scenes/ui/BriefingDialog.tscn" id="10"]
 [ext_resource type="PackedScene" uid="uid://dexpl0r4ti0npnl" path="res://scenes/ui/ExplorationPanel.tscn" id="11"]
+[ext_resource type="PackedScene" uid="uid://ccompan1onscn01" path="res://scenes/ui/CompanionPanel.tscn" id="12"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -106,6 +107,13 @@ layout_mode = 2
 toggle_mode = true
 text = "探索"
 
+[node name="CompanionTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "ギルド仲間"
+
 [node name="SidePanel" type="PanelContainer" parent="UI/Root"]
 unique_name_in_owner = true
 visible = false
@@ -161,6 +169,11 @@ visible = false
 layout_mode = 2
 
 [node name="探索" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("11")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="CompanionPanel" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("12")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

@@ -85,11 +85,12 @@ func refresh() -> void:
 	var city_name: String = GameData.CITIES[_session.current_city]["name"]
 	var bonus_id: String = GameData.CITIES[_session.current_city]["bonus"]
 	if is_instance_valid(_title):
+		var fee: int = _session.craft_fee_per_unit()
 		if bonus_id != "":
 			_title.text = "製作所 — %s（%s の生産ボーナスあり・手数料 %d/個）" % [
-				city_name, GameData.ITEMS[bonus_id]["name"], GameData.CRAFT_FEE]
+				city_name, GameData.ITEMS[bonus_id]["name"], fee]
 		else:
-			_title.text = "製作所 — %s（手数料 %d/個）" % [city_name, GameData.CRAFT_FEE]
+			_title.text = "製作所 — %s（手数料 %d/個）" % [city_name, fee]
 
 	var over: bool = _session.is_over()
 	for item_id: String in _rows:

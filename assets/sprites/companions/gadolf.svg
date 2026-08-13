@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="ガドルフの肖像">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#382a22"/><stop offset="1" stop-color="#241812"/></linearGradient>
+    <radialGradient id="glow2" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#c4632a" stop-opacity=".55"/><stop offset="1" stop-color="#c4632a" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg2)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow2)"/>
+  <path d="M48 300 Q52 214 150 210 Q248 214 252 300 Z" fill="#5c3a24"/>
+  <path d="M84 300 Q150 236 216 300 Z" fill="#3f2718"/>
+  <circle cx="150" cy="256" r="4" fill="#c9a24b"/><circle cx="120" cy="278" r="3" fill="#c9a24b"/><circle cx="180" cy="278" r="3" fill="#c9a24b"/>
+  <rect x="132" y="188" width="36" height="30" rx="10" fill="#d59a6e"/>
+  <ellipse cx="150" cy="148" rx="60" ry="58" fill="#e0a878"/>
+  <path d="M92 140 Q96 92 150 90 Q204 92 208 140 Q188 118 150 116 Q112 118 92 140Z" fill="#7a4a30"/>
+  <path d="M96 156 Q100 210 150 244 Q200 210 204 156 Q190 200 150 202 Q110 200 96 156Z" fill="#8a5230"/>
+  <path d="M108 168 Q112 206 150 232 Q188 206 192 168 Q170 196 150 196 Q130 196 108 168Z" fill="#a06438"/>
+  <path d="M112 138 Q126 130 138 138" stroke="#5c3418" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M162 138 Q174 130 188 138" stroke="#5c3418" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <circle cx="126" cy="150" r="6" fill="#2e1c12"/><circle cx="174" cy="150" r="6" fill="#2e1c12"/>
+  <path d="M108 108 h84" stroke="#3f2718" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="126" cy="108" r="13" fill="none" stroke="#c9a24b" stroke-width="4"/><circle cx="126" cy="108" r="9" fill="#7fb0c9" opacity=".7"/>
+  <circle cx="174" cy="108" r="13" fill="none" stroke="#c9a24b" stroke-width="4"/><circle cx="174" cy="108" r="9" fill="#7fb0c9" opacity=".7"/>
+  <rect x="218" y="196" width="8" height="70" rx="4" fill="#6a4020" transform="rotate(18 222 231)"/>
+  <rect x="196" y="176" width="46" height="26" rx="4" fill="#8a8f96" transform="rotate(18 219 189)"/>
+</svg>

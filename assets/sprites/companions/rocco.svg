@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="ロッコの肖像">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3327"/><stop offset="1" stop-color="#1a2018"/></linearGradient>
+    <radialGradient id="glow4" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#5b8c5a" stop-opacity=".55"/><stop offset="1" stop-color="#5b8c5a" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg4)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow4)"/>
+  <rect x="196" y="150" width="70" height="70" rx="4" fill="#a06a38" transform="rotate(-8 231 185)"/>
+  <path d="M196 168 h70 M231 150 v70" stroke="#6a4420" stroke-width="3" transform="rotate(-8 231 185)"/>
+  <path d="M40 300 Q46 206 150 202 Q254 206 260 300 Z" fill="#5b8c5a"/>
+  <path d="M104 300 Q150 232 196 300 Z" fill="#e2d3b4"/>
+  <path d="M120 214 L196 176" stroke="#6a4420" stroke-width="10" stroke-linecap="round"/>
+  <rect x="130" y="182" width="40" height="30" rx="10" fill="#c98a58"/>
+  <ellipse cx="150" cy="150" rx="58" ry="56" fill="#d99a64"/>
+  <path d="M92 128 Q150 96 208 128 Q208 108 150 100 Q92 108 92 128Z" fill="#c24a3a"/>
+  <path d="M92 128 Q150 118 208 128" stroke="#8f3020" stroke-width="3" fill="none"/>
+  <path d="M198 126 l24 -6 -8 22 z" fill="#c24a3a"/>
+  <path d="M96 150 Q94 174 104 190 Q100 160 108 148Z" fill="#3a2414"/>
+  <path d="M204 150 Q206 174 196 190 Q200 160 192 148Z" fill="#3a2414"/>
+  <path d="M116 142 Q126 137 136 142" stroke="#3a2414" stroke-width="3.4" fill="none" stroke-linecap="round"/>
+  <path d="M164 142 Q174 137 184 142" stroke="#3a2414" stroke-width="3.4" fill="none" stroke-linecap="round"/>
+  <circle cx="126" cy="154" r="6.5" fill="#2e1c12"/><circle cx="128" cy="151" r="2.4" fill="#fff"/>
+  <circle cx="174" cy="154" r="6.5" fill="#2e1c12"/><circle cx="176" cy="151" r="2.4" fill="#fff"/>
+  <path d="M128 176 Q150 198 172 176 Q150 186 128 176Z" fill="#fff" stroke="#8a4a30" stroke-width="2.4" stroke-linejoin="round"/>
+</svg>

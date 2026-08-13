@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="セラフィーナの肖像">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f2838"/><stop offset="1" stop-color="#1d1826"/></linearGradient>
+    <radialGradient id="glow3" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#6b5b95" stop-opacity=".6"/><stop offset="1" stop-color="#6b5b95" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg3)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow3)"/>
+  <path d="M74 300 Q64 120 150 78 Q236 120 226 300 Q210 200 200 300 L100 300 Q90 200 74 300Z" fill="#e6c98c"/>
+  <path d="M64 300 Q70 226 150 222 Q230 226 236 300 Z" fill="#4a3f6b"/>
+  <path d="M118 232 Q150 254 182 232 L176 300 L124 300 Z" fill="#6b5b95"/>
+  <rect x="134" y="194" width="32" height="32" rx="12" fill="#f3d9c2"/>
+  <path d="M132 224 Q150 236 168 224" stroke="#c9a24b" stroke-width="2" fill="none"/><circle cx="150" cy="234" r="4" fill="#8f3a2c"/>
+  <ellipse cx="150" cy="158" rx="55" ry="58" fill="#f6ddc6"/>
+  <path d="M95 158 Q98 100 150 96 Q202 100 205 158 Q198 116 150 118 Q118 118 108 150 Q102 130 95 158Z" fill="#e7cf94"/>
+  <path d="M150 96 Q108 104 100 168 Q120 122 150 122Z" fill="#d8bd7e"/>
+  <path d="M116 146 Q126 142 136 146" stroke="#b79a5a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M164 146 Q174 142 184 146" stroke="#b79a5a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M116 158 Q124 152 132 158" stroke="#4a3f6b" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="124" cy="161" rx="6" ry="7" fill="#6b5b95"/>
+  <path d="M168 158 Q176 152 184 158" stroke="#4a3f6b" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="176" cy="161" rx="6" ry="7" fill="#6b5b95"/>
+  <path d="M140 182 Q150 188 160 182" stroke="#b45a5a" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="176" cy="161" r="15" fill="none" stroke="#c9a24b" stroke-width="2.5"/>
+  <path d="M188 168 L198 210" stroke="#c9a24b" stroke-width="1.5"/>
+  <path d="M40 250 L96 220 A56 56 0 0 1 100 262 Z" fill="#6b5b95" stroke="#c9a24b" stroke-width="1.5"/>
+  <path d="M68 235 L86 250 M78 228 L92 250 M58 243 L80 252" stroke="#e5c574" stroke-width="1"/>
+</svg>
