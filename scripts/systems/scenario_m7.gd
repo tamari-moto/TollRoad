@@ -273,16 +273,19 @@ func _test_main_scene_has_all_screens() -> void:
 	var main: Node = scene.instantiate()
 	for path: String in ["%HUD", "%MarketPanel", "%CargoPanel", "%Tabs",
 			"%大陸図", "%製作所", "%相場メモ", "%島と装備", "%探索",
+			"%CompanionPanel",
 			"%TabStrip", "%SidePanel",
 			"%MarketTabButton", "%CargoTabButton", "%WorkshopTabButton",
 			"%MemoTabButton", "%IslandTabButton", "%ExplorationTabButton",
+			"%CompanionTabButton",
 			"%LogScroll", "%RestButton", "%StatusLabel"]:
 		_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 
 	var tabs: TabContainer = main.get_node_or_null("%Tabs")
 	if tabs != null:
-		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備・探索の6つがタブ。
-		_check(tabs.get_tab_count() == 6, "タブが6つある", str(tabs.get_tab_count()))
+		# 大陸図はタブの外（常時表示）。市場・積荷・製作所・相場メモ・島と装備・
+		# 探索・ギルド仲間の7つがタブ。TabStrip のボタンと1対1で対応する。
+		_check(tabs.get_tab_count() == 7, "タブが7つある", str(tabs.get_tab_count()))
 		_check(not tabs.tabs_visible, "Tabsのタブバー自体は隠れている（TabStripが選択を持つ）",
 			"見えている")
 

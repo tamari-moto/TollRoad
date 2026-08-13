@@ -126,3 +126,6 @@ static func _clamp_ranges(session: GameSession) -> void:
 		session.island_level, 0, GameData.ISLAND_LEVELS.size() - 1)
 	if not GameData.MOUNTS.has(session.mount):
 		session.mount = GameData.INITIAL_MOUNT
+	if session.active_companion != GameData.COMPANION_NONE \
+			and not GameData.COMPANIONS.has(session.active_companion):
+		session.active_companion = GameData.COMPANION_NONE

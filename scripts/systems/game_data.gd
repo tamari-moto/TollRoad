@@ -163,6 +163,26 @@ const MOUNTS: Dictionary = {
 }
 const INITIAL_MOUNT: String = "donkey"
 
+# --- ギルド仲間（同行者） ---
+## 同時に同行できるのは1人のみ。加入・切り替えはいつでも無料（日数を消費しない）。
+## 効果は game_session.gd が companion id を直接見て適用する（汎用の効果ディスパッチは作らない）。
+const COMPANION_NONE: String = ""
+
+const COMPANIONS: Dictionary = {
+	"fina":     {"name": "フィナ",       "role": "猫獣人の交渉屋",   "desc": "買値が8%下がる。"},
+	"gadolf":   {"name": "ガドルフ",     "role": "ドワーフの老鍛冶", "desc": "製作の手数料が90→60に下がる。"},
+	"serafina": {"name": "セラフィーナ", "role": "元貴族の相場読み", "desc": "相場メモが古くならない。"},
+	"rocco":    {"name": "ロッコ",       "role": "頼れる運び屋",     "desc": "積載量+15、黒ゾーンの襲撃率-5pt。"},
+}
+
+## パネルに表示する順。
+const COMPANION_ORDER: Array[String] = ["fina", "gadolf", "serafina", "rocco"]
+
+const COMPANION_BUY_DISCOUNT: float = 0.08     # フィナ: 購入価格の割引率
+const COMPANION_CRAFT_FEE: int = 60            # ガドルフ: 手数料の置き換え値（通常は CRAFT_FEE=90）
+const COMPANION_CAPACITY_BONUS: int = 15       # ロッコ: 積載量の加算
+const COMPANION_RAID_REDUCTION: float = 0.05   # ロッコ: 襲撃率の減算
+
 # --- 相場メモ ---
 ## この日数以上経過した記録は「古い記録」として扱う。
 const MEMO_STALE_DAYS: int = 7
