@@ -112,9 +112,11 @@ func _test_panels_keep_layout() -> void:
 		_check(grid.columns == 6, "市場の列数は6のまま", str(grid.columns))
 		_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
 			"市場の要素数は従来どおり", str(grid.get_child_count()))
-		# 品目セルにアイコンが入っている。
+		# 品目セルにアイコンが入っている（バッジを名前の下へ折り返す構造に
+		# なったため、セル自体の型は問わず再帰的に探す）。
 		var first_cell: Node = grid.get_child(6)
-		_check(first_cell is HBoxContainer, "品目セルはアイコン付き", str(first_cell.get_class()))
+		var icons: Array[Node] = first_cell.find_children("*", "TextureRect", true, false)
+		_check(icons.size() > 0, "品目セルはアイコン付き", "アイコンが見つからない")
 		_despawn(market)
 
 	var equipment_count: int = 0

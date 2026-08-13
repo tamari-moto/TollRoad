@@ -26,7 +26,12 @@ const LOG_DISPLAY_LIMIT: int = 200
 ## 左へ広げる。Main.tscn の SidePanel の初期状態（閉）と合わせること。
 ## 市場画面を大きくタップしやすくするため拡大した。5画面共有のため
 ## 全タブに影響する（Main.tscn の Tabs.custom_minimum_size.x も合わせて拡げてある）。
-const SIDE_PANEL_WIDTH: float = 480.0
+##
+## 480 だと市場画面の「売る」列がスクロールしないと見えなかった
+## （実測: ItemGrid.get_combined_minimum_size().x = 530、そこへ
+## SidePanelMargin・MarketPanel自身のMargin・縦スクロールバーぶんの
+## 余白が要る）。
+const SIDE_PANEL_WIDTH: float = 600.0
 
 ## ノードは @onready ではなく _resolve_nodes() で引く。
 ## @onready はツリー投入の次フレームにエンジンが代入するため、--script の

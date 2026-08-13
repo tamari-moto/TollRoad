@@ -131,7 +131,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="Tabs" type="TabContainer" parent="UI/Root/SidePanel/SidePanelMargin"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(460, 0)
+custom_minimum_size = Vector2(580, 0)
 layout_mode = 2
 size_flags_vertical = 3
 tabs_visible = false
