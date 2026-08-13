@@ -7,10 +7,13 @@ extends RefCounted
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const PriceTable = preload("res://scripts/systems/price_table.gd")
+const MarketTable = preload("res://scripts/systems/market_table.gd")
 
 signal day_advanced(day: int)
 signal silver_changed(amount: int)
 signal cargo_changed()
+## 在庫または需要が動いた。市場画面が売買のたびに引き直すために使う。
+signal market_changed()
 signal warehouse_changed()
 signal island_upgraded(level: int)
 signal mount_changed(mount_id: String)
@@ -42,6 +45,10 @@ var memo: Dictionary = {}
 var log_entries: Array[String] = []
 
 var prices: PriceTable
+
+## 都市ごとの在庫と需要。買える上限・売れる上限を決め、価格にも効く。
+var market: MarketTable
+
 var _rng: RandomNumberGenerator
 
 
@@ -49,7 +56,9 @@ var _rng: RandomNumberGenerator
 func _init(rng_seed: int = 0) -> void:
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = rng_seed
-	prices = PriceTable.new(_rng)
+	# 価格が在庫を参照するので、市場を先に作る。
+	market = MarketTable.new()
+	prices = PriceTable.new(_rng, market)
 	_record_memo()
 
 
@@ -113,23 +122,48 @@ func rank() -> String:
 
 
 # --- 取引（日数を消費しない） ---
+#
+# 市場は無限ではない。買えるのは現在地の在庫まで、売れるのは需要までで、
+# どちらも毎日その都市の生産量・消費量ぶんだけ補充される（market_table.gd）。
+# 在庫が薄いと買値が上がり、需要が尽きかけていると売値が下がる。
 
-## この都市でのこの品目の購入単価（フィナが同行していれば割引後）。
+## 現在地でこの品目の在庫が何個あるか（＝買える上限の素）。
+func stock_count(item_id: String) -> int:
+	return market.stock_of(current_city, item_id)
+
+
+## 現在地でこの品目の需要が何個あるか（＝売れる上限）。
+func demand_count(item_id: String) -> int:
+	return market.demand_of(current_city, item_id)
+
+
+## この都市でのこの品目の購入単価（在庫の希少さを反映し、
+## フィナが同行していれば割引後）。
 func buy_price(item_id: String) -> int:
-	var price: int = prices.get_price(current_city, item_id)
+	var price: int = prices.buy_price(current_city, item_id)
 	if active_companion == "fina":
 		price = int(round(price * (1.0 - GameData.COMPANION_BUY_DISCOUNT)))
 	return price
 
 
-## 購入可能な最大数（シルバーと積載空きの小さい方）。
+## この都市でのこの品目の売却単価（需要の飽きを反映した後）。
+func sell_price(item_id: String) -> int:
+	return prices.sell_price(current_city, item_id)
+
+
+## 購入可能な最大数（シルバー・積載空き・在庫のうち最も小さいもの）。
 func max_buyable(item_id: String) -> int:
 	var price: int = buy_price(item_id)
 	if price <= 0:
 		return 0
 	var by_silver: int = silver / price
 	var by_space: int = free_capacity() / GameData.ITEMS[item_id]["weight"]
-	return mini(by_silver, by_space)
+	return mini(mini(by_silver, by_space), stock_count(item_id))
+
+
+## 売却可能な最大数（所持数と需要の小さい方）。
+func max_sellable(item_id: String) -> int:
+	return mini(cargo_count(item_id), demand_count(item_id))
 
 
 func buy(item_id: String, count: int) -> bool:
@@ -139,27 +173,34 @@ func buy(item_id: String, count: int) -> bool:
 	var total: int = price * count
 	silver -= total
 	cargo[item_id] = cargo_count(item_id) + count
-	_log("%s で %s を %d 個購入（単価 %d、計 %d）" % [
-		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"], count, price, total])
+	market.consume_stock(current_city, item_id, count)
+	_log("%s で %s を %d 個購入（単価 %d、計 %d、在庫の残り %d）" % [
+		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
+		count, price, total, stock_count(item_id)])
 	silver_changed.emit(silver)
 	cargo_changed.emit()
+	market_changed.emit()
 	return true
 
 
 ## 売却。税は売上総額にかかる（Q2）。手取り = 総額 - 税。
+## 買い取ってもらえるのはその都市の需要の範囲まで。
 func sell(item_id: String, count: int) -> bool:
-	if is_over() or count <= 0 or count > cargo_count(item_id):
+	if is_over() or count <= 0 or count > max_sellable(item_id):
 		return false
-	var price: int = prices.get_price(current_city, item_id)
+	var price: int = sell_price(item_id)
 	var gross: int = price * count
 	var tax: int = int(round(gross * GameData.SELL_TAX_RATE))
 	var net: int = gross - tax
 	silver += net
 	_reduce_cargo(item_id, count)
-	_log("%s で %s を %d 個売却（単価 %d、総額 %d、税 %d、手取り %d）" % [
-		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"], count, price, gross, tax, net])
+	market.consume_demand(current_city, item_id, count)
+	_log("%s で %s を %d 個売却（単価 %d、総額 %d、税 %d、手取り %d、需要の残り %d）" % [
+		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
+		count, price, gross, tax, net, demand_count(item_id)])
 	silver_changed.emit(silver)
 	cargo_changed.emit()
+	market_changed.emit()
 	return true
 
 
@@ -635,8 +676,12 @@ func _advance_day() -> void:
 		_log("60日が終了した。純資産 %d（%s）" % [net_worth(), rank()])
 		day_advanced.emit(day)
 		return
+	# 在庫と需要を先に補充してから相場を引く。買値・売値は在庫の薄さを
+	# 掛けて出すため、順序が逆だと表示と実際の取引がその日だけ食い違う。
+	market.advance_day()
 	prices.reroll()
 	_record_memo()
+	market_changed.emit()
 	_run_workers()
 	if _boost_days_left > 0:
 		_boost_days_left -= 1
@@ -709,6 +754,7 @@ func to_dict() -> Dictionary:
 		"memo": memo.duplicate(true),
 		"log_entries": log_entries.duplicate(),
 		"prices": prices.prices.duplicate(true),
+		"market": market.to_dict(),
 		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
 		"boost_days_left": _boost_days_left,
 	}
@@ -760,6 +806,14 @@ func from_dict(data: Dictionary) -> void:
 			_rng.seed = str(rng_data["seed"]).to_int()
 		if rng_data.has("state"):
 			_rng.state = str(rng_data["state"]).to_int()
+
+	# 在庫と需要を相場より先に戻す。買値・売値が在庫を参照するため。
+	# 記録が無ければ満杯から始める（在庫を入れる前の古いセーブがこれに当たる。
+	# 品切れ状態を勝手に作るより、補充済みとして読む方が安全側）。
+	if data.has("market"):
+		market.from_dict(data["market"])
+	else:
+		market.reset()
 
 	if data.has("prices"):
 		prices.prices = _restore_prices(data["prices"])

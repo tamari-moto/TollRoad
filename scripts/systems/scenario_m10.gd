@@ -9,6 +9,7 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
+const MarketPanel = preload("res://scripts/ui/market_panel.gd")
 
 
 
@@ -109,12 +110,15 @@ func _test_panels_keep_layout() -> void:
 		var session: GameSession = GameSession.new(10001)
 		market.bind(session)
 		var grid: GridContainer = UiUtil.find_node(market, "ItemGrid")
-		_check(grid.columns == 6, "市場の列数は6のまま", str(grid.columns))
-		_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
-			"市場の要素数は従来どおり", str(grid.get_child_count()))
+		# 列数は market_panel.gd の GRID_COLUMNS から引く（直書きしない）。
+		var columns: int = MarketPanel.GRID_COLUMNS
+		_check(grid.columns == columns, "市場の列数が GRID_COLUMNS と一致する", str(grid.columns))
+		_check(grid.get_child_count() == columns + GameData.ITEMS.size() * columns,
+			"市場の要素数はヘッダ＋全品目ぶん", str(grid.get_child_count()))
 		# 品目セルにアイコンが入っている（バッジを名前の下へ折り返す構造に
 		# なったため、セル自体の型は問わず再帰的に探す）。
-		var first_cell: Node = grid.get_child(6)
+		# ヘッダ1行を飛ばした先頭が最初の品目セル。
+		var first_cell: Node = grid.get_child(columns)
 		var icons: Array[Node] = first_cell.find_children("*", "TextureRect", true, false)
 		_check(icons.size() > 0, "品目セルはアイコン付き", "アイコンが見つからない")
 		_despawn(market)

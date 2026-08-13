@@ -1,8 +1,14 @@
 extends PanelContainer
 ## 市場画面。現在地の全品目について相場と売買を行う。
 ##
-## 各行は「品目名 / 価格 / 基準比 / 所持数 / 買うボタン / 売るボタン」で構成する。
+## 各行は「品目名 / 価格 / 基準比 / 在庫と需要 / 所持数 / 買うボタン / 売るボタン」
+## で構成する。
 ## 数量は指定しない。ボタンを押すたびに1個だけ取引する（連打で数量を調整する）。
+##
+## 価格の欄は建値ではなく**実際に取引される単価**を出す（買値／売値）。
+## 在庫が薄いと買値が上がり、需要が尽きかけていると売値が下がるため、
+## 建値だけ見せると押した結果と食い違う。基準比は従来どおり建値で出す
+## （都市間の比較に使う指標なので、その場の在庫で動かさない）。
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
@@ -21,11 +27,21 @@ const BADGE_BEST_SELL: String = "◎高値"
 
 ## 画面を大きく・タップしやすくするためのサイズ。既定のGodotテーマは
 ## 16px相当で、プロジェクト全体を上書きするテーマは無いため、ここで
-## 品目行だけ個別に拡大する。
-const ROW_FONT_SIZE: int = 20
-const HEADER_FONT_SIZE: int = 15
-const ROW_ICON_SIZE: int = 28
-const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(64, 44)
+## 品目行だけ個別に拡大する。列が7つあり右端のボタンまで収める必要があるため、
+## サイドパネル幅（580px）に収まる範囲に抑える。
+const ROW_FONT_SIZE: int = 16
+const HEADER_FONT_SIZE: int = 13
+const ROW_ICON_SIZE: int = 20
+const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(52, 40)
+
+## 価格の欄は買値と売値を並べるため、他より小さくする。
+const PRICE_FONT_SIZE: int = 14
+## 在庫と需要の欄は2つの数字を上下に並べるため、さらに小さくする。
+const SUPPLY_FONT_SIZE: int = 12
+
+## 品目 / 価格 / 基準比 / 在庫と需要 / 所持 / 買う / 売る。
+## MarketPanel.tscn の columns と必ず一致させること（ずれると行が崩れる）。
+const GRID_COLUMNS: int = 7
 
 ## 売買が成立した時に、その行の位置とともに知らせる。
 ## 演出はパネルをまたぐため、飛ばす先を知っている main.gd に任せる。
@@ -46,6 +62,7 @@ func bind(session: GameSession) -> void:
 		# silver_changed は引数を1つ渡すため、専用のハンドラで受ける。
 		"silver_changed": _on_silver_changed,
 		"cargo_changed": _on_state_changed,
+		"market_changed": _on_state_changed,
 		"day_advanced": _on_day_advanced,
 	})
 	_session = session
@@ -65,8 +82,8 @@ func _build() -> void:
 		_fx = FxLayer.new()
 		add_child(_fx)
 
-	# ヘッダ行。
-	for heading: String in ["品目", "価格", "基準比", "所持", "", ""]:
+	# ヘッダ行。列を増やしたら GRID_COLUMNS と .tscn の columns も揃えること。
+	for heading: String in ["品目", "価格", "基準比", "在庫/需要", "所持", "", ""]:
 		var label := Label.new()
 		label.text = heading
 		label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
@@ -115,13 +132,15 @@ func _build_row(item_id: String) -> Dictionary:
 	_grid.add_child(name_cell)
 
 	# 価格の数字とバーを縦に重ねる。列は増やさない。
+	# 買値と売値の2つを並べるため、他の行より一段小さい字で置く
+	# （ROW_FONT_SIZE のままだと列が広がり、右端のボタンがはみ出す）。
 	var price_cell := VBoxContainer.new()
 	price_cell.add_theme_constant_override("separation", 2)
-	price_cell.custom_minimum_size = Vector2(96, 0)
+	price_cell.custom_minimum_size = Vector2(84, 0)
 
 	var price_label := Label.new()
 	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	price_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
+	price_label.add_theme_font_size_override("font_size", PRICE_FONT_SIZE)
 	price_cell.add_child(price_label)
 
 	var bar: PriceBar = PriceBar.new()
@@ -133,6 +152,22 @@ func _build_row(item_id: String) -> Dictionary:
 	ratio_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ratio_label.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	_grid.add_child(ratio_label)
+
+	# 在庫（買える上限）と需要（売れる上限）を上下に並べる。列は増やさない。
+	var supply_cell := VBoxContainer.new()
+	supply_cell.add_theme_constant_override("separation", 0)
+	supply_cell.custom_minimum_size = Vector2(48, 0)
+
+	var stock_label := Label.new()
+	stock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stock_label.add_theme_font_size_override("font_size", SUPPLY_FONT_SIZE)
+	supply_cell.add_child(stock_label)
+
+	var demand_label := Label.new()
+	demand_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	demand_label.add_theme_font_size_override("font_size", SUPPLY_FONT_SIZE)
+	supply_cell.add_child(demand_label)
+	_grid.add_child(supply_cell)
 
 	var held_label := Label.new()
 	held_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -159,6 +194,8 @@ func _build_row(item_id: String) -> Dictionary:
 		"badge": badge,
 		"accent": accent,
 		"ratio": ratio_label,
+		"stock": stock_label,
+		"demand": demand_label,
 		"held": held_label,
 		"buy": buy_button,
 		"sell": sell_button,
@@ -197,13 +234,19 @@ func refresh() -> void:
 		var row: Dictionary = _rows[item_id]
 		if not is_instance_valid(row["price"]):
 			continue
-		var price: int = _session.prices.get_price(_session.current_city, item_id)
 		var ratio: float = ratios[item_id]
 		var held: int = held_counts[item_id]
 
-		row["price"].text = UiUtil.format_number(price)
+		# 建値ではなく実際の単価を出す。買値と売値は在庫・需要で開くため、
+		# 「買 / 売」の2段で並べて押す前に差が見えるようにする。
+		row["price"].text = "%s / %s" % [
+			UiUtil.format_number(_session.buy_price(item_id)),
+			UiUtil.format_number(_session.sell_price(item_id)),
+		]
 		if is_instance_valid(row["bar"]):
 			row["bar"].ratio = ratio
+
+		_refresh_supply(row, item_id)
 
 		# 色に頼らず向きが分かるよう記号を添える。
 		row["ratio"].text = "%s%d%%" % [arrow_for(ratio), int(round(ratio * 100.0))]
@@ -221,6 +264,50 @@ func refresh() -> void:
 
 		row["buy"].disabled = over or _buy_amount(item_id) <= 0
 		row["sell"].disabled = over or _sell_amount(item_id) <= 0
+		# 押せない理由は在庫切れ・需要切れと資金不足で違う。ボタンが灰色に
+		# なるだけでは区別できないので、ツールチップで理由を出す。
+		row["buy"].tooltip_text = _buy_blocked_reason(item_id)
+		row["sell"].tooltip_text = _sell_blocked_reason(item_id)
+
+
+## 在庫と需要の欄。残りが少ないほど警戒色にして、品切れが近いことを示す。
+func _refresh_supply(row: Dictionary, item_id: String) -> void:
+	var stock_label: Label = row.get("stock") as Label
+	var demand_label: Label = row.get("demand") as Label
+	if is_instance_valid(stock_label):
+		var stock: int = _session.stock_count(item_id)
+		stock_label.text = "在%d" % stock
+		stock_label.add_theme_color_override("font_color",
+			UiTheme.supply_color(_session.market.stock_ratio(_session.current_city, item_id)))
+	if is_instance_valid(demand_label):
+		var demand: int = _session.demand_count(item_id)
+		demand_label.text = "需%d" % demand
+		demand_label.add_theme_color_override("font_color",
+			UiTheme.supply_color(_session.market.demand_ratio(_session.current_city, item_id)))
+
+
+## 買えない理由。買える場合は空文字（ツールチップを出さない）。
+func _buy_blocked_reason(item_id: String) -> String:
+	if _session.is_over():
+		return ""
+	if _buy_amount(item_id) > 0:
+		return ""
+	if _session.stock_count(item_id) <= 0:
+		return "この都市はこの品目を切らしている。日が変わると入荷する。"
+	if _session.silver < _session.buy_price(item_id):
+		return "シルバーが足りない。"
+	return "積載に空きがない。"
+
+
+## 売れない理由。売れる場合は空文字。
+func _sell_blocked_reason(item_id: String) -> String:
+	if _session.is_over():
+		return ""
+	if _sell_amount(item_id) > 0:
+		return ""
+	if _session.cargo_count(item_id) <= 0:
+		return "積荷に無い。"
+	return "この都市はこれ以上買い取れない。日が変わると需要が戻る。"
 
 
 ## 1行おきに薄い帯を敷き、横方向を追いやすくする。
@@ -229,7 +316,8 @@ func _apply_row_stripes() -> void:
 	if _grid == null:
 		return
 	# 色そのものが情報を持つセル（比率の色帯）には重ねない。
-	var striped_keys: Array[String] = ["price", "bar", "badge", "ratio", "held"]
+	var striped_keys: Array[String] = [
+		"price", "bar", "badge", "ratio", "stock", "demand", "held"]
 	var index: int = 0
 	for item_id: String in _rows:
 		if index % 2 == 1:
@@ -291,6 +379,16 @@ func price_text_for(item_id: String) -> String:
 ## その品目に表示中の所持数の文言。無ければ空文字。
 func held_text_for(item_id: String) -> String:
 	return _row_label_text(item_id, "held")
+
+
+## その品目に表示中の在庫の文言（"在12" の形）。無ければ空文字。
+func stock_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "stock")
+
+
+## その品目に表示中の需要の文言（"需8" の形）。無ければ空文字。
+func demand_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "demand")
 
 
 ## その品目の買うボタン。無ければ null。
@@ -383,9 +481,10 @@ func _buy_amount(item_id: String) -> int:
 	return mini(1, _session.max_buyable(item_id))
 
 
-## 売るボタンを押すと常に1個だけ売却する（所持数が0ならボタンは無効）。
+## 売るボタンを押すと常に1個だけ売却する
+## （所持数が0か、都市の需要が尽きていればボタンは無効）。
 func _sell_amount(item_id: String) -> int:
-	return mini(1, _session.cargo_count(item_id))
+	return mini(1, _session.max_sellable(item_id))
 
 
 ## 所持数の変化を短くカウントアップ／ダウンさせ、増減を色で示す。

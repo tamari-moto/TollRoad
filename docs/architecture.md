@@ -8,13 +8,16 @@ TollRoad の構造の説明。**なぜそうなっているか**を残すのが�
 
 ## 全体像
 
-ロジック層は4ファイル 682行。依存は一方向で、循環がない。
+ロジック層は5ファイル 1606行。依存は一方向で、循環がない。
 
 ```
 game_data.gd — 定数のみ。何にも依存しない葉
     ↑ preload
+    ├── market_table.gd — 全都市×全品目の在庫と需要
+    ↑ preload             生産量は CITIES の specialty/bonus から導く
     ├── price_table.gd — 全都市×全品目の価格表
     ↑ preload             _rng は GameSession から参照で受け取る
+    │                     在庫の掛け率を MarketTable から借りる
     │                     ↑ preload
     └── game_session.gd ─┘
             │  1プレイ（60日）の全状態と全アクション。シグナル7つ
@@ -36,14 +39,20 @@ game_data.gd — 定数のみ。何にも依存しない葉
 | ファイル | 持つもの | 持たないもの |
 |---|---|---|
 | `game_data.gd` | 全ての静的定義（品目9・都市6・ランク・島・騎乗・各種係数）と static ヘルパ4つ | 状態。インスタンス化されない |
-| `price_table.gd` | `prices[city][item]` と `reroll()` | 乱数源（`_rng` は借り物）。日付の概念 |
+| `market_table.gd` | `stock[city][item]` / `demand[city][item]`、日次の補充、在庫の薄さに応じた**価格の掛け率** | 乱数（生産量は決定的）。価格そのもの（掛けるのは PriceTable の仕事） |
+| `price_table.gd` | `prices[city][item]`（その日の建値）と `reroll()`、在庫を反映した `buy_price()` / `sell_price()` | 乱数源（`_rng` は借り物）。日付の概念。在庫の増減 |
 | `game_session.gd` | 可変状態（下記）とプレイヤーの全行動。ルールの中枢。`to_dict()` / `from_dict()` | UI への参照。autoload への依存。**保存の形式**（JSON かどうかを知らない） |
 | `save_manager.gd` | `user://` への読み書き、版の判定、範囲の丸め | 状態の意味（写し取りは GameSession の担当） |
 | `game_state.gd` | `session`、`session_started`、保存と再開の入口 | **ゲームのルール**（意図的に空。理由は後述） |
 
 `GameSession` が持つ状態は `day` / `silver` / `current_city` / `mount` /
-`island_level` / `cargo` / `warehouse` / `memo` / `log_entries` / `prices` / `_rng`。
+`island_level` / `cargo` / `warehouse` / `memo` / `log_entries` / `prices` /
+`market` / `_rng`。
 すべて int・String・Dictionary・Array[String] で、参照型の絡みがない。
+
+価格を作る場所は `PriceTable` の1箇所に閉じてある。`MarketTable` は在庫の
+薄さを**掛け率として返すだけ**で、価格そのものには触らない。両方が価格を
+書き換えると、どちらが効いた結果なのか追えなくなるため。
 
 行動系の API は全て `bool` を返し、事前条件を満たさなければ `false` で何もしない。
 `buy()` に対する `max_buyable()` のように、**上限を問い合わせる関数が対で用意されている**。
