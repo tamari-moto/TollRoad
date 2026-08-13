@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dlhvko228aunq"
-path="res://.godot/imported/thetford.svg-d6d63071fa5b1b61420ca8d100188608.ctex"
+uid="uid://3lrhcvyuy7at"
+path="res://.godot/imported/ancient_relic.svg-5dcdc48adc66800784fd7e7588e6ce61.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/thetford.svg"
-dest_files=["res://.godot/imported/thetford.svg-d6d63071fa5b1b61420ca8d100188608.ctex"]
+source_file="res://assets/sprites/items/ancient_relic.svg"
+dest_files=["res://.godot/imported/ancient_relic.svg-5dcdc48adc66800784fd7e7588e6ce61.ctex"]
 
 [params]
 

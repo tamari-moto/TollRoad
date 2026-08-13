@@ -81,13 +81,14 @@ preload されるだけで一度も生成されない状態が続いていたた
 ### RNG は単一インスタンスを共有する
 
 `GameSession._init()` が `RandomNumberGenerator` を1つ作り、
-`PriceTable.new(_rng)` へ**参照で**渡す。乱数を消費するのは3箇所:
+`PriceTable.new(_rng)` へ**参照で**渡す。乱数を消費するのは4箇所:
 
 | 箇所 | 消費 |
 |---|---|
-| `price_table.gd` の価格ゆらぎ | 6都市 × 9品目 = 54回／日 |
+| `price_table.gd` の価格ゆらぎ | 全都市 × 全品目（`GameData.CITIES.size() * GameData.ITEMS.size()` 回）／日 |
 | `game_session.gd` の襲撃判定 | 黒ゾーン移動1回につき1 |
 | `game_session.gd` の労働者の抽選 | 労働者数 × 2 回／日 |
+| `game_session.gd` の探索判定 | 成功判定に1、成功時はさらに報酬の抽選で最大3 |
 
 **消費の順序は `_advance_day()` が固定している**（価格リロール → メモ記録 → 労働者）。
 この順序を変えると、同じシードでも過去の記録と別の展開になる。

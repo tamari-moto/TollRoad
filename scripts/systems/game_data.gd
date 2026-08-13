@@ -6,46 +6,94 @@ extends RefCounted
 # --- ゲーム進行 ---
 const TOTAL_DAYS: int = 60
 const INITIAL_SILVER: int = 30000
-const INITIAL_CITY: String = "martlock"
+const INITIAL_CITY: String = "ironhollow"
 
 # --- アイテム ---
-## 種別。装備は資源から製作される。
-enum ItemKind { RESOURCE, EQUIPMENT }
+## 種別。装備は資源から製作される。RARE は探索でのみ手に入り、製作や
+## 労働者の抽選（resource_ids()）の対象外。
+enum ItemKind { RESOURCE, EQUIPMENT, RARE }
 
 const RESOURCE_WEIGHT: int = 1
 const EQUIPMENT_WEIGHT: int = 3
 
 ## 全品目の基準価格と重量。material は装備のみ（資源3個で1個製作）。
 const ITEMS: Dictionary = {
-	"ore":     {"name": "鉱石",   "kind": ItemKind.RESOURCE,  "base_price": 210,  "weight": RESOURCE_WEIGHT},
-	"wood":    {"name": "木材",   "kind": ItemKind.RESOURCE,  "base_price": 205,  "weight": RESOURCE_WEIGHT},
-	"fiber":   {"name": "繊維",   "kind": ItemKind.RESOURCE,  "base_price": 200,  "weight": RESOURCE_WEIGHT},
-	"hide":    {"name": "皮",     "kind": ItemKind.RESOURCE,  "base_price": 215,  "weight": RESOURCE_WEIGHT},
-	"stone":   {"name": "石材",   "kind": ItemKind.RESOURCE,  "base_price": 160,  "weight": RESOURCE_WEIGHT},
-	"sword":   {"name": "剣",     "kind": ItemKind.EQUIPMENT, "base_price": 1500, "weight": EQUIPMENT_WEIGHT, "material": "ore"},
-	"bow":     {"name": "弓",     "kind": ItemKind.EQUIPMENT, "base_price": 1460, "weight": EQUIPMENT_WEIGHT, "material": "wood"},
-	"robe":    {"name": "ローブ", "kind": ItemKind.EQUIPMENT, "base_price": 1420, "weight": EQUIPMENT_WEIGHT, "material": "fiber"},
-	"armor":   {"name": "革鎧",   "kind": ItemKind.EQUIPMENT, "base_price": 1480, "weight": EQUIPMENT_WEIGHT, "material": "hide"},
+	"ore":           {"name": "鉱石",     "kind": ItemKind.RESOURCE,  "base_price": 210,  "weight": RESOURCE_WEIGHT},
+	"wood":          {"name": "木材",     "kind": ItemKind.RESOURCE,  "base_price": 205,  "weight": RESOURCE_WEIGHT},
+	"fiber":         {"name": "繊維",     "kind": ItemKind.RESOURCE,  "base_price": 200,  "weight": RESOURCE_WEIGHT},
+	"hide":          {"name": "皮",       "kind": ItemKind.RESOURCE,  "base_price": 215,  "weight": RESOURCE_WEIGHT},
+	"stone":         {"name": "石材",     "kind": ItemKind.RESOURCE,  "base_price": 160,  "weight": RESOURCE_WEIGHT},
+	"sword":         {"name": "剣",       "kind": ItemKind.EQUIPMENT, "base_price": 1500, "weight": EQUIPMENT_WEIGHT, "material": "ore"},
+	"bow":           {"name": "弓",       "kind": ItemKind.EQUIPMENT, "base_price": 1460, "weight": EQUIPMENT_WEIGHT, "material": "wood"},
+	"robe":          {"name": "ローブ",   "kind": ItemKind.EQUIPMENT, "base_price": 1420, "weight": EQUIPMENT_WEIGHT, "material": "fiber"},
+	"armor":         {"name": "革鎧",     "kind": ItemKind.EQUIPMENT, "base_price": 1480, "weight": EQUIPMENT_WEIGHT, "material": "hide"},
+	"sunstone":      {"name": "陽光石",   "kind": ItemKind.RARE,      "base_price": 900,  "weight": RESOURCE_WEIGHT},
+	"ancient_relic": {"name": "古代兵装", "kind": ItemKind.RARE,      "base_price": 4000, "weight": EQUIPMENT_WEIGHT},
+	"coal":          {"name": "石炭",     "kind": ItemKind.RESOURCE,  "base_price": 180,  "weight": RESOURCE_WEIGHT},
+	"wool":          {"name": "羊毛",     "kind": ItemKind.RESOURCE,  "base_price": 195,  "weight": RESOURCE_WEIGHT},
+	"quartz":        {"name": "水晶",     "kind": ItemKind.RESOURCE,  "base_price": 260,  "weight": RESOURCE_WEIGHT},
+	"clay":          {"name": "粘土",     "kind": ItemKind.RESOURCE,  "base_price": 150,  "weight": RESOURCE_WEIGHT},
+	"shield":        {"name": "盾",       "kind": ItemKind.EQUIPMENT, "base_price": 1350, "weight": EQUIPMENT_WEIGHT, "material": "stone"},
+	"warhammer":     {"name": "戦鎚",     "kind": ItemKind.EQUIPMENT, "base_price": 1520, "weight": EQUIPMENT_WEIGHT, "material": "coal"},
+	"cloak":         {"name": "外套",     "kind": ItemKind.EQUIPMENT, "base_price": 1440, "weight": EQUIPMENT_WEIGHT, "material": "wool"},
+	"staff":         {"name": "杖",       "kind": ItemKind.EQUIPMENT, "base_price": 1750, "weight": EQUIPMENT_WEIGHT, "material": "quartz"},
 }
 
 ## 装備1個あたりの材料消費数。
 const CRAFT_MATERIAL_COUNT: int = 3
 
 # --- 都市 ---
-## ring は環状位置。カーレオンは中央（黒ゾーン内）なので ring = -1。
 ## specialty はその都市で安い資源、bonus はその都市で安い（かつ製作還元がある）装備。
+## explore_flavor は探索の演出文（討伐/遺跡探索のどちらの体裁かを都市ごとに変える）。
+## 接続関係（どの都市と王道で直接つながるか）は ROYAL_ROAD_EDGES を、
+## レイヴンスパイアと黒ゾーンで直結するか（黒ゾーンのゲート）は
+## BLACK_ZONE_GATES を参照。
 const CITIES: Dictionary = {
-	"fort_sterling": {"name": "フォートスターリング", "ring": 0,  "specialty": "wood",  "bonus": "bow"},
-	"lymhurst":      {"name": "リムハースト",         "ring": 1,  "specialty": "fiber", "bonus": "robe"},
-	"bridgewatch":   {"name": "ブリッジウォッチ",     "ring": 2,  "specialty": "stone", "bonus": "armor"},
-	"martlock":      {"name": "マートロック",         "ring": 3,  "specialty": "ore",   "bonus": "sword"},
-	"thetford":      {"name": "セットフォード",       "ring": 4,  "specialty": "hide",  "bonus": "armor"},
-	"caerleon":      {"name": "カーレオン",           "ring": -1, "specialty": "",      "bonus": ""},
+	"oakhaven":   {"name": "オークヘイヴン",   "specialty": "wood",  "bonus": "bow",
+		"explore_flavor": "森に潜む狼の群れの討伐"},
+	"wrenfield":  {"name": "レンフィールド",   "specialty": "fiber", "bonus": "robe",
+		"explore_flavor": "湿地に眠る遺跡の探索"},
+	"stonegate":  {"name": "ストーンゲート",   "specialty": "stone", "bonus": "shield",
+		"explore_flavor": "採石場跡に巣食う魔物の討伐"},
+	"ironhollow": {"name": "アイアンホロウ",   "specialty": "ore",   "bonus": "sword",
+		"explore_flavor": "山中の坑道遺跡の探索"},
+	"foxmere":    {"name": "フォックスミア",   "specialty": "hide",  "bonus": "armor",
+		"explore_flavor": "湿原に現れる怪物の討伐"},
+	"cragmoor":   {"name": "クラグムーア",     "specialty": "coal",  "bonus": "warhammer",
+		"explore_flavor": "廃坑に眠る発破遺構の探索"},
+	"fenwick":    {"name": "フェンウィック",   "specialty": "wool",  "bonus": "cloak",
+		"explore_flavor": "湿地牧草地を荒らす獣の討伐"},
+	"silvermere": {"name": "シルバーミア",     "specialty": "quartz", "bonus": "staff",
+		"explore_flavor": "湖底に沈む魔導遺跡の探索"},
+	"wyndham":    {"name": "ウィンダム",       "specialty": "clay",  "bonus": "",
+		"explore_flavor": "窯場を脅かす盗賊団の討伐"},
+	"ravenspire": {"name": "レイヴンスパイア", "specialty": "",      "bonus": "",
+		"explore_flavor": "黒ゾーン最奥の遺跡の探索"},
 }
 
-const CAERLEON: String = "caerleon"
-## 環状に並ぶ王国都市の数。隣接判定に使う。
-const RING_SIZE: int = 5
+const CAERLEON: String = "ravenspire"
+
+## 王国都市どうしを直接つなぐ王道（黒ゾーンを含まない）。片方向だけ書けば
+## 双方向とみなす（is_adjacent() が両順序で照合する）。次数はわざと不揃いに
+## してある（oakhaven/wyndham は行き止まり、ironhollow は最大の交差点）。
+const ROYAL_ROAD_EDGES: Array = [
+	["oakhaven", "stonegate"],
+	["stonegate", "ironhollow"],
+	["ironhollow", "foxmere"],
+	["ironhollow", "wrenfield"],
+	["ironhollow", "cragmoor"],
+	["foxmere", "cragmoor"],
+	["foxmere", "silvermere"],
+	["wrenfield", "fenwick"],
+	["fenwick", "silvermere"],
+	["silvermere", "wyndham"],
+]
+
+## レイヴンスパイアと黒ゾーンで直結する（＝1区間で到達できる）王国都市。
+## それ以外の王国都市は、王道でこのいずれかへ着いてから黒ゾーンに入る
+## 必要がある（経路探索が自動で合成する。game_session.gd 参照）。
+## 王道での中心寄りの交差点3つを選んである。
+const BLACK_ZONE_GATES: Array[String] = ["ironhollow", "foxmere", "silvermere"]
 
 # --- 価格 ---
 const JITTER_MIN: float = 0.86
@@ -63,8 +111,6 @@ const SELL_TAX_RATE: float = 0.05
 # --- 移動 ---
 const MOVE_ADJACENT_DAYS: int = 1
 const MOVE_ADJACENT_COST: int = 250
-const MOVE_FAR_DAYS: int = 2
-const MOVE_FAR_COST: int = 450
 const MOVE_BLACK_ZONE_DAYS: int = 1
 const MOVE_BLACK_ZONE_COST: int = 400
 const RAID_CHANCE: float = 0.22
@@ -72,6 +118,33 @@ const RAID_CHANCE: float = 0.22
 # --- 製作 ---
 const CRAFT_FEE: int = 90
 const CRAFT_REFUND_RATE: float = 0.30
+
+# --- 探索 ---
+## 戦闘装備として兼用する既存の交易用装備。積荷にあるほど成功率が上がる。
+const EXPLORE_COMBAT_ITEMS: Array[String] = ["sword", "bow", "robe", "armor", "shield", "warhammer", "cloak", "staff"]
+
+const EXPLORE_BASE_CHANCE: float = 0.35
+## 装備1個あたりのボーナス。同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
+## （種類を跨いで持つ方が伸びる設計）。
+const EXPLORE_EQUIP_BONUS_PER_UNIT: float = 0.03
+const EXPLORE_EQUIP_UNIT_CAP: int = 3
+const EXPLORE_EQUIP_BONUS_CAP: float = 0.30
+const EXPLORE_MAX_CHANCE: float = 0.85
+## レイヴンスパイアは黒ゾーンの並びで成功率が下がる代わりに報酬が大きい。
+const EXPLORE_CAERLEON_PENALTY: float = 0.15
+
+const EXPLORE_SILVER_MIN: int = 1600
+const EXPLORE_SILVER_MAX: int = 4000
+const EXPLORE_CAERLEON_SILVER_MULT: float = 2.5
+
+const EXPLORE_GEM_MIN: int = 2
+const EXPLORE_GEM_MAX: int = 6
+const EXPLORE_RELIC_CHANCE: float = 0.30
+const EXPLORE_CAERLEON_RELIC_CHANCE: float = 0.70
+
+## 成功すると数日間、島の労働者の産出が増える。
+const EXPLORE_BOOST_DAYS: int = 5
+const EXPLORE_BOOST_MULT: int = 2
 
 # --- 島と労働者 ---
 const ISLAND_LEVELS: Array[Dictionary] = [
@@ -120,28 +193,36 @@ static func resource_ids() -> Array[String]:
 	return ids
 
 
-## 王国都市（カーレオン以外）のIDを環状位置の順で返す。
+## 王国都市（レイヴンスパイア以外）のIDを CITIES の宣言順で返す。
+## 順序はトポロジーとは無関係な、表示用の安定順でしかない。
 static func royal_city_ids() -> Array[String]:
 	var ids: Array[String] = []
-	ids.resize(RING_SIZE)
 	for id: String in CITIES:
-		var ring: int = CITIES[id]["ring"]
-		if ring >= 0:
-			ids[ring] = id
+		if id != CAERLEON:
+			ids.append(id)
 	return ids
 
 
-## 2都市が環状で隣接しているか。環は閉じている（0と4も隣接）。
-## カーレオンはどの都市とも王道では接続しない。
+## 2都市が王道で直接つながっているか（ROYAL_ROAD_EDGES に辺があるか）。
+## レイヴンスパイアはどの都市とも王道では接続しない（黒ゾーン隣接は含まない）。
 static func is_adjacent(city_a: String, city_b: String) -> bool:
 	if city_a == city_b:
 		return false
-	var ring_a: int = CITIES[city_a]["ring"]
-	var ring_b: int = CITIES[city_b]["ring"]
-	if ring_a < 0 or ring_b < 0:
-		return false
-	var diff: int = absi(ring_a - ring_b)
-	return diff == 1 or diff == RING_SIZE - 1
+	for edge: Array in ROYAL_ROAD_EDGES:
+		if (edge[0] == city_a and edge[1] == city_b) or (edge[0] == city_b and edge[1] == city_a):
+			return true
+	return false
+
+
+## city_id と王道で直接つながる都市のIDを返す（レイヴンスパイアは常に空）。
+static func road_neighbors(city_id: String) -> Array[String]:
+	var neighbors: Array[String] = []
+	for edge: Array in ROYAL_ROAD_EDGES:
+		if edge[0] == city_id:
+			neighbors.append(edge[1])
+		elif edge[1] == city_id:
+			neighbors.append(edge[0])
+	return neighbors
 
 
 ## 純資産から到達ランク名を返す。

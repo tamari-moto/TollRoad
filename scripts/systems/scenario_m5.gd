@@ -87,7 +87,7 @@ func _test_hud_binding() -> void:
 
 	_check(silver_label.text.contains("30,000"), "初期シルバーが桁区切りで出る", silver_label.text)
 	_check(day_label.text == "1日目 / 60日", "日数が出る", day_label.text)
-	_check(city_label.text == "マートロック", "現在地が出る", city_label.text)
+	_check(city_label.text == GameData.CITIES[GameData.INITIAL_CITY]["name"], "現在地が出る", city_label.text)
 	_check(cargo_label.text == "積載 0 / 40", "積載が出る", cargo_label.text)
 	_check(day_bar.max_value == 60, "日数バーの最大が60", str(day_bar.max_value))
 
@@ -102,8 +102,9 @@ func _test_hud_binding() -> void:
 	_check(day_bar.value == 2, "日数バーが進む", str(day_bar.value))
 
 	# 移動すると現在地表示が変わる。
-	session.move_to("bridgewatch")
-	_check(city_label.text == "ブリッジウォッチ", "移動で現在地表示が変わる", city_label.text)
+	var neighbor: String = _adjacent_royal_city(session.current_city)
+	session.move_to(neighbor)
+	_check(city_label.text == GameData.CITIES[neighbor]["name"], "移動で現在地表示が変わる", city_label.text)
 
 	# 60日を超えても日数表示は60で頭打ちになる（61日目と出さない）。
 	while not session.is_over():

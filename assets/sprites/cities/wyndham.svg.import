@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bh5upfgl3ppib"
-path="res://.godot/imported/bridgewatch.svg-b7aef5750e15912b6601f0bb908da1f9.ctex"
+uid="uid://be8nxs2dlcsfu"
+path="res://.godot/imported/wyndham.svg-f06a8923d27b7f5c769277d640f16b06.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/bridgewatch.svg"
-dest_files=["res://.godot/imported/bridgewatch.svg-b7aef5750e15912b6601f0bb908da1f9.ctex"]
+source_file="res://assets/sprites/cities/wyndham.svg"
+dest_files=["res://.godot/imported/wyndham.svg-f06a8923d27b7f5c769277d640f16b06.ctex"]
 
 [params]
 

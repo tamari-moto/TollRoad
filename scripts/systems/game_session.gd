@@ -25,6 +25,9 @@ var island_level: int = 0
 ## item_id -> 個数
 var cargo: Dictionary = {}
 
+## 探索成功のブーストが残っている日数。0なら効果なし。
+var _boost_days_left: int = 0
+
 ## 島倉庫。容量は無制限（Q3）。item_id -> 個数
 var warehouse: Dictionary = {}
 
@@ -206,28 +209,115 @@ func craft(item_id: String, count: int) -> bool:
 
 # --- 移動 ---
 
-## その都市へ移動するのに必要な日数・費用を返す。
-## 到達不能な場合は空の Dictionary。
-func route_to(destination: String) -> Dictionary:
-	if destination == current_city:
+## from_city から to_city への直接区間（1ホップ）のコスト。
+## 直接つながっていない場合は空の Dictionary。
+## 経路探索（_shortest_path）と move_to() の実行の両方がこれを辺の重みとして使う。
+func _direct_leg(from_city: String, to_city: String) -> Dictionary:
+	if from_city == to_city:
 		return {}
-	var is_black_zone: bool = destination == GameData.CAERLEON or current_city == GameData.CAERLEON
+	# 黒ゾーンで直結するのは GameData.BLACK_ZONE_GATES のみ。
+	var is_black_zone: bool = (
+		(to_city == GameData.CAERLEON and GameData.BLACK_ZONE_GATES.has(from_city))
+		or (from_city == GameData.CAERLEON and GameData.BLACK_ZONE_GATES.has(to_city))
+	)
 	if is_black_zone:
 		return {
 			"days": GameData.MOVE_BLACK_ZONE_DAYS,
 			"cost": GameData.MOVE_BLACK_ZONE_COST,
 			"raid_chance": GameData.RAID_CHANCE,
 		}
-	if GameData.is_adjacent(current_city, destination):
+	if GameData.is_adjacent(from_city, to_city):
 		return {
 			"days": GameData.MOVE_ADJACENT_DAYS,
 			"cost": GameData.MOVE_ADJACENT_COST,
 			"raid_chance": 0.0,
 		}
+	return {}
+
+
+## city_id から1ホップで行ける全都市（王道の隣接都市 + ゲートなら中心都市）。
+## 中心都市自身からは GameData.BLACK_ZONE_GATES のみが1ホップ
+## （ゲートでない王国都市へは、まずいずれかのゲートまで王道で歩く必要がある）。
+func _leg_neighbors(city_id: String) -> Array[String]:
+	if city_id == GameData.CAERLEON:
+		return GameData.BLACK_ZONE_GATES.duplicate()
+	var neighbors: Array[String] = GameData.road_neighbors(city_id).duplicate()
+	if GameData.BLACK_ZONE_GATES.has(city_id):
+		neighbors.append(GameData.CAERLEON)
+	return neighbors
+
+
+## from_city から to_city への最小コスト経路（到着都市の列、from_city 自体は含まない）。
+## 都市数が10と少ないので、優先度キュー無しの単純なダイクストラで十分。
+## 全区間が1日固定のため、コスト最小化はホップ数最小化とほぼ一致する
+## （区間の日数が変わる場合はこの前提が崩れるので、そのときはコストではなく
+## 日数を主キーにする設計へ見直すこと）。
+## グラフは常に連結なので、from_city != to_city なら空にはならない想定。
+func _shortest_path(from_city: String, to_city: String) -> Array[String]:
+	var nodes: Array[String] = []
+	for id: String in GameData.CITIES:
+		nodes.append(id)
+
+	var dist: Dictionary = {}
+	var prev: Dictionary = {}
+	var visited: Dictionary = {}
+	for node: String in nodes:
+		dist[node] = INF
+	dist[from_city] = 0.0
+
+	while true:
+		var current: String = ""
+		var current_dist: float = INF
+		for node: String in nodes:
+			if not visited.has(node) and dist[node] < current_dist:
+				current = node
+				current_dist = dist[node]
+		if current == "" or current == to_city:
+			break
+		visited[current] = true
+		for neighbor: String in _leg_neighbors(current):
+			var leg: Dictionary = _direct_leg(current, neighbor)
+			var candidate: float = dist[current] + leg["cost"]
+			if candidate < dist[neighbor]:
+				dist[neighbor] = candidate
+				prev[neighbor] = current
+
+	if from_city != to_city and not prev.has(to_city):
+		return []
+
+	var path: Array[String] = []
+	var step: String = to_city
+	while step != from_city:
+		path.push_front(step)
+		step = prev[step]
+	return path
+
+
+## その都市へ移動するのに必要な合計日数・費用・襲撃率を返す（最短経路の合成）。
+## raid_chance は「経路のどこか1区間以上で被弾する確率」
+## （1 - 全区間とも無事である確率の積）。到達不能な場合は空の Dictionary。
+func route_to(destination: String) -> Dictionary:
+	if destination == current_city:
+		return {}
+	var path: Array[String] = _shortest_path(current_city, destination)
+	if path.is_empty():
+		return {}
+
+	var total_days: int = 0
+	var total_cost: int = 0
+	var survive_chance: float = 1.0
+	var from_city: String = current_city
+	for stop: String in path:
+		var leg: Dictionary = _direct_leg(from_city, stop)
+		total_days += leg["days"]
+		total_cost += leg["cost"]
+		survive_chance *= 1.0 - leg["raid_chance"]
+		from_city = stop
+
 	return {
-		"days": GameData.MOVE_FAR_DAYS,
-		"cost": GameData.MOVE_FAR_COST,
-		"raid_chance": 0.0,
+		"days": total_days,
+		"cost": total_cost,
+		"raid_chance": 1.0 - survive_chance,
 	}
 
 
@@ -238,31 +328,133 @@ func can_move_to(destination: String) -> bool:
 	return not route.is_empty() and silver >= route["cost"]
 
 
-## 移動する。黒ゾーンでは襲撃判定を行い、被弾すると積荷を全て失う
-## （シルバーと島倉庫は無傷）。
-## 襲撃判定は片道につき1度（Q6）。黒ゾーンは1日移動なので区間は1つしかなく、
-## カーレオンを往復すると計2回判定される（往復とも無事な確率は約61%）。
+## 移動する。最短経路が複数区間にまたがる場合も、1回の呼び出しで最終目的地
+## まで一括して進む（プレイヤーの操作は1クリックのまま）。
+## 黒ゾーンを含む区間ごとに独立して襲撃判定を行う（Q6 の「片道につき1度」を
+## 区間単位に一般化したもの）。被弾しても旅程はそのまま最終目的地まで続く。
+## 積荷は最初の被弾で失われ、同じ旅程内で2度目以降の被弾があってもログは
+## 重複させない（乱数の消費自体は区間ごとに必ず行い、決定性を保つ）。
 func move_to(destination: String) -> bool:
 	if not can_move_to(destination):
 		return false
+	var path: Array[String] = _shortest_path(current_city, destination)
 	var route: Dictionary = route_to(destination)
 	silver -= route["cost"]
-	current_city = destination
 	_log("%s へ移動（%d日、費用 %d）" % [GameData.CITIES[destination]["name"], route["days"], route["cost"]])
 	silver_changed.emit(silver)
 
-	var raided: bool = false
-	if route["raid_chance"] > 0.0 and _rng.randf() < route["raid_chance"]:
-		raided = true
+	var raided_this_trip: bool = false
+	var from_city: String = current_city
+	for stop: String in path:
+		var leg: Dictionary = _direct_leg(from_city, stop)
+		current_city = stop
+		if leg["raid_chance"] > 0.0:
+			var this_leg_raided: bool = _rng.randf() < leg["raid_chance"]
+			if this_leg_raided:
+				raided_this_trip = true
+		for i: int in leg["days"]:
+			_advance_day()
+		from_city = stop
 
-	for i: int in route["days"]:
-		_advance_day()
-
-	if raided:
+	if raided_this_trip:
 		cargo.clear()
 		_log("襲撃された。積荷を全て失った。")
 		cargo_changed.emit()
 	return true
+
+
+# --- 探索（1日消費） ---
+
+## 積荷にある戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）による成功率の加算。
+## 同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
+## （種類を跨いで持つ方が伸びる設計）。
+func explore_equip_bonus() -> float:
+	var bonus: float = 0.0
+	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+		bonus += mini(cargo_count(item_id), GameData.EXPLORE_EQUIP_UNIT_CAP) * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
+	return minf(bonus, GameData.EXPLORE_EQUIP_BONUS_CAP)
+
+
+## 探索の成功率。レイヴンスパイアは黒ゾーンの並びで基本確率が下がる。
+func explore_chance() -> float:
+	var base: float = GameData.EXPLORE_BASE_CHANCE
+	if current_city == GameData.CAERLEON:
+		base -= GameData.EXPLORE_CAERLEON_PENALTY
+	return clampf(base + explore_equip_bonus(), 0.0, GameData.EXPLORE_MAX_CHANCE)
+
+
+## 探索する。成功すればシルバー・レア品・島倉庫のブーストを得る。
+## 失敗すると積荷の戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を全て失う（資源は無傷）。
+## 黒ゾーン襲撃の「積荷全損」とは区別する。
+func explore() -> bool:
+	if is_over():
+		return false
+	var is_caerleon: bool = current_city == GameData.CAERLEON
+	if _rng.randf() < explore_chance():
+		_apply_explore_success(is_caerleon)
+	else:
+		_apply_explore_failure()
+	_advance_day()
+	return true
+
+
+func _apply_explore_success(is_caerleon: bool) -> void:
+	var silver_gain: int = _rng.randi_range(GameData.EXPLORE_SILVER_MIN, GameData.EXPLORE_SILVER_MAX)
+	if is_caerleon:
+		silver_gain = int(silver_gain * GameData.EXPLORE_CAERLEON_SILVER_MULT)
+	silver += silver_gain
+
+	var gem_count: int = _rng.randi_range(GameData.EXPLORE_GEM_MIN, GameData.EXPLORE_GEM_MAX)
+	var granted_gems: int = _grant_item("sunstone", gem_count)
+
+	var relic_chance: float = GameData.EXPLORE_CAERLEON_RELIC_CHANCE if is_caerleon else GameData.EXPLORE_RELIC_CHANCE
+	var granted_relic: bool = _rng.randf() < relic_chance and _grant_item("ancient_relic", 1) > 0
+
+	_boost_days_left = maxi(_boost_days_left, GameData.EXPLORE_BOOST_DAYS)
+
+	var reward_note: String = "%s を %d 個" % [GameData.ITEMS["sunstone"]["name"], granted_gems]
+	if granted_relic:
+		reward_note += "、%s を1個" % GameData.ITEMS["ancient_relic"]["name"]
+	# "探索成功"/"探索失敗" を必ず含める。main.gd はログ本文のキーワードで
+	# 音・配色を分岐しており（"探索" で SE、"探索失敗" で警戒色）、
+	# 都市ごとに異なる explore_flavor だけに頼ると一部の都市で拾えなくなる。
+	_log("%s で探索成功（%s）。シルバー %d と%s獲得。%d日間、島の労働者の産出が増える" % [
+		GameData.CITIES[current_city]["name"], GameData.CITIES[current_city]["explore_flavor"],
+		silver_gain, reward_note, GameData.EXPLORE_BOOST_DAYS])
+	silver_changed.emit(silver)
+	cargo_changed.emit()
+
+
+func _apply_explore_failure() -> void:
+	var lost: bool = false
+	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+		if cargo_count(item_id) > 0:
+			cargo.erase(item_id)
+			lost = true
+	var flavor: String = GameData.CITIES[current_city]["explore_flavor"]
+	if lost:
+		_log("%s で探索失敗（%s）。積荷の戦闘装備を失った。" % [GameData.CITIES[current_city]["name"], flavor])
+		cargo_changed.emit()
+	else:
+		_log("%s で探索失敗（%s）。" % [GameData.CITIES[current_city]["name"], flavor])
+
+
+## 積載の空きまで item_id を count 個だけ積む。積み切れない分はシルバーに換算する。
+## 探索の報酬は選べないため、購入/製作と違って積載超過を許さない
+## （free_capacity() が常に非負である前提を他の計算[max_withdrawable()等]が
+## 使っているため、崩さないように換金で受け止める）。戻り値は積めた個数。
+## シグナルは呼び出し側でまとめて発火するため、ここでは emit しない。
+func _grant_item(item_id: String, count: int) -> int:
+	if count <= 0:
+		return 0
+	var weight: int = GameData.ITEMS[item_id]["weight"]
+	var grantable: int = mini(count, free_capacity() / weight)
+	if grantable > 0:
+		cargo[item_id] = cargo_count(item_id) + grantable
+	var overflow: int = count - grantable
+	if overflow > 0:
+		silver += overflow * GameData.ITEMS[item_id]["base_price"]
+	return grantable
 
 
 # --- 島と労働者 ---
@@ -309,12 +501,16 @@ func upgrade_island() -> bool:
 
 
 ## 労働者が1日ぶん働く。1人につきランダムな資源を2個運ぶ（Q4: 5資源から均等）。
+## 探索成功のブーストが残っていれば産出量が倍になる。
 func _run_workers() -> void:
 	var workers: int = worker_count()
 	if workers <= 0:
 		return
 	var resources: Array[String] = GameData.resource_ids()
-	var delivered: int = workers * GameData.RESOURCES_PER_WORKER_PER_DAY
+	var per_worker: int = GameData.RESOURCES_PER_WORKER_PER_DAY
+	if _boost_days_left > 0:
+		per_worker *= GameData.EXPLORE_BOOST_MULT
+	var delivered: int = workers * per_worker
 	for i: int in delivered:
 		var pick: String = resources[_rng.randi_range(0, resources.size() - 1)]
 		warehouse[pick] = warehouse_count(pick) + 1
@@ -397,6 +593,8 @@ func _advance_day() -> void:
 	prices.reroll()
 	_record_memo()
 	_run_workers()
+	if _boost_days_left > 0:
+		_boost_days_left -= 1
 	day_advanced.emit(day)
 
 
@@ -463,6 +661,7 @@ func to_dict() -> Dictionary:
 		"log_entries": log_entries.duplicate(),
 		"prices": prices.prices.duplicate(true),
 		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
+		"boost_days_left": _boost_days_left,
 	}
 
 
@@ -489,6 +688,8 @@ func from_dict(data: Dictionary) -> void:
 		mount = str(data["mount"])
 	if data.has("island_level"):
 		island_level = int(data["island_level"])
+	if data.has("boost_days_left"):
+		_boost_days_left = int(data["boost_days_left"])
 
 	if data.has("cargo"):
 		cargo = _restore_counts(data["cargo"])

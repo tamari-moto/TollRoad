@@ -21,6 +21,7 @@ enum Kind {
 	DAY,       ## 日送り。控えめな低音
 	TRAVEL,    ## 移動。ざらついた短い音
 	RAID,      ## 襲撃。濁った低音
+	EXPLORE,   ## 探索。成功・失敗を問わず鳴る、緊張感のある短い音
 }
 
 ## 種類ごとの音量（dB）。頻度の高い音ほど下げる。
@@ -32,6 +33,7 @@ const VOLUMES: Dictionary = {
 	Kind.DAY: -20.0,
 	Kind.TRAVEL: -18.0,
 	Kind.RAID: -8.0,
+	Kind.EXPLORE: -11.0,
 }
 
 static var _cache: Dictionary = {}
@@ -129,6 +131,9 @@ static func _build(kind: Kind) -> AudioStreamWAV:
 		Kind.RAID:
 			# 濁った低音。最も重い事象なので長めに取る。
 			return _tone(150.0, 70.0, 0.42, 0.5)
+		Kind.EXPLORE:
+			# 揺れ動く短い音。成功か失敗か分かる前の緊張感を狙う。
+			return _tone(260.0, 340.0, 0.2, 0.25)
 	return null
 
 
