@@ -192,6 +192,47 @@ const VEGETATION_LIFT: float = 0.03
 ## ように見せる（ユーザー指定）。
 const VEGETATION_BUSH_LIFT: float = -0.05
 
+## --- 謎の巨人 ---
+## 地形の外周・霧の中に立たせる、動かない2体の巨人。「世界をゲームとして
+## 見ている上位存在」というユーザー指定の解釈を、輪郭だけで語れる静止した
+## 人型シルエットに落とし込む。都市の柱のような発光や草木のような脈動は
+## 付けない（完全に静止させ、不動・無反応の不気味さを出す）。
+##
+## 平常時は隠しておき、ゲーム終了（60日終了のリザルト画面）でだけ姿を
+## 見せる（ユーザー指定）。表示の切り替えは set_giants_visible() で行う。
+##
+## 配置は地形の半径（半分の一辺）に対する割合で決める。_ring_radius への
+## 固定の足し算（旧実装）だと、都市配置が広がった際に地形からはみ出す
+## 恐れがあった。1.0 が地形メッシュそのものの縁で、それを超えると
+## 描画される地形の外側に出る（height_at() は連続関数なので座標は
+## 計算できるが、そこに地面のポリゴンは無い）。ユーザー指定で1.0を
+## 超えた値にしてあり、巨人は地形の外・霧の彼方に浮かんでいるように
+## 見える想定（「世界の外から見ている上位存在」という設定に寄せた形）。
+const GIANT_EDGE_FRACTION: float = 1.2
+## 中心から見た向き（度）。180度反対側に置き、カメラを回したときに
+## 一体ずつ視界に入るようにする（常に両方同時に見えると威圧感が薄れる）。
+const GIANT_ANGLES_DEG: Array[float] = [55.0, 235.0]
+
+## 全高。都市の柱（CITY_HEIGHT=1.5）の160倍。遠景・霧の中に置くぶん、
+## 手前の要素と同程度の大きさでは画面上でほぼ点になって存在感が消える
+## ため、大幅に引き上げてある（ユーザー指定の「大きさを四倍」で60→240）。
+const GIANT_HEIGHT: float = 240.0
+## 上半身（胴・腕・頭）だけを作る。脚は作らない（ユーザー指定）。地面の
+## ちょうど高さから胴が始まるので、地形の向こうに埋まった巨人の上半身
+## だけが地面を突き破って出ているように見える。
+const GIANT_TORSO_HEIGHT_RATIO: float = 0.38
+const GIANT_HEAD_RADIUS_RATIO: float = 0.085
+## 胴回り・腕の太さも GIANT_HEIGHT に対する比率で持たせる。固定値の
+## ままだと GIANT_HEIGHT を上げたときに細すぎる棒人間になってしまうため。
+const GIANT_SHOULDER_WIDTH_RATIO: float = 0.24
+const GIANT_ARM_RADIUS_RATIO: float = 0.032
+
+## 霧に沈むシルエットとして読めるよう、地形のどの色よりも暗く保つ
+## （TERRAIN_BASIN_COLOR ですら輝度0.17前後あるのに対しこちらは0.05程度）。
+## unshaded にして陰影を持たせない。方向光の当たり方で輪郭の一部だけ
+## 明るくなると、「不動の存在」という静けさが崩れるため。
+const GIANT_COLOR := Color(0.05, 0.05, 0.07)
+
 ## 現在地を囲むリング。内外の二重で描く。
 const RING_INNER_RADIUS: float = 1.5
 const RING_OUTER_RADIUS: float = 2.1
@@ -209,6 +250,9 @@ var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
 var _selection_ring: MeshInstance3D
+## 謎の巨人2体の入れ物。ゲーム終了まで隠しておき、set_giants_visible() で
+## まとめて出す。
+var _giants: Array[Node3D] = []
 ## 脈動のためにリングを引き直し続けるので、現在地を覚えておく。
 var _ring_city: String = ""
 var _pulse_time: float = 0.0
@@ -244,6 +288,7 @@ func _build() -> void:
 	_build_terrain()
 	_build_vegetation()
 	_build_cities()
+	_build_giants()
 	_build_routes()
 	_build_selection_ring()
 	_build_light()
@@ -587,6 +632,104 @@ static func _city_color(city_id: String) -> Color:
 	if city_id == GameData.CAERLEON:
 		return UiTheme.WARN
 	return UiTheme.PIN_FRAME
+
+
+## 謎の巨人を2体、地形の外周・霧の中に立たせる。中心（レイヴンスパイア）の
+## 方を向かせ、世界を見下ろしているように見せる。ゲーム終了までは隠す
+## （set_giants_visible() 参照。ユーザー指定で「ゲーム終了時に表示」）。
+func _build_giants() -> void:
+	var center: Vector3 = positions[GameData.CAERLEON]
+	var radius: float = (_terrain_size * 0.5) * GIANT_EDGE_FRACTION
+	_giants.clear()
+	for index: int in GIANT_ANGLES_DEG.size():
+		var angle: float = deg_to_rad(GIANT_ANGLES_DEG[index])
+		var x: float = cos(angle) * radius
+		var z: float = sin(angle) * radius
+		var base: Vector3 = Vector3(x, height_at(x, z), z)
+
+		var container := Node3D.new()
+		container.name = "Giant%d" % index
+		container.position = base
+		# look_at() はツリー外で global_transform が更新されず使えない
+		# （CLAUDE.md参照）。look_at_from_position() はローカル transform を
+		# 直接組むので、--script のハーネスでも同じ向きになる。
+		container.look_at_from_position(base, Vector3(center.x, base.y, center.z), Vector3.UP)
+		container.visible = false
+		add_child(container)
+		_giants.append(container)
+
+		for part: MeshInstance3D in _giant_parts():
+			container.add_child(part)
+
+
+## 巨人の表示・非表示をまとめて切り替える。main.gd の _refresh_status() が
+## GameSession.is_over()（60日終了）と同期させる、唯一の公開入口。
+func set_giants_visible(value: bool) -> void:
+	for giant: Node3D in _giants:
+		if is_instance_valid(giant):
+			giant.visible = value
+
+
+## 巨人1体ぶんの上半身パーツ（胴・腕2・頭）を組み立てる。脚は作らない
+## （ユーザー指定。地面のちょうど高さから胴が始まるので、地形の向こうに
+## 埋まった巨人の上半身だけが突き出ているように見える）。
+## 都市の構造物と同じく円柱主体だが、こちらは発光させない
+## （不動・無反応の存在として、都市の生きた明かりと対照させる）。
+func _giant_parts() -> Array[MeshInstance3D]:
+	var parts: Array[MeshInstance3D] = []
+	var torso_height: float = GIANT_HEIGHT * GIANT_TORSO_HEIGHT_RATIO
+	var head_radius: float = GIANT_HEIGHT * GIANT_HEAD_RADIUS_RATIO
+	var shoulder_width: float = GIANT_HEIGHT * GIANT_SHOULDER_WIDTH_RATIO
+	var arm_radius: float = GIANT_HEIGHT * GIANT_ARM_RADIUS_RATIO
+	var sides: Array[float] = [-1.0, 1.0]
+
+	# 胴は地面（y=0）から生やす。下端が地形の内側に隠れている想定なので、
+	# 下細り（下の方が太い一般的な胴のシルエット）にはせず、地面から
+	# 均等な太さで突き出た円柱にする。
+	var torso := CylinderMesh.new()
+	torso.top_radius = shoulder_width * 0.5
+	torso.bottom_radius = shoulder_width * 0.5
+	torso.height = torso_height
+	torso.radial_segments = 8
+	var torso_part: MeshInstance3D = _make_giant_part(torso)
+	torso_part.position = Vector3(0.0, torso_height * 0.5, 0.0)
+	parts.append(torso_part)
+
+	var arm_height: float = torso_height * 0.75
+	for side: float in sides:
+		var arm := CylinderMesh.new()
+		arm.top_radius = arm_radius
+		arm.bottom_radius = arm_radius * 0.85
+		arm.height = arm_height
+		arm.radial_segments = 6
+		var arm_part: MeshInstance3D = _make_giant_part(arm)
+		arm_part.position = Vector3(
+			side * shoulder_width * 0.62, torso_height - arm_height * 0.5, 0.0)
+		parts.append(arm_part)
+
+	var head := SphereMesh.new()
+	head.radius = head_radius
+	head.height = head_radius * 2.0
+	head.radial_segments = 10
+	head.rings = 6
+	var head_part: MeshInstance3D = _make_giant_part(head)
+	head_part.position = Vector3(0.0, torso_height + head_radius * 0.85, 0.0)
+	parts.append(head_part)
+
+	return parts
+
+
+## パーツ1つぶんの MeshInstance3D。GIANT_COLOR 固定・unshaded・発光なし
+## （都市パーツの _make_city_part() と違い、光らせない）。
+func _make_giant_part(mesh: Mesh) -> MeshInstance3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = GIANT_COLOR
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mesh.surface_set_material(0, material)
+
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	return part
 
 
 ## 草木を決定的にばら撒く。真の乱数は使わず、_noise から得られる値だけで
