@@ -191,8 +191,12 @@ func _test_mounts() -> void:
 	rich.buy_mount("mammoth")
 	_check(rich.capacity() == 170, "マンモスの積載は170", str(rich.capacity()))
 	# 積載が増えたぶん多く積める。
-	var bought: int = rich.max_buyable("stone")
-	rich.buy("stone", bought)
+	# 1都市の1品目の在庫では積載を満たせないので、資源を横断して買う
+	# （市場に在庫の上限が入ったため。積載の検査であって在庫の検査ではない）。
+	for item_id: String in GameData.resource_ids():
+		var bought: int = rich.max_buyable(item_id)
+		if bought > 0:
+			rich.buy(item_id, bought)
 	_check(rich.cargo_weight() <= 170, "マンモスでも積載上限は守られる", str(rich.cargo_weight()))
 	_check(rich.cargo_weight() > 40, "ロバより多く積める", str(rich.cargo_weight()))
 

@@ -104,6 +104,45 @@ const MOD_BONUS: float = 0.88
 const MOD_CAERLEON_EQUIPMENT: float = 1.24
 const MOD_CAERLEON_RESOURCE: float = 1.06
 
+# --- 在庫と需要 ---
+## 都市ごとの在庫（買える上限）と需要（売れる上限）。市場は無限ではなく、
+## 毎日ここに書いた量だけ生産・消費されて補充される（market_table.gd）。
+##
+## **量は既存のバランスを壊さない側に振ってある。** 1回の来訪で積載
+## （ロバ40〜マンモス170）を満たせる程度に確保し、既存の
+## 「アイアンホロウで鉱石→剣を作りレイヴンスパイアで売る」往復が従来どおり
+## 回るようにしている。価格・移動費・手数料は一切変えていない。
+## docs/game_design.md の実測表は都市を増やした時点から未再検証のままなので、
+## この数値を締める前に実機で20〜30回の通しプレイを取り直すこと。
+
+## 1日あたりの生産量。specialty（特産資源）と bonus（生産地の装備）に厚く出す。
+## 特産は「1回の来訪で最大の積荷（マンモス170）を満たせる」ことを下限に置く。
+## ここを絞ると、安く仕入れて運ぶという遊びの中心が成立しなくなる
+## （scenario_m23.gd の _test_balance_guardrails() が上限・下限で挟んでいる）。
+const PRODUCTION_SPECIALTY: int = 44
+const PRODUCTION_BONUS: int = 9
+const PRODUCTION_OTHER_RESOURCE: int = 6
+const PRODUCTION_OTHER_EQUIPMENT: int = 2
+
+## 1日あたりの消費量（＝需要の回復量）。生産と逆向きで、自前で作れるものは
+## 欲しがらない。レイヴンスパイアは装備の集積地なので装備を厚く買い取る。
+const CONSUMPTION_RESOURCE: int = 8
+const CONSUMPTION_EQUIPMENT: int = 5
+const CONSUMPTION_LOCAL_SURPLUS: int = 2
+const CONSUMPTION_CAERLEON_EQUIPMENT: int = 14
+const CONSUMPTION_CAERLEON_OTHER: int = 6
+
+## 在庫・需要が積み上がる日数の上限。長いほど「久しぶりに寄った都市には
+## 貯まっている」が強くなる。上限 = 1日あたりの量 × この日数。
+const MARKET_CAP_DAYS: int = 4
+
+## 在庫・需要の薄さが価格に効く掛け率。満杯なら 1.0、空なら以下の値。
+## 買い占めると値上がりし、売り込むと値崩れする。
+## 幅を控えめにしてあるのは、既存の価格帯（ui_theme.gd の
+## PRICE_SCALE_MIN〜MAX = 60〜145%）から外れさせないため。
+const PRICE_SCARCITY_MAX: float = 1.15
+const PRICE_GLUT_MIN: float = 0.88
+
 # --- 取引 ---
 ## 売却時に売上総額へかかる税率（Q2: 総額課税）。
 const SELL_TAX_RATE: float = 0.05
