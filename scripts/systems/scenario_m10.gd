@@ -24,7 +24,7 @@ func _init() -> void:
 
 
 func _test_textures_exist() -> void:
-	print("--- 9品目のアイコン ---")
+	print("--- 全品目のアイコン ---")
 	for item_id: String in GameData.ITEMS:
 		var texture: Texture2D = UiIcons.item_texture(item_id)
 		_check(texture != null, "%s のアイコンがある" % item_id, "null")
@@ -112,10 +112,17 @@ func _test_panels_keep_layout() -> void:
 		_check(grid.columns == 6, "市場の列数は6のまま", str(grid.columns))
 		_check(grid.get_child_count() == 6 + GameData.ITEMS.size() * 6,
 			"市場の要素数は従来どおり", str(grid.get_child_count()))
-		# 品目セルにアイコンが入っている。
+		# 品目セルにアイコンが入っている（バッジを名前の下へ折り返す構造に
+		# なったため、セル自体の型は問わず再帰的に探す）。
 		var first_cell: Node = grid.get_child(6)
-		_check(first_cell is HBoxContainer, "品目セルはアイコン付き", str(first_cell.get_class()))
+		var icons: Array[Node] = first_cell.find_children("*", "TextureRect", true, false)
+		_check(icons.size() > 0, "品目セルはアイコン付き", "アイコンが見つからない")
 		_despawn(market)
+
+	var equipment_count: int = 0
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.EQUIPMENT:
+			equipment_count += 1
 
 	var workshop: Node = _spawn("res://scenes/ui/WorkshopPanel.tscn")
 	if workshop != null:
@@ -123,7 +130,7 @@ func _test_panels_keep_layout() -> void:
 		workshop.bind(session)
 		var grid: GridContainer = UiUtil.find_node(workshop, "RecipeGrid")
 		_check(grid.columns == 5, "製作所の列数は5のまま", str(grid.columns))
-		_check(grid.get_child_count() == 5 + 4 * 5, "製作所の要素数は従来どおり",
+		_check(grid.get_child_count() == 5 + equipment_count * 5, "製作所の要素数は従来どおり",
 			str(grid.get_child_count()))
 		_despawn(workshop)
 
@@ -132,8 +139,9 @@ func _test_panels_keep_layout() -> void:
 		var session: GameSession = GameSession.new(10003)
 		memo.bind(session)
 		var grid: GridContainer = UiUtil.find_node(memo, "MemoGrid")
-		_check(grid.columns == 7, "相場メモの列数は7のまま", str(grid.columns))
-		_check(grid.get_child_count() == 7 + GameData.ITEMS.size() * 7,
+		var expected_columns: int = GameData.CITIES.size() + 1
+		_check(grid.columns == expected_columns, "相場メモの列数は都市数+1のまま", str(grid.columns))
+		_check(grid.get_child_count() == expected_columns + GameData.ITEMS.size() * expected_columns,
 			"相場メモの要素数は従来どおり", str(grid.get_child_count()))
 		_despawn(memo)
 
@@ -186,6 +194,7 @@ func _test_signal_arity() -> void:
 		"res://scenes/ui/MemoPanel.tscn",
 		"res://scenes/ui/IslandPanel.tscn",
 		"res://scenes/ui/HUD.tscn",
+		"res://scenes/ui/ExplorationPanel.tscn",
 	]
 
 	for path: String in panels:

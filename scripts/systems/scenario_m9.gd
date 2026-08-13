@@ -44,7 +44,7 @@ func _test_palette() -> void:
 	_check(UiTheme.rank_color("BANKRUPT") == UiTheme.RANK_BANKRUPT, "BANKRUPTの色", "違う")
 	_check(UiTheme.rank_color("SURVIVOR") == UiTheme.RANK_NORMAL, "既定は通常色", "違う")
 
-	# 全9品目に色がある。
+	# 全品目に色がある。
 	for item_id: String in GameData.ITEMS:
 		_check(UiTheme.ITEM_COLORS.has(item_id), "%s に色がある" % item_id, "ない")
 	_check(UiTheme.item_color("unknown_item") == Color.GRAY, "未定義の品目は灰色", "違う")
@@ -172,7 +172,7 @@ func _test_raid_log_tint() -> void:
 		s.buy("ore", 5)
 		if s.cargo_count("ore") == 0:
 			continue
-		s.move_to("caerleon")
+		s.move_to(GameData.CAERLEON)
 		if s.cargo.is_empty():
 			for entry: String in s.log_entries:
 				if entry.contains("襲撃"):

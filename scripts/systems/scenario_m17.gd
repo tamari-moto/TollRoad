@@ -10,6 +10,7 @@ extends "res://scripts/systems/scenario_base.gd"
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const MapCamera = preload("res://scripts/ui/map_camera.gd")
 
@@ -21,44 +22,58 @@ func _init() -> void:
 	_test_selection_ring()
 	_test_camera_limits()
 	await _test_projection()
+	_test_glow()
 	_finish()
 
 
 func _test_world_geometry() -> void:
-	print("--- 3D 空間の配置 ---")
+	print("--- 3D 空間の配置（不規則グラフのばね緩和） ---")
 	var world: MapView3D = MapView3D.new()
 
-	_check(world.positions.size() == 6, "6都市の座標がある", str(world.positions.size()))
+	_check(world.positions.size() == GameData.CITIES.size(), "全都市の座標がある", str(world.positions.size()))
 
-	# 5都市が水平面で等距離、72度間隔。移動ルールとの対応の担保。
+	# 不規則グラフなので環のような厳密な等距離・等角度は前提にしない。
+	# ばね緩和が「重ならない」「王道の間隔がおおむね妥当」「中心からの緩い
+	# 求心力が効いている」ことだけを見る。
 	var ring: Array[String] = GameData.royal_city_ids()
-	var angles: Array[float] = []
 	var radii: Array[float] = []
 	for city_id: String in ring:
 		var p: Vector3 = world.positions[city_id]
-		var flat := Vector2(p.x, p.z)
-		radii.append(flat.length())
-		angles.append(flat.angle())
+		radii.append(Vector2(p.x, p.z).length())
 
-	if radii.size() == 5:
-		_check(radii.max() - radii.min() < 0.01, "5都市が等距離",
-			"差 %.3f" % (radii.max() - radii.min()))
-		_check(is_equal_approx(radii[0], MapView3D.RING_RADIUS), "半径が設定どおり",
-			"%.2f / %.2f" % [radii[0], MapView3D.RING_RADIUS])
+	var min_radius: float = radii.min()
+	var max_radius: float = radii.max()
+	_check(min_radius > 1.0, "半径がゼロでない", str(min_radius))
+	# oakhaven/wyndham は次数1の行き止まり都市で、わざと他より外側に来る
+	# 設計（scenario_m11.gd の同名検査のコメント参照）。閾値は緩めに取り、
+	# 0で急に増える暴走だけを検出する。
+	_check(max_radius < min_radius * 6.0, "都市間で半径が極端にばらつかない",
+		"最小 %.2f / 最大 %.2f" % [min_radius, max_radius])
 
-	if angles.size() == 5:
-		var even: bool = true
-		for i: int in 5:
-			var diff: float = angles[(i + 1) % 5] - angles[i]
-			while diff < 0.0:
-				diff += TAU
-			if absf(diff - TAU / 5.0) > 0.01:
-				even = false
-		_check(even, "隣り合う都市が72度ずつ離れている", "間隔が不均等")
+	var overlap: bool = false
+	for a: String in ring:
+		for b: String in ring:
+			if a == b:
+				continue
+			var pa: Vector2 = Vector2(world.positions[a].x, world.positions[a].z)
+			var pb: Vector2 = Vector2(world.positions[b].x, world.positions[b].z)
+			if pa.distance_to(pb) < 0.5:
+				overlap = true
+	_check(not overlap, "都市どうしが重ならない", "重なっている都市がある")
 
-	# カーレオンは水平面の中央。
+	# 王道でつながる都市どうしは、平均するとおおむね CITY_SPACING 前後の
+	# 間隔になる（ばね緩和の目標距離）。個々の辺の厳密な一致は求めない。
+	var total_edge_dist: float = 0.0
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		total_edge_dist += world.positions[edge[0]].distance_to(world.positions[edge[1]])
+	var average_edge_dist: float = total_edge_dist / float(GameData.ROYAL_ROAD_EDGES.size())
+	_check(average_edge_dist > MapView3D.CITY_SPACING * 0.5 and average_edge_dist < MapView3D.CITY_SPACING * 2.0,
+		"王道でつながる都市どうしの平均間隔がおおむね妥当",
+		"平均 %.2f（目標 %.2f）" % [average_edge_dist, MapView3D.CITY_SPACING])
+
+	# 中心都市は水平面の中央。
 	var c: Vector3 = world.positions[GameData.CAERLEON]
-	_check(Vector2(c.x, c.z).length() < 0.01, "カーレオンは中央",
+	_check(Vector2(c.x, c.z).length() < 0.01, "中心都市は中央にある",
 		"中心から %.3f" % Vector2(c.x, c.z).length())
 
 	# 都市は地面の上に乗っている（高さが地形と一致する）。
@@ -68,14 +83,14 @@ func _test_world_geometry() -> void:
 		_check(is_equal_approx(p.y, ground_y), "%s が地面に乗っている" % city_id,
 			"%.2f / 地面 %.2f" % [p.y, ground_y])
 
-	# カーレオンは盆地の底。周囲より低い。
-	var caerleon_y: float = world.positions[GameData.CAERLEON].y
+	# 中心都市は盆地の底。周囲より低い。
+	var center_y: float = world.positions[GameData.CAERLEON].y
 	var ring_average: float = 0.0
 	for city_id: String in ring:
 		ring_average += world.positions[city_id].y
 	ring_average /= float(ring.size())
-	_check(caerleon_y < ring_average, "カーレオンは周囲より低い（盆地の底）",
-		"%.2f vs 平均 %.2f" % [caerleon_y, ring_average])
+	_check(center_y < ring_average, "中心都市は周囲より低い（盆地の底）",
+		"%.2f vs 平均 %.2f" % [center_y, ring_average])
 
 	world.free()
 
@@ -117,12 +132,12 @@ func _test_terrain() -> void:
 	_check(world.get_node_or_null("Routes") != null, "経路のメッシュがある", "ない")
 	_check(world.get_node_or_null("Sun") != null, "光源がある", "ない")
 
-	# 都市の柱が6本。
+	# 都市の柱が全都市ぶんある。
 	var pillars: int = 0
 	for city_id: String in GameData.CITIES:
 		if world.get_node_or_null(city_id) != null:
 			pillars += 1
-	_check(pillars == 6, "6都市の柱がある", str(pillars))
+	_check(pillars == GameData.CITIES.size(), "全都市の柱がある", str(pillars))
 
 	world.free()
 
@@ -137,12 +152,27 @@ func _test_selection_ring() -> void:
 		world.free()
 		return
 
-	world.set_current_city("martlock")
+	var home: String = GameData.INITIAL_CITY
+	var neighbor: String = _adjacent_royal_city(home)
+
+	world.set_current_city(home)
 	var mesh: ImmediateMesh = ring.mesh
 	_check(mesh.get_surface_count() > 0, "リングが描かれている", "空")
 	if mesh.get_surface_count() == 0:
 		world.free()
 		return
+
+	# 発光していないと都市の柱と違ってグロウが乗らず、地図上で浮いて見える
+	# （かつて unshaded だが emission は付いておらず、実際には光っていなかった）。
+	var ring_material: StandardMaterial3D = mesh.surface_get_material(0)
+	_check(ring_material != null and ring_material.emission_enabled,
+		"リングが発光している", "発光していない")
+	if ring_material != null:
+		var ring_luminance: float = 0.2126 * ring_material.emission.r \
+			+ 0.7152 * ring_material.emission.g + 0.0722 * ring_material.emission.b
+		_check(ring_luminance * ring_material.emission_energy_multiplier > MapView3D.GLOW_HDR_THRESHOLD,
+			"リングの発光がHDR閾値を超える",
+			"%.2f <= 閾値%.2f" % [ring_luminance * ring_material.emission_energy_multiplier, MapView3D.GLOW_HDR_THRESHOLD])
 
 	var arrays: Array = mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -152,7 +182,7 @@ func _test_selection_ring() -> void:
 		"%d / 期待 %d" % [vertices.size(), expected])
 
 	# 現在地を囲んでいる。中心からの距離が内外の半径に一致する。
-	var center: Vector3 = world.positions["martlock"]
+	var center: Vector3 = world.positions[home]
 	var near_inner: int = 0
 	var near_outer: int = 0
 	for v: Vector3 in vertices:
@@ -186,15 +216,16 @@ func _test_selection_ring() -> void:
 		"%.3f / 期待 %.3f" % [lowest, want_y])
 
 	# 地形が違えば輪の高さも違う。
-	var other: Vector3 = world.positions["lymhurst"]
+	var far_city: String = _far_royal_city(home)
+	var other: Vector3 = world.positions[far_city]
 	if absf(world.height_at(other.x, other.z) - world.height_at(center.x, center.z)) > 0.01:
 		_check(not is_equal_approx(world.ring_height(other), want_y),
 			"都市ごとに輪の高さが変わる", "同じ高さ")
 
 	# 移動すると追従する。
-	world.set_current_city("bridgewatch")
+	world.set_current_city(neighbor)
 	var moved: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var new_center: Vector3 = world.positions["bridgewatch"]
+	var new_center: Vector3 = world.positions[neighbor]
 	var around_new: bool = true
 	for v: Vector3 in moved:
 		var flat: float = Vector2(v.x - new_center.x, v.z - new_center.z).length()
@@ -203,7 +234,7 @@ func _test_selection_ring() -> void:
 	_check(around_new, "移動先の都市を囲む", "元の位置に残っている")
 
 	# 脈動。到着直後は 1.0 から始まり、時間とともに上下する。
-	world.set_current_city("martlock")
+	world.set_current_city(home)
 	_check(is_equal_approx(world.pulse_scale(), 1.0), "到着直後の倍率は1.0",
 		"%.3f" % world.pulse_scale())
 
@@ -230,7 +261,7 @@ func _test_selection_ring() -> void:
 	# 脈動しても半径の比は保たれる（内外が入れ替わらない）。
 	world.redraw_selection_ring_at(MapView3D.RING_PULSE_PERIOD * 0.25)
 	var pulsed: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var center2: Vector3 = world.positions["martlock"]
+	var center2: Vector3 = world.positions[home]
 	var largest: float = 0.0
 	var smallest: float = 9999.0
 	for v: Vector3 in pulsed:
@@ -245,10 +276,10 @@ func _test_selection_ring() -> void:
 	# 上の検査は純関数と明示的な引き直しを見ているだけなので、_process から
 	# リングへ倍率が渡らなくなっても素通りする（脈動が止まっても気づけない）。
 	# 実際の経路を1度は通しておく。
-	world.set_current_city("martlock")
+	world.set_current_city(home)
 	var outer_radius := func() -> float:
 		var verts: PackedVector3Array = ring.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-		var center3: Vector3 = world.positions["martlock"]
+		var center3: Vector3 = world.positions[home]
 		var found: float = 0.0
 		for v: Vector3 in verts:
 			found = maxf(found, Vector2(v.x - center3.x, v.z - center3.z).length())
@@ -396,24 +427,45 @@ func _test_projection() -> void:
 	_check(pick_ok, "投影位置をクリックすると同じ都市が当たる", "食い違いがある")
 
 	# カメラを回すと投影位置が追従する。
-	var before: Vector2 = panel.screen_position_for("fort_sterling")
+	var any_city: String = GameData.royal_city_ids()[0]
+	var before: Vector2 = panel.screen_position_for(any_city)
 	panel.camera().rotate_by(1.0, 0.0)
 	panel.update_node_positions()
-	var after: Vector2 = panel.screen_position_for("fort_sterling")
+	var after: Vector2 = panel.screen_position_for(any_city)
 	_check(before.distance_to(after) > 1.0, "カメラを回すと投影位置が追従する",
 		"%.1f しか動かない" % before.distance_to(after))
 
 	# 拡大でも追従する。
-	var zoom_before: Vector2 = panel.screen_position_for("martlock")
+	var home: String = GameData.INITIAL_CITY
+	var zoom_before: Vector2 = panel.screen_position_for(home)
 	panel.camera().zoom_by(-6.0)
 	panel.update_node_positions()
-	_check(zoom_before.distance_to(panel.screen_position_for("martlock")) > 1.0,
+	_check(zoom_before.distance_to(panel.screen_position_for(home)) > 1.0,
 		"拡大でも投影位置が追従する", "動かない")
 
 	# 移動しても操作は従来どおり効く（レイキャストへ移行した設計の担保）。
-	session.move_to("bridgewatch")
-	_check(not panel.is_selectable("bridgewatch"), "現在地は選択できない", "選択できる")
-	_check(panel.tooltip_text_for("bridgewatch").contains("現在地"),
-		"現在地がツールチップに出る", panel.tooltip_text_for("bridgewatch"))
+	var neighbor: String = _adjacent_royal_city(session.current_city)
+	session.move_to(neighbor)
+	_check(not panel.is_selectable(neighbor), "現在地は選択できない", "選択できる")
+	_check(panel.tooltip_text_for(neighbor).contains("現在地"),
+		"現在地がツールチップに出る", panel.tooltip_text_for(neighbor))
 
 	_despawn(panel)
+
+
+## 都市パーツの発光が実際にグローの HDR 閾値を超えるか。
+##
+## 「動くか」ではなく「妥当か」を見る検査（CLAUDE.md参照）: 輝度×発光エネルギー
+## が閾値を上回っていることそのものを確かめる。値だけ揃っていても閾値の方が
+## 高ければ無効化されたのと同じになるため、二値の関係を直接見る必要がある。
+## 一度、旧値（発光エネルギー0.35）ではどの色も閾値を超えず、グローが実際には
+## 出ていなかった不具合があった（実機で発見）。
+func _test_glow() -> void:
+	print("--- 都市の発光グロー ---")
+	# 都市パーツに使われる色（map_view_3d.gd の _city_color() 参照）。
+	var city_colors: Array[Color] = [UiTheme.PIN_FRAME, UiTheme.WARN, UiTheme.FOCUS]
+	for color: Color in city_colors:
+		var luminance: float = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+		var glow_value: float = luminance * MapView3D.CITY_EMISSION_ENERGY
+		_check(glow_value > MapView3D.GLOW_HDR_THRESHOLD,
+			"%s の発光がHDR閾値を超える" % color, "%.2f <= 閾値%.2f" % [glow_value, MapView3D.GLOW_HDR_THRESHOLD])

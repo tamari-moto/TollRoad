@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://b0m1n3econ0my"]
+[gd_scene load_steps=13 format=3 uid="uid://b0m1n3econ0my"]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://cvh0d8tollhud" path="res://scenes/ui/HUD.tscn" id="2"]
@@ -10,7 +10,8 @@
 [ext_resource type="PackedScene" uid="uid://ci5l4ndp4n3l0" path="res://scenes/ui/IslandPanel.tscn" id="8"]
 [ext_resource type="PackedScene" uid="uid://dr35ultd14l0g" path="res://scenes/ui/ResultDialog.tscn" id="9"]
 [ext_resource type="PackedScene" uid="uid://cbr13f1ngd14l" path="res://scenes/ui/BriefingDialog.tscn" id="10"]
-[ext_resource type="PackedScene" uid="uid://ccompan1onscn01" path="res://scenes/ui/CompanionPanel.tscn" id="11"]
+[ext_resource type="PackedScene" uid="uid://dexpl0r4ti0npnl" path="res://scenes/ui/ExplorationPanel.tscn" id="11"]
+[ext_resource type="PackedScene" uid="uid://ccompan1onscn01" path="res://scenes/ui/CompanionPanel.tscn" id="12"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -55,46 +56,58 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 8
 
-[node name="TabStripColumn" type="VBoxContainer" parent="UI/Root/TabStrip/TabStripMargin"]
+[node name="TabStripScroll" type="ScrollContainer" parent="UI/Root/TabStrip/TabStripMargin"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="TabStripColumn" type="VBoxContainer" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="MarketTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="MarketTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "市場"
 
-[node name="CargoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="CargoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "積荷"
 
-[node name="WorkshopTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="WorkshopTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "製作所"
 
-[node name="MemoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="MemoTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "相場メモ"
 
-[node name="IslandTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="IslandTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 toggle_mode = true
 text = "島と装備"
 
-[node name="CompanionTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripColumn"]
+[node name="ExplorationTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+toggle_mode = true
+text = "探索"
+
+[node name="CompanionTabButton" type="Button" parent="UI/Root/TabStrip/TabStripMargin/TabStripScroll/TabStripColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
@@ -126,7 +139,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="Tabs" type="TabContainer" parent="UI/Root/SidePanel/SidePanelMargin"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(460, 0)
+custom_minimum_size = Vector2(580, 0)
 layout_mode = 2
 size_flags_vertical = 3
 tabs_visible = false
@@ -155,7 +168,12 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="CompanionPanel" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("11")]
+[node name="探索" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("11")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="CompanionPanel" parent="UI/Root/SidePanel/SidePanelMargin/Tabs" instance=ExtResource("12")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://sjiqjlvl1q43"
-path="res://.godot/imported/fort_sterling.svg-d14d0512b1fc6fce1203b0f6fb14f6a7.ctex"
+uid="uid://bru1l2nclcaeo"
+path="res://.godot/imported/ironhollow.svg-eb663fc06be845f0f98a5e4efbfbb7b2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/fort_sterling.svg"
-dest_files=["res://.godot/imported/fort_sterling.svg-d14d0512b1fc6fce1203b0f6fb14f6a7.ctex"]
+source_file="res://assets/sprites/cities/ironhollow.svg"
+dest_files=["res://.godot/imported/ironhollow.svg-eb663fc06be845f0f98a5e4efbfbb7b2.ctex"]
 
 [params]
 

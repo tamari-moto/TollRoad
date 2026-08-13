@@ -44,6 +44,16 @@ const ITEM_COLORS: Dictionary = {
 	"bow":   Color(0.8, 0.65, 0.35),
 	"robe":  Color(0.65, 0.45, 0.75),
 	"armor": Color(0.8, 0.55, 0.3),
+	"sunstone":      Color(1.0, 0.85, 0.35),
+	"ancient_relic": Color(0.6, 0.5, 0.85),
+	"coal":      Color(0.3, 0.3, 0.32),
+	"wool":      Color(0.85, 0.82, 0.75),
+	"quartz":    Color(0.65, 0.8, 0.85),
+	"clay":      Color(0.72, 0.48, 0.32),
+	"shield":    Color(0.55, 0.6, 0.7),
+	"warhammer": Color(0.6, 0.55, 0.5),
+	"cloak":     Color(0.4, 0.45, 0.6),
+	"staff":     Color(0.55, 0.75, 0.6),
 }
 
 # --- ランク ---
@@ -84,17 +94,6 @@ const ROW_STRIPE := Color(1.0, 1.0, 1.0, 0.03)
 
 # --- 大陸図 ---
 
-## 斜め見下ろしの圧縮率。円周配置の Y をこの割合に潰して楕円にする。
-## 1.0 で真上から、小さいほど浅い角度から見た形になる。
-const MAP_TILT: float = 0.52
-
-## 都市の足元に敷く同心円。
-const GROUND_RING := Color(0.34, 0.36, 0.42, 0.55)
-## 現在地の地盤。他より明るくして居場所を示す。
-const GROUND_RING_CURRENT := Color(0.55, 0.8, 0.95, 0.75)
-## カーレオンの地盤。黒ゾーンであることを地面でも示す。
-const GROUND_RING_DANGER := Color(0.95, 0.6, 0.45, 0.6)
-
 ## ピンの軸（マーカーから地盤へ伸びる線）。
 const PIN_STEM := Color(0.55, 0.57, 0.64)
 ## 紋章を囲む菱形の枠。
@@ -103,10 +102,6 @@ const PIN_FRAME := Color(0.72, 0.75, 0.82)
 const PIN_UNDERLINE := Color(0.6, 0.62, 0.68)
 
 # --- 背景 ---
-
-## 画面全体の下地。深い藍色で、羊皮紙の上の帳簿を思わせる暗さにする。
-const BACKDROP_TOP := Color(0.10, 0.11, 0.15)
-const BACKDROP_BOTTOM := Color(0.07, 0.08, 0.11)
 
 ## パネルの地色と縁。
 const PANEL_FILL := Color(0.14, 0.15, 0.19, 0.93)
@@ -144,15 +139,6 @@ static func make_panel_style() -> StyleBoxFlat:
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(PANEL_RADIUS)
 	style.set_content_margin_all(0)
-	return style
-
-
-## 画面全体の下地。上から下へわずかに暗くする。
-static func make_backdrop_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = BACKDROP_TOP
-	style.set_border_width_all(0)
-	style.set_corner_radius_all(0)
 	return style
 
 

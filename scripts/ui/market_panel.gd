@@ -80,9 +80,9 @@ func _build() -> void:
 
 func _build_row(item_id: String) -> Dictionary:
 	# アイコンと名前を1セルに収める。列を増やすと行数の検査が壊れるため。
-	var name_cell: HBoxContainer = UiIcons.make_labeled_item(
+	var name_row: HBoxContainer = UiIcons.make_labeled_item(
 		item_id, GameData.ITEMS[item_id]["name"], ROW_ICON_SIZE)
-	for child: Node in name_cell.get_children():
+	for child: Node in name_row.get_children():
 		if child is Label:
 			(child as Label).add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	# 基準比に応じた色帯。数字を読まなくても安い/高いが一目で分かる。
@@ -91,14 +91,26 @@ func _build_row(item_id: String) -> Dictionary:
 	accent.custom_minimum_size = Vector2(4, 0)
 	accent.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_cell.add_child(accent)
-	name_cell.move_child(accent, 0)
+	name_row.add_child(accent)
+	name_row.move_child(accent, 0)
+
 	# その都市で安い理由や「今お得」を示すバッジ。都市/相場が変わると付け替える。
+	# 「特産・◎最安」のような長い文言もあるため、名前と横並びにすると列（＝
+	# サイドパネル全体）の幅が伸びて右側の列がはみ出す。名前の下へ折り返す
+	# 形にして、セルの幅をアイコン＋名前だけで決まるようにする（列は増やさない。
+	# make_labeled_item() が返す HBox に対する外側の入れ物を追加しただけ）。
 	var badge := Label.new()
 	badge.name = "Badge"
 	badge.add_theme_font_size_override("font_size", 12)
 	badge.add_theme_color_override("font_color", UiTheme.GOOD)
 	badge.visible = false
+	# clip_text により、文言の実際の長さに関わらず名前行(name_row)の幅を
+	# 超えて列を広げない（はみ出す分は省略される）。
+	badge.clip_text = true
+
+	var name_cell := VBoxContainer.new()
+	name_cell.add_theme_constant_override("separation", 0)
+	name_cell.add_child(name_row)
 	name_cell.add_child(badge)
 	_grid.add_child(name_cell)
 
@@ -269,6 +281,30 @@ func price_bar_for(item_id: String) -> PriceBar:
 	if not _rows.has(item_id):
 		return null
 	return _rows[item_id]["bar"] as PriceBar
+
+
+## その品目に表示中の価格の文言。無ければ空文字。
+func price_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "price")
+
+
+## その品目に表示中の所持数の文言。無ければ空文字。
+func held_text_for(item_id: String) -> String:
+	return _row_label_text(item_id, "held")
+
+
+## その品目の買うボタン。無ければ null。
+func buy_button_for(item_id: String) -> Button:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["buy"] as Button
+
+
+## その品目の売るボタン。無ければ null。
+func sell_button_for(item_id: String) -> Button:
+	if not _rows.has(item_id):
+		return null
+	return _rows[item_id]["sell"] as Button
 
 
 ## その品目に出ているバッジの文言（特産・◎最安・◎高値など）。無ければ空文字。

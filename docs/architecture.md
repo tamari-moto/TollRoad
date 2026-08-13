@@ -81,13 +81,14 @@ preload されるだけで一度も生成されない状態が続いていたた
 ### RNG は単一インスタンスを共有する
 
 `GameSession._init()` が `RandomNumberGenerator` を1つ作り、
-`PriceTable.new(_rng)` へ**参照で**渡す。乱数を消費するのは3箇所:
+`PriceTable.new(_rng)` へ**参照で**渡す。乱数を消費するのは4箇所:
 
 | 箇所 | 消費 |
 |---|---|
-| `price_table.gd` の価格ゆらぎ | 6都市 × 9品目 = 54回／日 |
+| `price_table.gd` の価格ゆらぎ | 全都市 × 全品目（`GameData.CITIES.size() * GameData.ITEMS.size()` 回）／日 |
 | `game_session.gd` の襲撃判定 | 黒ゾーン移動1回につき1 |
 | `game_session.gd` の労働者の抽選 | 労働者数 × 2 回／日 |
+| `game_session.gd` の探索判定 | 成功判定に1、成功時はさらに報酬の抽選で最大3 |
 
 **消費の順序は `_advance_day()` が固定している**（価格リロール → メモ記録 → 労働者）。
 この順序を変えると、同じシードでも過去の記録と別の展開になる。
@@ -133,7 +134,10 @@ preload されるだけで一度も生成されない状態が続いていたた
 `make_transparent_style()`（`StyleBoxEmpty`）を与える。
 
 他のパネルと同じ不透明な地色を敷くと、3D世界の外側（空）を覆い隠してしまい、
-背景として機能しなくなるため。
+背景として機能しなくなるため。大陸図の `SubViewport` は `transparent_bg = false`
+で自前の Sky を不透明に描画するので、この背後に別の下地パネル（旧 `Backdrop`）は
+不要。大陸図が常時画面全体を覆うため一度も画面に出ないまま存在していたことが
+実測で分かり、撤去した。
 
 ### main.gd は autoload を識別子で参照しない
 

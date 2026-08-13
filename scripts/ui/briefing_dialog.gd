@@ -81,9 +81,10 @@ func _populate() -> void:
 		_premise.text = (
 			"あなたは駆け出しの商人。\n" +
 			"手持ちは %s シルバーと、荷を積むロバが一頭きり。\n\n" +
-			"5つの都市を結ぶ街道を巡り、%d日のうちにどれだけの財を築けるか。\n" +
-			"中央のカーレオンは実入りが大きいが、そこへ至る道は無法地帯だ。"
-		) % [UiUtil.format_number(GameData.INITIAL_SILVER), GameData.TOTAL_DAYS]
+			"%d つの都市を結ぶ街道を巡り、%d日のうちにどれだけの財を築けるか。\n" +
+			"中央の%sは実入りが大きいが、そこへ至る道は無法地帯だ。"
+		) % [UiUtil.format_number(GameData.INITIAL_SILVER), GameData.royal_city_ids().size(), GameData.TOTAL_DAYS,
+			GameData.CITIES[GameData.CAERLEON]["name"]]
 
 	if is_instance_valid(_goal_label):
 		_goal_label.text = "目標: %d日目に純資産 %s を築き、%s となること" % [

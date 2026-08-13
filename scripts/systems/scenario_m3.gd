@@ -73,13 +73,13 @@ func _test_worker_output() -> void:
 
 	# 移動や製作でも日が進むので労働者は働く。
 	var before: int = s.warehouse_total()
-	s.move_to("bridgewatch")
+	s.move_to(_adjacent_royal_city(s.current_city))
 	_check(s.warehouse_total() == before + 6, "移動中も労働者は働く",
 		"期待 %d, 実際 %d" % [before + 6, s.warehouse_total()])
 
 	# 非隣接移動（2日）なら2日ぶん。
 	var before_far: int = s.warehouse_total()
-	s.move_to("thetford")
+	s.move_to(_far_royal_city(s.current_city))
 	_check(s.warehouse_total() == before_far + 12, "2日移動なら2日ぶん働く",
 		"期待 %d, 実際 %d" % [before_far + 12, s.warehouse_total()])
 
@@ -96,7 +96,7 @@ func _test_worker_output() -> void:
 
 
 func _test_worker_distribution() -> void:
-	print("--- 労働者の資源分布（5資源から均等） ---")
+	print("--- 労働者の資源分布（全資源から均等） ---")
 	var s: GameSession = GameSession.new(2006)
 	s.silver = 1000000
 	s.upgrade_island()
@@ -116,16 +116,18 @@ func _test_worker_distribution() -> void:
 			only_resources = false
 	_check(only_resources, "倉庫に入るのは資源のみ", "装備が混ざった")
 
-	# 5資源すべてが出現し、均等（各20%）に近い。
-	_check(s.warehouse.size() == 5, "5資源すべてが出現する", str(s.warehouse.size()))
+	# 全資源が出現し、均等（各 1/資源数）に近い。
+	var resource_count: int = GameData.resource_ids().size()
+	_check(s.warehouse.size() == resource_count, "全資源が出現する", str(s.warehouse.size()))
+	var expected_share: float = 1.0 / float(resource_count)
 	var balanced: bool = true
 	var detail: String = ""
 	for item_id: String in s.warehouse:
 		var share: float = float(s.warehouse[item_id]) / float(total)
 		detail += "%s=%.1f%% " % [item_id, share * 100.0]
-		if absf(share - 0.2) > 0.04:
+		if absf(share - expected_share) > 0.04:
 			balanced = false
-	_check(balanced, "各資源が約20%ずつ", detail)
+	_check(balanced, "各資源が約%.0f%%ずつ" % (expected_share * 100.0), detail)
 	print("     内訳: %s" % detail)
 
 

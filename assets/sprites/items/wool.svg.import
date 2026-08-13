@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cso5njn6wpk63"
-path="res://.godot/imported/martlock.svg-cb972936ebbe00ad22767e64bef5e469.ctex"
+uid="uid://cwi8dvwtqpiib"
+path="res://.godot/imported/wool.svg-bf958f30d54d73456d42b96c9d00f84d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/martlock.svg"
-dest_files=["res://.godot/imported/martlock.svg-cb972936ebbe00ad22767e64bef5e469.ctex"]
+source_file="res://assets/sprites/items/wool.svg"
+dest_files=["res://.godot/imported/wool.svg-bf958f30d54d73456d42b96c9d00f84d.ctex"]
 
 [params]
 

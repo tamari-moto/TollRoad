@@ -72,15 +72,10 @@ func _build() -> void:
 		_cells[item_id] = row
 
 
-## 表の幅を抑えるため、都市名を短く表示する。
+## 表の幅を抑えるため、都市名を先頭3文字に短縮して表示する。
+## 都市数・都市名を変えてもそのまま追従する（固定の略称表は持たない）。
 static func _short_city_name(city_id: String) -> String:
-	match city_id:
-		"fort_sterling": return "F.スタ"
-		"lymhurst": return "リムハ"
-		"bridgewatch": return "ブリジ"
-		"martlock": return "マート"
-		"thetford": return "セット"
-		_: return "カーレ"
+	return String(GameData.CITIES[city_id]["name"]).substr(0, 3)
 
 
 func refresh() -> void:

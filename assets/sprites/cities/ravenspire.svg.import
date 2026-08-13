@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bxem80ufv6cfn"
-path="res://.godot/imported/caerleon.svg-db7df128dd2990194ca4f4159d1b9bd4.ctex"
+uid="uid://4jvhly3nfqx3"
+path="res://.godot/imported/ravenspire.svg-9284e0a57dc6dc2a5f0468a3d2ea5329.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/caerleon.svg"
-dest_files=["res://.godot/imported/caerleon.svg-db7df128dd2990194ca4f4159d1b9bd4.ctex"]
+source_file="res://assets/sprites/cities/ravenspire.svg"
+dest_files=["res://.godot/imported/ravenspire.svg-9284e0a57dc6dc2a5f0468a3d2ea5329.ctex"]
 
 [params]
 

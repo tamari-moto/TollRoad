@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cdiy8byy3qvqg"
-path="res://.godot/imported/lymhurst.svg-aeedeea36c5358a26d468e8aa071a003.ctex"
+uid="uid://b8a4eax114nxt"
+path="res://.godot/imported/staff.svg-2cc24c2e95828b90e312d43175fba8a9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/cities/lymhurst.svg"
-dest_files=["res://.godot/imported/lymhurst.svg-aeedeea36c5358a26d468e8aa071a003.ctex"]
+source_file="res://assets/sprites/items/staff.svg"
+dest_files=["res://.godot/imported/staff.svg-2cc24c2e95828b90e312d43175fba8a9.ctex"]
 
 [params]
 

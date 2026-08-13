@@ -1,9 +1,11 @@
 extends PanelContainer
-## 大陸図。5つの王国都市を円周に、カーレオンを中央に配置した地図。
+## 大陸図。王国都市を不規則な連結グラフに、レイヴンスパイアを中央に配置した地図。
 ##
-## 環状の王道は実線、カーレオンへの黒ゾーンは破線で結ぶ。位置関係を
-## そのまま画面にすることで、「中央へ渡るには黒ゾーンを通るしかない」
-## という構造が一目で分かる。
+## 王道（GameData.ROYAL_ROAD_EDGES）は実線、レイヴンスパイアへの黒ゾーンは
+## 破線で結ぶ。破線が出るのは GameData.BLACK_ZONE_GATES の3都市のみで、
+## それ以外の都市はまずゲートまで王道で移動する必要がある（経路探索が
+## 自動で合成する）。位置関係をそのまま画面にすることで、「中央へ渡るには
+## 黒ゾーンを通るしかない」という構造が一目で分かる。
 ##
 ## 都市の選択は SubViewportContainer 上のクリックをレイキャストで
 ## 3D の柱と判定する（Button は使わない）。クリック可能領域が常に
@@ -27,9 +29,6 @@ const COLOR_DANGER := UiTheme.WARN
 const MAP_MIN_HEIGHT: int = 300
 ## 都市ノード1つの大きさ。ピンと都市名が収まる高さを取る。
 const NODE_SIZE := Vector2(104, 96)
-## 円周の半径を領域の短辺に対してどれだけ取るか。
-## 斜め見下ろしで縦が潰れるぶん、横は大きめに取る。
-const RADIUS_RATIO: float = 0.40
 
 ## クリック判定の半径（3D空間の単位）。都市の柱（半径0.55・高さ1.5、
 ## map_view_3d.gd 参照）より一回り大きく取り、狙いやすくする。
@@ -117,7 +116,11 @@ func _build_viewport() -> void:
 	_viewport.name = "MapSubViewport"
 	# 本編の 2D 世界を映さないよう、独自の 3D 世界を持たせる。
 	_viewport.own_world_3d = true
-	_viewport.transparent_bg = true
+	# 大陸図は画面全体の背景（CLAUDE.md参照）で、後ろに透過して見せるべき
+	# 2D 要素はない。transparent_bg=true にすると Sky が描画されず、地形の
+	# 向こうがアプリのクリアカラー（黒）に抜けて、フォグが溶け込む相手を
+	# 失って地形の縁が黒バックにくっきり切り立って見えていた（実測）。
+	_viewport.transparent_bg = false
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	container.add_child(_viewport)
 

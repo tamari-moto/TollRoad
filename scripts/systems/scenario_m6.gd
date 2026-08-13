@@ -51,23 +51,22 @@ func _test_market_panel() -> void:
 		_despawn(panel)
 		return
 
-	# ヘッダ6列 + 9品目 × 6列 = 60ノード
+	# ヘッダ6列 + 全品目 × 6列
 	var expected: int = 6 + GameData.ITEMS.size() * 6
-	_check(grid.get_child_count() == expected, "全9品目の行が生成される",
+	_check(grid.get_child_count() == expected, "全品目の行が生成される",
 		"%d / 期待 %d" % [grid.get_child_count(), expected])
 
 	var title: Label = UiUtil.find_node(panel, "MarketTitle")
-	_check(title.text.contains("マートロック"), "現在地が題名に出る", title.text)
+	_check(title.text.contains(GameData.CITIES[GameData.INITIAL_CITY]["name"]), "現在地が題名に出る", title.text)
 
 	# 価格表示が実際の相場と一致する。行の並びは ITEMS の順。
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var price_label: Label = grid.get_child(6 + 1) as Label
 	var actual_price: int = session.prices.get_price(session.current_city, first_item)
-	_check(price_label.text == UiUtil.format_number(actual_price),
-		"価格が相場と一致する", "%s vs %d" % [price_label.text, actual_price])
+	_check(panel.price_text_for(first_item) == UiUtil.format_number(actual_price),
+		"価格が相場と一致する", "%s vs %d" % [panel.price_text_for(first_item), actual_price])
 
 	# 買うボタンで実際に購入できる。個数指定は無く、常に1個。
-	var buy_button: Button = grid.get_child(6 + 4) as Button
+	var buy_button: Button = panel.buy_button_for(first_item)
 	_check(not buy_button.disabled, "買うボタンが押せる", "無効")
 	var silver_before: int = session.silver
 	buy_button.pressed.emit()
@@ -75,11 +74,10 @@ func _test_market_panel() -> void:
 	_check(session.cargo_count(first_item) == 1, "1回押すと1個買える", str(session.cargo_count(first_item)))
 
 	# 所持数の表示が追従する。
-	var held_label: Label = grid.get_child(6 + 3) as Label
-	_check(held_label.text == "1", "所持数の表示が追従する", held_label.text)
+	_check(panel.held_text_for(first_item) == "1", "所持数の表示が追従する", panel.held_text_for(first_item))
 
 	# 売るボタンが有効になり、売却できる。
-	var sell_button: Button = grid.get_child(6 + 5) as Button
+	var sell_button: Button = panel.sell_button_for(first_item)
 	_check(not sell_button.disabled, "所持していれば売るボタンが押せる", "無効")
 	sell_button.pressed.emit()
 	_check(session.cargo_count(first_item) == 0, "売るボタンで売却される", str(session.cargo_count(first_item)))
@@ -101,10 +99,9 @@ func _test_quantity_selection() -> void:
 	var session: GameSession = GameSession.new(6002)
 	panel.bind(session)
 
-	var grid: GridContainer = UiUtil.find_node(panel, "ItemGrid")
 	var first_item: String = GameData.ITEMS.keys()[0]
-	var buy_button: Button = grid.get_child(6 + 4) as Button
-	var sell_button: Button = grid.get_child(6 + 5) as Button
+	var buy_button: Button = panel.buy_button_for(first_item)
+	var sell_button: Button = panel.sell_button_for(first_item)
 
 	# 個数指定のUIは無い。買うボタンを5回連打すると5個買える。
 	for i in range(5):
@@ -177,7 +174,7 @@ func _test_map_panel() -> void:
 		return
 
 	# 都市の選択は Button ではなくレイキャストで判定する（CLAUDE.md参照）。
-	_check(panel.node_count() == 6, "6都市のノードがある", str(panel.node_count()))
+	_check(panel.node_count() == GameData.CITIES.size(), "全都市のノードがある", str(panel.node_count()))
 
 	# 表示テキストはツールチップの文言に入る。
 	var found_current: bool = false
@@ -193,11 +190,11 @@ func _test_map_panel() -> void:
 		if tip.contains("1日 / 250"):
 			found_adjacent = true
 	_check(found_current, "現在地が明示される", "ない")
-	_check(found_raid, "カーレオンに襲撃率が出る", "ない")
+	_check(found_raid, "中心都市に襲撃率が出る", "ない")
 	_check(found_adjacent, "隣接都市に1日/250と出る", "ない")
 
 	# 移動確認ダイアログが出る。
-	panel.select_city("caerleon")
+	panel.select_city(GameData.CAERLEON)
 	var dialog: ConfirmationDialog = null
 	for child: Node in panel.get_children():
 		if child is ConfirmationDialog:
@@ -209,7 +206,7 @@ func _test_map_panel() -> void:
 		# 確認すると実際に移動する。
 		var before_city: String = session.current_city
 		dialog.confirmed.emit()
-		_check(session.current_city == "caerleon", "確認で移動する",
+		_check(session.current_city == GameData.CAERLEON, "確認で移動する",
 			"%s -> %s" % [before_city, session.current_city])
 
 	# 資金が尽きると移動先が全て選択できなくなる。

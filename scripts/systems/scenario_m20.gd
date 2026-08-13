@@ -1,203 +1,246 @@
 extends "res://scripts/systems/scenario_base.gd"
-## M20 の検証シナリオ。ギルド仲間（同行者）を検査する。
+## 探索の検証。成功率の算出式、報酬、失敗時のリスク、島倉庫ブースト、
+## セーブ/ロードの往復を確かめる。
 ##
 ## 実行:
 ##   godot --headless --path . --script scripts/systems/scenario_m20.gd
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
-const SaveManager = preload("res://scripts/systems/save_manager.gd")
-
-## 検査専用のパス。SaveManager.SAVE_PATH は絶対に使わないこと
-## （シナリオを流すたびにプレイヤーのセーブが消える）。
-const TEST_PATH: String = "user://scenario_m20_tmp.json"
 
 
 func _init() -> void:
-	_test_set_companion()
-	_test_fina_buy_discount()
-	_test_gadolf_craft_fee()
-	_test_serafina_memo_freshness()
-	_test_rocco_capacity_and_raid()
-	_test_only_one_active()
+	_test_city_flavors()
+	_test_chance_formula()
+	_test_ravenspire_penalty()
+	_test_success_rate()
+	_test_reward_bounds()
+	_test_capacity_safety()
+	_test_failure()
+	_test_day_and_over()
+	_test_boost()
 	_test_save_round_trip()
-	_test_unknown_companion_clamped()
 	_finish()
 
 
-func _test_set_companion() -> void:
-	print("--- 同行者の切り替え ---")
+func _test_city_flavors() -> void:
+	print("--- 都市ごとの探索フレーバー ---")
+	for city_id: String in GameData.CITIES:
+		var flavor: String = GameData.CITIES[city_id].get("explore_flavor", "")
+		_check(flavor != "", "%s に探索フレーバーがある" % city_id, "ない")
+
+
+func _test_chance_formula() -> void:
+	print("--- 成功率の算出式 ---")
 	var s: GameSession = GameSession.new(20001)
-	_check(s.active_companion == GameData.COMPANION_NONE, "初期は誰も同行しない",
-		s.active_companion)
+	_check(is_equal_approx(s.explore_chance(), GameData.EXPLORE_BASE_CHANCE),
+		"装備なしは基本確率のまま", str(s.explore_chance()))
 
-	_check(s.set_companion("fina"), "フィナを同行できる", "できない")
-	_check(s.active_companion == "fina", "同行者がフィナになる", s.active_companion)
+	s.buy("sword", 1)
+	_check(s.cargo_count("sword") == 1, "検査の前提: 剣を1個買えた", str(s.cargo_count("sword")))
+	_check(is_equal_approx(s.explore_chance(),
+			GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_BONUS_PER_UNIT),
+		"装備1個で+3%相当のボーナス", str(s.explore_chance()))
 
-	_check(not s.set_companion("fina"), "同じ同行者への切り替えは失敗（無変化）", "通ってしまった")
-	_check(not s.set_companion("unknown"), "存在しないIDは拒否", "通ってしまった")
-	_check(s.active_companion == "fina", "拒否されても同行者は変わらない", s.active_companion)
+	s.buy("sword", 5)
+	_check(s.cargo_count("sword") >= GameData.EXPLORE_EQUIP_UNIT_CAP,
+		"検査の前提: 剣を頭打ち数以上持っている", str(s.cargo_count("sword")))
+	_check(is_equal_approx(s.explore_chance(),
+			GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_UNIT_CAP * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT),
+		"同種の装備は頭打ち数までしか加算されない", str(s.explore_chance()))
 
-	_check(s.set_companion(GameData.COMPANION_NONE), "解除できる", "できない")
-	_check(s.active_companion == GameData.COMPANION_NONE, "解除すると誰も同行しない",
-		s.active_companion)
-
-	# 無料・即時であること（日数を消費しない）。
-	var day_before: int = s.day
-	s.set_companion("rocco")
-	_check(s.day == day_before, "同行者の切り替えは日数を消費しない", str(s.day))
-
-
-func _test_fina_buy_discount() -> void:
-	print("--- フィナ: 買値ダウン ---")
-	var s: GameSession = GameSession.new(20002)
-	var base_price: int = s.prices.get_price(s.current_city, "ore")
-	_check(s.buy_price("ore") == base_price, "同行者無しでは割引無し", str(s.buy_price("ore")))
-
-	s.set_companion("fina")
-	var expected: int = int(round(base_price * (1.0 - GameData.COMPANION_BUY_DISCOUNT)))
-	_check(s.buy_price("ore") == expected, "フィナ同行中は買値が8%下がる",
-		"期待 %d, 実際 %d" % [expected, s.buy_price("ore")])
-	_check(expected < base_price, "割引後は元の価格より安い", str(expected))
-
-	var silver_before: int = s.silver
-	_check(s.buy("ore", 1), "割引価格で購入できる", "できない")
-	_check(s.silver == silver_before - expected, "割引価格ぶんだけシルバーが減る",
-		"期待 %d, 実際 %d" % [silver_before - expected, s.silver])
+	# 種類を跨ぐとボーナスが伸びるが、合計は上限でクランプされる。
+	# 装備の種類数 × 頭打ち数 × 重量3 がロバの積載(40)を超えうるため、
+	# 先に積載の大きい騎乗へ乗り換えておく。
+	var s2: GameSession = GameSession.new(20002)
+	s2.silver = 999999
+	s2.buy_mount("mammoth")
+	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
+		s2.buy(item_id, GameData.EXPLORE_EQUIP_UNIT_CAP)
+		_check(s2.cargo_count(item_id) == GameData.EXPLORE_EQUIP_UNIT_CAP,
+			"検査の前提: %s を頭打ち数だけ買えた" % item_id, str(s2.cargo_count(item_id)))
+	var uncapped_bonus: float = GameData.EXPLORE_COMBAT_ITEMS.size() * GameData.EXPLORE_EQUIP_UNIT_CAP * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
+	_check(uncapped_bonus > GameData.EXPLORE_EQUIP_BONUS_CAP,
+		"検査の前提: クランプ無しなら上限を超える", str(uncapped_bonus))
+	_check(is_equal_approx(s2.explore_chance(), GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_BONUS_CAP),
+		"ボーナス合計は上限でクランプされる", str(s2.explore_chance()))
 
 
-func _test_gadolf_craft_fee() -> void:
-	print("--- ガドルフ: 製作手数料ダウン ---")
+func _test_ravenspire_penalty() -> void:
+	print("--- レイヴンスパイアのペナルティ ---")
 	var s: GameSession = GameSession.new(20003)
-	_check(s.craft_fee_per_unit() == GameData.CRAFT_FEE, "同行者無しでは通常の手数料",
-		str(s.craft_fee_per_unit()))
-
-	s.set_companion("gadolf")
-	_check(s.craft_fee_per_unit() == GameData.COMPANION_CRAFT_FEE, "ガドルフ同行中は手数料が下がる",
-		str(s.craft_fee_per_unit()))
-	_check(GameData.COMPANION_CRAFT_FEE < GameData.CRAFT_FEE, "下がった手数料は通常より安い",
-		str(GameData.COMPANION_CRAFT_FEE))
-
-	s.buy("ore", 3)
-	var silver_before: int = s.silver
-	_check(s.craft("sword", 1), "製作できる", "できない")
-	# 手数料は個数だけで決まる（生産ボーナスによる材料還元とは無関係）。
-	var expected_fee: int = GameData.COMPANION_CRAFT_FEE
-	_check(s.silver == silver_before - expected_fee, "下がった手数料が引かれる",
-		"期待 %d, 実際 %d" % [silver_before - expected_fee, s.silver])
+	if s.current_city != GameData.CAERLEON:
+		s.move_to(GameData.CAERLEON)
+	_check(s.current_city == GameData.CAERLEON, "検査の前提: レイヴンスパイアにいる", s.current_city)
+	_check(is_equal_approx(s.explore_chance(), GameData.EXPLORE_BASE_CHANCE - GameData.EXPLORE_CAERLEON_PENALTY),
+		"レイヴンスパイアは基本確率が下がる", str(s.explore_chance()))
 
 
-func _test_serafina_memo_freshness() -> void:
-	print("--- セラフィーナ: 相場メモが古くならない ---")
-	var s: GameSession = GameSession.new(20004)
-	var home: String = s.current_city
-	_check(s.has_memo(home), "初期都市は記録済み", "未記録")
-
-	s.move_to("bridgewatch")
-	for i: int in GameData.MEMO_STALE_DAYS:
-		s.rest()
-	_check(s.memo_age(home) >= GameData.MEMO_STALE_DAYS, "検査の前提: 記録が古くなっている",
-		str(s.memo_age(home)))
-	_check(s.is_memo_stale(home), "同行者無しでは古い記録として扱われる", "古くない")
-
-	s.set_companion("serafina")
-	_check(not s.is_memo_stale(home), "セラフィーナ同行中は古くならない", "古いまま")
-
-	s.set_companion(GameData.COMPANION_NONE)
-	_check(s.is_memo_stale(home), "同行を解けば再び古い記録として扱われる", "古くない")
+func _test_success_rate() -> void:
+	print("--- 成功率の実測（1000回・装備なし） ---")
+	var trials: int = 1000
+	var successes: int = 0
+	for i: int in trials:
+		var s: GameSession = GameSession.new(21000 + i)
+		s.explore()
+		if s.log_entries[-1].contains("探索成功"):
+			successes += 1
+	var rate: float = float(successes) / float(trials)
+	_check(absf(rate - GameData.EXPLORE_BASE_CHANCE) < 0.05, "実測成功率が基本確率に近い",
+		"%.1f%%（期待 %.1f%%）" % [rate * 100.0, GameData.EXPLORE_BASE_CHANCE * 100.0])
 
 
-func _test_rocco_capacity_and_raid() -> void:
-	print("--- ロッコ: 積載量アップと襲撃率ダウン ---")
-	var s: GameSession = GameSession.new(20005)
-	var base_capacity: int = s.capacity()
-	_check(base_capacity == GameData.MOUNTS[s.mount]["capacity"], "同行者無しは騎乗どおりの積載量",
-		str(base_capacity))
-
-	s.set_companion("rocco")
-	_check(s.capacity() == base_capacity + GameData.COMPANION_CAPACITY_BONUS,
-		"ロッコ同行中は積載量が+15される",
-		"期待 %d, 実際 %d" % [base_capacity + GameData.COMPANION_CAPACITY_BONUS, s.capacity()])
-
-	# 黒ゾーンの襲撃率。
-	var to_caerleon: GameSession = GameSession.new(20006)
-	to_caerleon.move_to("bridgewatch")
-	var route_without: Dictionary = to_caerleon.route_to(GameData.CAERLEON)
-	_check(is_equal_approx(route_without["raid_chance"], GameData.RAID_CHANCE),
-		"同行者無しは通常の襲撃率", str(route_without["raid_chance"]))
-
-	to_caerleon.set_companion("rocco")
-	var route_with: Dictionary = to_caerleon.route_to(GameData.CAERLEON)
-	var expected_raid: float = GameData.RAID_CHANCE - GameData.COMPANION_RAID_REDUCTION
-	_check(is_equal_approx(route_with["raid_chance"], expected_raid),
-		"ロッコ同行中は襲撃率が下がる",
-		"期待 %.4f, 実際 %.4f" % [expected_raid, route_with["raid_chance"]])
-	_check(route_with["cost"] == route_without["cost"], "費用・日数は変わらない",
-		str(route_with["cost"]))
+func _test_reward_bounds() -> void:
+	print("--- 報酬の範囲（200回） ---")
+	var min_gem: int = 999
+	var max_gem: int = -999
+	var min_gain: int = 999999999
+	var trials_succeeded: int = 0
+	for i: int in 200:
+		var s: GameSession = GameSession.new(22000 + i)
+		var silver_before: int = s.silver
+		s.explore()
+		if not s.log_entries[-1].contains("探索成功"):
+			continue
+		trials_succeeded += 1
+		var gem: int = s.cargo_count("sunstone")
+		min_gem = mini(min_gem, gem)
+		max_gem = maxi(max_gem, gem)
+		min_gain = mini(min_gain, s.silver - silver_before)
+	_check(trials_succeeded > 0, "成功する試行がある", "0件")
+	_check(min_gem >= GameData.EXPLORE_GEM_MIN, "陽光石の最小個数が範囲内", str(min_gem))
+	_check(max_gem <= GameData.EXPLORE_GEM_MAX, "陽光石の最大個数が範囲内", str(max_gem))
+	_check(min_gain >= GameData.EXPLORE_SILVER_MIN, "シルバー報酬が最低額以上", str(min_gain))
 
 
-func _test_only_one_active() -> void:
-	print("--- 同時に有効なのは1人だけ（効果は重複しない） ---")
-	var s: GameSession = GameSession.new(20007)
-	var base_price: int = s.prices.get_price(s.current_city, "ore")
+## free_capacity() が常に非負であるという他の計算（max_withdrawable() 等）の
+## 前提を、探索の報酬付与が崩していないこと。
+func _test_capacity_safety() -> void:
+	print("--- 積載超過にならないこと（1000回） ---")
+	for i: int in 1000:
+		var s: GameSession = GameSession.new(60000 + i)
+		s.buy("stone", s.max_buyable("stone"))
+		s.explore()
+		if s.cargo_weight() > s.capacity():
+			_check(false, "探索後も積載超過しない（シード %d）" % (60000 + i),
+				"%d / %d" % [s.cargo_weight(), s.capacity()])
+			return
+	_check(true, "1000回とも積載超過しない", "")
 
-	s.set_companion("fina")
-	_check(s.buy_price("ore") < base_price, "フィナの割引が効いている", str(s.buy_price("ore")))
 
-	# ロッコへ切り替えると、フィナの効果は消える。
-	s.set_companion("rocco")
-	_check(s.buy_price("ore") == base_price, "切り替えるとフィナの割引は消える",
-		str(s.buy_price("ore")))
-	_check(s.capacity() == GameData.MOUNTS[s.mount]["capacity"] + GameData.COMPANION_CAPACITY_BONUS,
-		"ロッコの積載ボーナスだけが効いている", str(s.capacity()))
+func _test_failure() -> void:
+	print("--- 探索失敗時のリスク ---")
+	var failed: GameSession = null
+	for i: int in 200:
+		var s: GameSession = GameSession.new(40000 + i)
+		s.buy("sword", 1)
+		s.buy("ore", 5)
+		if s.cargo_count("sword") != 1 or s.cargo_count("ore") != 5:
+			continue
+		s.explore()
+		if s.log_entries[-1].contains("探索失敗"):
+			failed = s
+			break
+
+	if failed == null:
+		_check(false, "探索に失敗するシードが見つかる", "200シード試して0件")
+		return
+	_check(failed.cargo_count("sword") == 0, "失敗すると戦闘装備を失う", str(failed.cargo_count("sword")))
+	_check(failed.cargo_count("ore") == 5, "資源は無傷", str(failed.cargo_count("ore")))
+
+	var found_log: bool = false
+	for entry: String in failed.log_entries:
+		if entry.contains("探索失敗"):
+			found_log = true
+	_check(found_log, "探索失敗が航海日誌に記録される", "記録なし")
 
 
+func _test_day_and_over() -> void:
+	print("--- 日数消費とゲーム終了後の扱い ---")
+	var s: GameSession = GameSession.new(70001)
+	var day_before: int = s.day
+	_check(s.explore(), "探索が実行できる", "できない")
+	_check(s.day == day_before + 1, "1日だけ消費する", str(s.day - day_before))
+
+	var over: GameSession = GameSession.new(70002)
+	while not over.is_over():
+		over.rest()
+	_check(not over.explore(), "60日を終えると探索できない", "できてしまった")
+
+
+func _test_boost() -> void:
+	print("--- 探索成功後の島倉庫ブースト ---")
+	var successful: GameSession = null
+	var gain_on_success_day: int = 0
+	for i: int in 500:
+		var s: GameSession = GameSession.new(30000 + i)
+		s.silver = 999999
+		s.upgrade_island()
+		var before: int = s.warehouse_total()
+		s.explore()
+		if s.log_entries[-1].contains("探索成功"):
+			successful = s
+			gain_on_success_day = s.warehouse_total() - before
+			break
+
+	if successful == null:
+		_check(false, "島レベル1で探索に成功するシードが見つかる", "500シード試して0件")
+		return
+
+	var workers: int = successful.worker_count()
+	_check(workers > 0, "検査の前提: 労働者がいる", str(workers))
+	var normal_daily: int = workers * GameData.RESOURCES_PER_WORKER_PER_DAY
+	var boosted_daily: int = normal_daily * GameData.EXPLORE_BOOST_MULT
+
+	_check(gain_on_success_day == boosted_daily,
+		"探索成功当日はブーストが乗る（%d個/日）" % boosted_daily, str(gain_on_success_day))
+
+	for i: int in GameData.EXPLORE_BOOST_DAYS - 1:
+		var before2: int = successful.warehouse_total()
+		successful.rest()
+		var gain: int = successful.warehouse_total() - before2
+		_check(gain == boosted_daily, "ブースト%d日目も継続する" % (i + 2), str(gain))
+
+	var before3: int = successful.warehouse_total()
+	successful.rest()
+	var gain_after: int = successful.warehouse_total() - before3
+	_check(gain_after == normal_daily, "ブースト終了後は通常量に戻る", str(gain_after))
+
+
+## 64bit の RNG state と同じ注意点: 辞書どうしの比較だけでは壊れた実装でも
+## 通ってしまうため、必ず JSON.stringify() を経由して比較する。
 func _test_save_round_trip() -> void:
-	print("--- セーブ/ロードで同行者が戻る ---")
-	var original: GameSession = GameSession.new(20008)
-	original.set_companion("gadolf")
+	print("--- セーブ/ロードでブースト日数が往復する ---")
+	var successful: GameSession = null
+	for i: int in 300:
+		var s: GameSession = GameSession.new(80000 + i)
+		s.explore()
+		if s.log_entries[-1].contains("探索成功"):
+			successful = s
+			break
+
+	if successful == null:
+		_check(false, "探索に成功するシードが見つかる", "300シード試して0件")
+		return
+
+	var data: Dictionary = successful.to_dict()
+	_check(data.has("boost_days_left") and int(data["boost_days_left"]) > 0,
+		"to_dict にブースト日数が入る", str(data.get("boost_days_left")))
+
+	var via_json: Variant = JSON.parse_string(JSON.stringify(data))
+	_check(via_json is Dictionary, "JSON として往復できる", str(typeof(via_json)))
+	if not (via_json is Dictionary):
+		return
+	_check(int(via_json["boost_days_left"]) == int(data["boost_days_left"]),
+		"JSON を経由してもブースト日数が変わらない", str(via_json["boost_days_left"]))
 
 	var restored: GameSession = GameSession.new(0)
-	restored.from_dict(original.to_dict())
-	_check(restored.active_companion == "gadolf", "辞書の往復で同行者が戻る",
-		restored.active_companion)
-
-	# 実ファイル経由でも戻る。
-	SaveManager.delete_save(TEST_PATH)
-	_check(SaveManager.save_game(original, TEST_PATH), "保存できる", "失敗した")
-	var loaded: GameSession = SaveManager.load_game(TEST_PATH)
-	_check(loaded != null, "読み込める", SaveManager.last_error())
-	if loaded != null:
-		_check(loaded.active_companion == "gadolf", "ファイル経由でも同行者が戻る",
-			loaded.active_companion)
-	SaveManager.delete_save(TEST_PATH)
-
-	# 同行者が無いセーブ（既存のセーブ形式）も問題なく読める。
-	var without_companion: Dictionary = original.to_dict()
-	without_companion.erase("active_companion")
-	var restored_none: GameSession = GameSession.new(0)
-	restored_none.from_dict(without_companion)
-	_check(restored_none.active_companion == GameData.COMPANION_NONE,
-		"active_companion が無い旧セーブは同行者無しになる", restored_none.active_companion)
-
-
-func _test_unknown_companion_clamped() -> void:
-	print("--- 未知の同行者IDは丸められる ---")
-	SaveManager.delete_save(TEST_PATH)
-	var data: Dictionary = GameSession.new(20009).to_dict()
-	data["version"] = SaveManager.SAVE_VERSION
-	data["active_companion"] = "phantom_thief"
-
-	var file: FileAccess = FileAccess.open(TEST_PATH, FileAccess.WRITE)
-	if file == null:
-		_check(false, "検査用のファイルを書ける", "書けない")
-		return
-	file.store_string(JSON.stringify(data, "\t"))
-	file.close()
-
-	var loaded: GameSession = SaveManager.load_game(TEST_PATH)
-	_check(loaded != null, "壊れたIDでも読み込める", SaveManager.last_error())
-	if loaded != null:
-		_check(loaded.active_companion == GameData.COMPANION_NONE,
-			"未知の同行者IDは同行者無しに丸められる", loaded.active_companion)
-	SaveManager.delete_save(TEST_PATH)
+	restored.from_dict(via_json)
+	restored.silver = 999999
+	if restored.island_level == 0:
+		restored.upgrade_island()
+	var before: int = restored.warehouse_total()
+	restored.rest()
+	var gain: int = restored.warehouse_total() - before
+	var expected: int = restored.worker_count() * GameData.RESOURCES_PER_WORKER_PER_DAY * GameData.EXPLORE_BOOST_MULT
+	_check(gain == expected, "復元後もブーストが効いている", "%d / %d" % [gain, expected])
