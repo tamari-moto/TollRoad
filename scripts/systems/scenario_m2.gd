@@ -20,6 +20,17 @@ func _init() -> void:
 	_finish()
 
 
+## logged シグナルで EVENT が飛んだかを溜める。
+## ローカル変数だとラムダは値をコピーして捕まえるため、内側からの代入が
+## 外へ伝わらない（実際にこれで検査が誤通過していた）。メンバ変数にすること。
+var _event_seen: bool = false
+
+
+func _on_logged_watch_event(_message: String, kind: int) -> void:
+	if kind == GameSession.LogKind.EVENT:
+		_event_seen = true
+
+
 ## 初期都市のボーナス対象ではない王国都市を1つ返す（比較・非ボーナス検査用）。
 func _non_bonus_royal_city(home: String) -> String:
 	for city_id: String in GameData.royal_city_ids():
@@ -36,7 +47,9 @@ func _test_craft_basics() -> void:
 	var material: String = GameData.ITEMS[bonus_item]["material"]
 	var other_city: String = _non_bonus_royal_city(home)
 
-	var s: GameSession = GameSession.new(1001)
+	# 1001 のままだと製作の日送りでランダムイベントが発生し、手数料の
+	# 厳密比較が崩れる。1002 は発生しない。
+	var s: GameSession = GameSession.new(1002)
 	s.move_to(other_city)
 	_check(not s.has_craft_bonus(bonus_item), "%s ではボーナス外" % GameData.CITIES[other_city]["name"], "ボーナスあり")
 	_check(s.material_cost_per_unit(bonus_item) == 3, "ボーナス外は材料3個", str(s.material_cost_per_unit(bonus_item)))
@@ -157,6 +170,8 @@ func _test_black_zone_route() -> void:
 func _test_raid_outcome() -> void:
 	print("--- 襲撃の結果 ---")
 	# 襲撃が起きるシードを探し、その挙動を検査する。
+	# ランダムイベントが同じ移動中に発生するとシルバーの厳密比較が崩れるため、
+	# イベントが起きなかったシードだけを対象にする。
 	var raided_session: GameSession = null
 	var silver_at_departure: int = 0
 	for seed_value: int in range(1, 400):
@@ -165,7 +180,12 @@ func _test_raid_outcome() -> void:
 		if s.cargo_count("ore") != 10:
 			continue
 		silver_at_departure = s.silver
+		_event_seen = false
+		s.logged.connect(_on_logged_watch_event)
 		s.move_to(GameData.CAERLEON)
+		s.logged.disconnect(_on_logged_watch_event)
+		if _event_seen:
+			continue
 		if s.cargo.is_empty():
 			raided_session = s
 			break

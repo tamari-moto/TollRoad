@@ -25,6 +25,7 @@ enum Kind {
 	TRAVEL,    ## 移動。ざらついた短い音
 	RAID,      ## 襲撃。濁った低音
 	EXPLORE,   ## 探索。成功・失敗を問わず鳴る、緊張感のある短い音
+	EVENT,     ## 日送りランダムイベント。良し悪しを問わず鳴る、軽い音
 }
 
 ## 種類ごとの音量（dB）。頻度の高い音ほど下げる。
@@ -37,6 +38,7 @@ const VOLUMES: Dictionary = {
 	Kind.TRAVEL: -18.0,
 	Kind.RAID: -8.0,
 	Kind.EXPLORE: -11.0,
+	Kind.EVENT: -15.0,
 }
 
 ## GameSession.LogKind -> Kind。日誌の行に鳴らす音の対応表。
@@ -54,6 +56,7 @@ const LOG_KIND_SOUNDS: Dictionary = {
 	# 別れは失う側なので控えめな低音に寄せる。
 	GameSessionScript.LogKind.COMPANION_JOINED: Kind.UPGRADE,
 	GameSessionScript.LogKind.COMPANION_LEFT: Kind.DAY,
+	GameSessionScript.LogKind.EVENT: Kind.EVENT,
 }
 
 
@@ -79,6 +82,9 @@ static func kind_for_message(message: String) -> int:
 		return GameSessionScript.LogKind.COMPANION_JOINED
 	if message.contains("一人旅に戻った"):
 		return GameSessionScript.LogKind.COMPANION_LEFT
+	if message.contains("行商人") or message.contains("馬車の修理") or \
+			message.contains("譲り受けた") or message.contains("荷崩れ"):
+		return GameSessionScript.LogKind.EVENT
 	if message.contains("襲撃"):
 		return GameSessionScript.LogKind.RAID
 	if message.contains("探索"):
@@ -99,7 +105,10 @@ static func is_severe_log_kind(log_kind: int, message: String) -> bool:
 	if log_kind == GameSessionScript.LogKind.RAID:
 		return true
 	# 探索は成功と失敗で重さが違うため、種別だけでは決まらない。
-	return log_kind == GameSessionScript.LogKind.EXPLORE and message.contains("失敗")
+	if log_kind == GameSessionScript.LogKind.EXPLORE:
+		return message.contains("失敗")
+	# ランダムイベントも良し悪しを問わない種別なので、本文で判定する。
+	return log_kind == GameSessionScript.LogKind.EVENT and message.contains("失った")
 
 
 static var _cache: Dictionary = {}
@@ -200,6 +209,9 @@ static func _build(kind: Kind) -> AudioStreamWAV:
 		Kind.EXPLORE:
 			# 揺れ動く短い音。成功か失敗か分かる前の緊張感を狙う。
 			return _tone(260.0, 340.0, 0.2, 0.25)
+		Kind.EVENT:
+			# 軽く揺れる短い音。頻度が高いので控えめに。
+			return _tone(300.0, 380.0, 0.12, 0.15)
 	return null
 
 
