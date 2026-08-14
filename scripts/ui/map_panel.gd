@@ -489,6 +489,7 @@ func refresh() -> void:
 		# カメラの周回もその都市を中心に据える。
 		if is_instance_valid(_camera) and _world.positions.has(_session.current_city):
 			_camera.focus_on(_world.positions[_session.current_city])
+		_world.sync_convoys(_convoy_views())
 
 	for city_id: String in _nodes:
 		var node: Control = _nodes[city_id]
@@ -608,6 +609,30 @@ func _on_confirmed() -> void:
 	_session.move_to(_pending_city)
 	_pending_city = ""
 	refresh()
+
+
+## 走行中の隊商を、3D 層が必要とする形（通し番号・区間・進み・色）に
+## 直して返す。
+##
+## 3D 層に GameSession を渡さず、ここで詰め替えている。map_view_3d.gd は
+## 在庫や品目の意味を知らないまま「街道の上を動く箱」を描くだけで済み、
+## 品目の色を決める責務は他のパネルと同じくこの UI 層に残る。
+func _convoy_views() -> Array[Dictionary]:
+	var views: Array[Dictionary] = []
+	if _session == null:
+		return views
+	for index: int in _session.logistics.active_count():
+		var leg: Dictionary = _session.logistics.leg_at(index)
+		if leg["from"] == "" or leg["to"] == "":
+			continue
+		views.append({
+			"id": _session.logistics.id_of(index),
+			"from": leg["from"],
+			"to": leg["to"],
+			"t": leg["t"],
+			"color": UiTheme.item_color(_session.logistics.item_of(index)),
+		})
+	return views
 
 
 func _on_day_advanced(_day: int) -> void:

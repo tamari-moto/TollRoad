@@ -8,6 +8,7 @@ extends RefCounted
 const GameData = preload("res://scripts/systems/game_data.gd")
 const PriceTable = preload("res://scripts/systems/price_table.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
+const Logistics = preload("res://scripts/systems/logistics.gd")
 
 ## 日誌の行の種別。UI が音と色を選ぶのに使う。
 ##
@@ -26,6 +27,7 @@ enum LogKind {
 	COMPANION_JOINED, ## 同行者の加入・切り替え
 	COMPANION_LEFT,   ## 同行者との別れ
 	EVENT,            ## 日送りランダムイベント（良し悪しを問わない）
+	LOGISTICS,        ## 隊商の到着（現在地に着いた分のみ）
 }
 
 signal day_advanced(day: int)
@@ -73,6 +75,10 @@ var prices: PriceTable
 ## 都市ごとの在庫と需要。買える上限・売れる上限を決め、価格にも効く。
 var market: MarketTable
 
+## 都市間を走る隊商。生産地の在庫を消費地へ運ぶ。
+## 非生産地の在庫が増える経路はこれだけ（market_table.gd 参照）。
+var logistics: Logistics
+
 var _rng: RandomNumberGenerator
 
 
@@ -83,6 +89,9 @@ func _init(rng_seed: int = 0) -> void:
 	# 価格が在庫を参照するので、市場を先に作る。
 	market = MarketTable.new()
 	prices = PriceTable.new(_rng, market)
+	# 物流は市場の在庫を動かすだけで価格には触らない（価格を作る場所は
+	# PriceTable の1箇所に保つ）。RNG は参照で渡し、シードで再現できるようにする。
+	logistics = Logistics.new(_rng)
 	_record_memo()
 
 
@@ -611,6 +620,22 @@ func upgrade_island() -> bool:
 	return true
 
 
+## 隊商を1日ぶん進め、現在地へ着いたものだけ日誌に出す。
+##
+## 全都市の着荷を日誌に流すと1日に何行も出て、プレイヤー自身の行動が
+## 埋もれる。**目の前で起きたことだけ書く**（他都市の物流は地図の荷車と
+## 市場の在庫で読める）。
+func _run_logistics() -> void:
+	var arrived: Array[Dictionary] = logistics.advance_day(market)
+	for convoy: Dictionary in arrived:
+		if convoy["to"] != current_city:
+			continue
+		_log("%s から %s が %d 個届いた。" % [
+			GameData.CITIES[convoy["from"]]["name"],
+			GameData.ITEMS[convoy["item"]]["name"],
+			convoy["count"]], LogKind.LOGISTICS)
+
+
 ## 労働者が1日ぶん働く。1人につきランダムな資源を2個運ぶ（Q4: 5資源から均等）。
 ## 探索成功のブーストが残っていれば産出量が倍になる。
 func _run_workers() -> void:
@@ -765,6 +790,14 @@ func _advance_day() -> void:
 	# 在庫と需要を先に補充してから相場を引く。買値・売値は在庫の薄さを
 	# 掛けて出すため、順序が逆だと表示と実際の取引がその日だけ食い違う。
 	market.advance_day()
+	# 物流は補充の直後・相場の前に置く。隊商が今日運び込んだ分まで含めた
+	# 在庫でその日の価格が決まる（着荷が翌日の価格にしか効かないと、
+	# 地図で荷車が着くのを見てから市場を開いても値が動いておらず、
+	# 何のために運ばれたのか読めない）。
+	#
+	# **RNG の消費順に割り込む位置なので動かさないこと。** ここより後ろへ
+	# 移すと同じシードでも以降の価格系列が変わる（architecture.md 参照）。
+	_run_logistics()
 	prices.reroll()
 	_record_memo()
 	market_changed.emit()
@@ -842,6 +875,7 @@ func to_dict() -> Dictionary:
 		"log_entries": log_entries.duplicate(),
 		"prices": prices.prices.duplicate(true),
 		"market": market.to_dict(),
+		"logistics": logistics.to_dict(),
 		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
 		"boost_days_left": _boost_days_left,
 	}
@@ -901,6 +935,14 @@ func from_dict(data: Dictionary) -> void:
 		market.from_dict(data["market"])
 	else:
 		market.reset()
+
+	# 走行中の隊商。記録が無ければ空で始める（物流を入れる前の古いセーブが
+	# これに当たる）。在庫は market 側で復元済みなので、隊商が0本でも
+	# 市場は成立する。翌日の _advance_day() から順次仕立てられる。
+	if data.has("logistics"):
+		logistics.from_dict(data["logistics"])
+	else:
+		logistics.from_dict({})
 
 	if data.has("prices"):
 		# 検証と引き直しの判断は PriceTable に委ねる（market の from_dict と対称）。

@@ -47,11 +47,21 @@
 掛け率だけを返す。詳細は [game_design.md](game_design.md) の
 「5.3 在庫と需要（生産量・販売数）」。
 
+**物流**（2026-08-14）。**在庫が自然に増えるのは生産地だけ**になった
+（`PRODUCTION_OTHER_*` は 0）。それ以外の都市の品物は産地から運ばれてくる。
+[logistics.gd](../scripts/systems/logistics.gd) が2層で持つ:
+定常の交易路（全都市の在庫を成立させる。地図には出ない）と、
+隊商（数を絞り、街道を進む荷車として大陸図に描かれる）。
+2層に分かれている理由は実測に基づく（輸入が要る組が153・必要量563個/日に対し、
+隊商だけで賄うと1日80本の出発が要り地図が荷車で埋まる）。
+消費地は放っておくと在庫が減る（`IMPORT_DRAIN_RATE`）ので、産地の方が
+潤沢で安いという関係は保たれている。詳細は logistics.gd の冒頭コメント。
+
 都市は10（王国都市9＋レイヴンスパイア）。
 
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m27.gd` の27本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m28.gd` の28本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。

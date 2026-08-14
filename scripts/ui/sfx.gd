@@ -43,8 +43,12 @@ const VOLUMES: Dictionary = {
 
 ## GameSession.LogKind -> Kind。日誌の行に鳴らす音の対応表。
 ##
-## 対応が無い種別（TRADE / NONE）は鳴らさない。売買はボタン側で鳴らすため、
-## 日誌側でも鳴らすと二重になる。
+## 対応が無い種別（TRADE / NONE / LOGISTICS）は鳴らさない。売買はボタン側で
+## 鳴らすため、日誌側でも鳴らすと二重になる。
+##
+## 隊商の到着（LOGISTICS）を鳴らさないのは、プレイヤーの行動ではなく
+## 世界の側で起きたことだから。日送りのたびに現在地へ着く可能性があり、
+## 音を付けると休息の音と重なって鳴り続ける。
 const LOG_KIND_SOUNDS: Dictionary = {
 	GameSessionScript.LogKind.CRAFT: Kind.CRAFT,
 	GameSessionScript.LogKind.UPGRADE: Kind.UPGRADE,
@@ -97,6 +101,11 @@ static func kind_for_message(message: String) -> int:
 		return GameSessionScript.LogKind.TRAVEL
 	if message.contains("休息") or message.contains("引き取"):
 		return GameSessionScript.LogKind.DAY
+	# 隊商の到着。「購入した」「移動」などの語を含まないので、ここまで
+	# 落ちてくる。種別を返さないと復元した行だけ NONE になり、色の判定
+	# （is_severe_log_kind）が生きている行と食い違う。
+	if message.contains("届いた"):
+		return GameSessionScript.LogKind.LOGISTICS
 	return GameSessionScript.LogKind.NONE
 
 

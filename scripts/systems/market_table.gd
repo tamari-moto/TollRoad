@@ -23,8 +23,13 @@ func _init() -> void:
 	reset()
 
 
-## 在庫・需要を初期値（＝上限）で埋める。
-## 満杯から始めるのは、初日に「品切れの都市」を引かせないため。
+## 在庫・需要を初期値で埋める。
+##
+## 産地は満杯から始める（初日に「特産すら買えない都市」を引かせないため）。
+## **輸入品は満杯にしない。** 満杯で始めると、どの都市も何ひとつ不足して
+## いない状態から始まり、隊商が出る理由が数日間生まれない（実測で30日
+## 走らせて1本も出なかった）。初日から街道に荷車が走っているように、
+## 途中まで減った状態から始める。
 func reset() -> void:
 	stock.clear()
 	demand.clear()
@@ -32,7 +37,11 @@ func reset() -> void:
 		var city_stock: Dictionary = {}
 		var city_demand: Dictionary = {}
 		for item_id: String in GameData.ITEMS:
-			city_stock[item_id] = stock_cap(city_id, item_id)
+			var capacity: int = stock_cap(city_id, item_id)
+			if production_of(city_id, item_id) > 0:
+				city_stock[item_id] = capacity
+			else:
+				city_stock[item_id] = int(float(capacity) * GameData.IMPORT_INITIAL_RATIO)
 			city_demand[item_id] = demand_cap(city_id, item_id)
 		stock[city_id] = city_stock
 		demand[city_id] = city_demand
@@ -76,10 +85,20 @@ static func consumption_of(city_id: String, item_id: String) -> int:
 	return GameData.CONSUMPTION_RESOURCE
 
 
-## 在庫の上限。生産量の CAP_DAYS 日ぶんまで積み上がる。
+## 在庫の上限。生産地は生産量の CAP_DAYS 日ぶんまで積み上がる。
 ## 「しばらく来なかった都市には貯まっている」を表す。
+##
+## 生産しない都市（物流でしか入ってこない）にも上限が要る。生産量から
+## 導くと 0 になり、隊商が運び込んでも一切積めなくなるため、消費量を
+## 基準にした別の上限を与える（IMPORT_CAP_DAYS 日ぶん＝数日で捌ける量）。
+## レア品目だけは誰も扱わないので 0 のまま（探索でしか手に入らない）。
 static func stock_cap(city_id: String, item_id: String) -> int:
-	return production_of(city_id, item_id) * GameData.MARKET_CAP_DAYS
+	var produced: int = production_of(city_id, item_id)
+	if produced > 0:
+		return produced * GameData.MARKET_CAP_DAYS
+	if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.RARE:
+		return 0
+	return consumption_of(city_id, item_id) * GameData.IMPORT_CAP_DAYS
 
 
 ## 需要の上限。同じく消費量の CAP_DAYS 日ぶん。
@@ -151,15 +170,64 @@ func consume_demand(city_id: String, item_id: String, count: int) -> void:
 	demand[city_id][item_id] = maxi(0, demand_of(city_id, item_id) - count)
 
 
-## 1日ぶん生産・消費が進み、在庫と需要が上限まで補充される。
-## GameSession の _advance_day() から相場の引き直しと同じ頻度で呼ぶ。
+## 隊商が運んできた分を在庫に積む（logistics.gd から呼ぶ）。
+##
+## 非生産地の在庫が増える経路は**これだけ**。advance_day() の補充は
+## 生産地にしか効かない（PRODUCTION_OTHER_* は 0）ので、交易路が
+## 途絶えればその都市のその品目は品切れへ向かう。
+##
+## 上限は生産地と同じ stock_cap() で抑える。運び込みだけ上限を外すと、
+## 消費地に無限に積み上がって「産地で仕入れる」意味が消える。
+func receive_stock(city_id: String, item_id: String, count: int) -> void:
+	if count <= 0 or not stock.has(city_id):
+		return
+	var capacity: int = stock_cap(city_id, item_id)
+	stock[city_id][item_id] = mini(stock_of(city_id, item_id) + count, capacity)
+
+
+## その都市がその品目を産地から仕入れられるか（王国のどこかで作っているか）。
+## どこも作っていない品目（レア）は交易路に乗らない。
+static func has_producer(item_id: String) -> bool:
+	for city_id: String in GameData.CITIES:
+		if production_of(city_id, item_id) > 0:
+			return true
+	return false
+
+
+## 1日ぶん生産・消費が進む。
+##
+## 生産地は生産量ぶん在庫が増え、**輸入品（生産しない品目）は住民が
+## 食い潰すぶん在庫が減る**。減らないと、初日に満杯で始まった在庫が
+## そのまま残り続け、どの都市も何も不足しないので隊商が一度も出ない
+## （実測でそうなった）。物流が意味を持つのは、消費地が放っておくと
+## 品切れに向かうからこそ。
+##
+## 減る量は消費量そのものではなく IMPORT_DRAIN_RATE を掛けた量にする。
+## 消費量（＝プレイヤーへの買い取り枠の回復量）と同じ速さで棚が空くと、
+## 隊商の補充が追いつかず常時品切れになる。
 func advance_day() -> void:
 	for city_id: String in GameData.CITIES:
 		for item_id: String in GameData.ITEMS:
-			var next_stock: int = stock_of(city_id, item_id) + production_of(city_id, item_id)
-			stock[city_id][item_id] = mini(next_stock, stock_cap(city_id, item_id))
+			var produced: int = production_of(city_id, item_id)
+			if produced > 0:
+				stock[city_id][item_id] = mini(
+					stock_of(city_id, item_id) + produced, stock_cap(city_id, item_id))
+			else:
+				stock[city_id][item_id] = maxi(0,
+					stock_of(city_id, item_id) - _import_drain_of(city_id, item_id))
 			var next_demand: int = demand_of(city_id, item_id) + consumption_of(city_id, item_id)
 			demand[city_id][item_id] = mini(next_demand, demand_cap(city_id, item_id))
+
+
+## 生産しない都市が1日に食い潰す量。0 にはしない（0 だと在庫が一切減らず、
+## 隊商が出る理由が無くなる）ので、最低でも1は減らす。
+static func _import_drain_of(city_id: String, item_id: String) -> int:
+	if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.RARE:
+		return 0
+	var consumed: int = consumption_of(city_id, item_id)
+	if consumed <= 0:
+		return 0
+	return maxi(1, int(round(float(consumed) * GameData.IMPORT_DRAIN_RATE)))
 
 
 # --- 保存と復元 ---

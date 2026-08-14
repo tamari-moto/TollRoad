@@ -133,8 +133,15 @@ const MOD_CAERLEON_RESOURCE: float = 1.06
 ## （scenario_m23.gd の _test_balance_guardrails() が上限・下限で挟んでいる）。
 const PRODUCTION_SPECIALTY: int = 44
 const PRODUCTION_BONUS: int = 9
-const PRODUCTION_OTHER_RESOURCE: int = 6
-const PRODUCTION_OTHER_EQUIPMENT: int = 2
+
+## **生産地以外は自分では作らない（0）。** 以前はどの都市も全品目を毎日
+## わずかに生産しており、木材の採れない都市にも木材がわいていた。物流
+## （logistics.gd）を入れた今は、産地以外の在庫は隊商が運んできた分だけになる。
+##
+## 0 以外に戻すと「生産地のみで在庫が増える」という前提が崩れ、隊商が
+## 来なくても品物が並ぶようになる（scenario_m28.gd がこの2つを 0 で押さえている）。
+const PRODUCTION_OTHER_RESOURCE: int = 0
+const PRODUCTION_OTHER_EQUIPMENT: int = 0
 
 ## 1日あたりの消費量（＝需要の回復量）。生産と逆向きで、自前で作れるものは
 ## 欲しがらない。レイヴンスパイアは装備の集積地なので装備を厚く買い取る。
@@ -147,6 +154,23 @@ const CONSUMPTION_CAERLEON_OTHER: int = 6
 ## 在庫・需要が積み上がる日数の上限。長いほど「久しぶりに寄った都市には
 ## 貯まっている」が強くなる。上限 = 1日あたりの量 × この日数。
 const MARKET_CAP_DAYS: int = 4
+
+## 輸入品の初期在庫（上限に対する割合）。満杯にしないのは、初日から
+## 不足を作って隊商を走らせるため（market_table.gd の reset() 参照）。
+const IMPORT_INITIAL_RATIO: float = 0.5
+
+## 生産しない都市が1日に食い潰す在庫の割合（消費量に対する比）。
+## 1.0 だと棚が空く速さに隊商の補充が追いつかず常時品切れになり、
+## 0 だと在庫が減らないので隊商が一度も出ない（実測）。その間を取る。
+const IMPORT_DRAIN_RATE: float = 0.5
+
+## 生産しない都市の在庫の上限を決める日数（上限 = 消費量 × この日数）。
+## 隊商が運び込んだ品物がどれだけ積み上がれるかを決める。
+##
+## MARKET_CAP_DAYS より短くしてあるのは、輸入品は「産地ほどは潤沢でない」
+## ことを在庫の厚みで示すため。ここを伸ばすと消費地でも大量に買えるように
+## なり、産地まで足を運ぶ意味が薄れる。
+const IMPORT_CAP_DAYS: int = 3
 
 ## 在庫・需要の薄さが価格に効く掛け率。満杯なら 1.0、空なら以下の値。
 ## 買い占めると値上がりし、売り込むと値崩れする。
