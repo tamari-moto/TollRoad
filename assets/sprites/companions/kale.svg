@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="ケイルの肖像">
+  <defs>
+    <linearGradient id="bg5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#263329"/><stop offset="1" stop-color="#161f18"/></linearGradient>
+    <radialGradient id="glow5" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#7fae5c" stop-opacity=".55"/><stop offset="1" stop-color="#7fae5c" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg5)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow5)"/>
+  <path d="M44 300 Q50 208 150 204 Q250 208 256 300 Z" fill="#3f5c3a"/>
+  <path d="M90 300 Q150 246 210 300 Z" fill="#2c4026"/>
+  <path d="M92 146 Q96 96 150 92 Q204 96 208 146 Q186 116 150 118 Q114 116 92 146Z" fill="#4a3420"/>
+  <path d="M96 118 L70 92 L104 108 Z" fill="#5c4326"/>
+  <path d="M204 118 L230 92 L196 108 Z" fill="#5c4326"/>
+  <ellipse cx="150" cy="156" rx="56" ry="56" fill="#d9a878"/>
+  <path d="M116 142 Q126 136 136 142" stroke="#3a2a16" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M164 142 Q174 136 184 142" stroke="#3a2a16" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="126" cy="158" r="6" fill="#2e2416"/><circle cx="128" cy="155" r="2.2" fill="#fff"/>
+  <circle cx="174" cy="158" r="6" fill="#2e2416"/><circle cx="176" cy="155" r="2.2" fill="#fff"/>
+  <path d="M138 180 Q150 188 162 180" stroke="#8a5a3a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M96 156 Q92 176 100 190" stroke="#3a2a16" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M204 156 Q208 176 200 190" stroke="#3a2a16" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <g transform="translate(210 236) rotate(-30)">
+    <path d="M0 0 L54 0" stroke="#c9a24b" stroke-width="4" stroke-linecap="round"/>
+    <path d="M40 -10 L58 0 L40 10 Z" fill="#c9a24b"/>
+  </g>
+</svg>

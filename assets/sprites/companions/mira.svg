@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="ミラの肖像">
+  <defs>
+    <linearGradient id="bg6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241d33"/><stop offset="1" stop-color="#160f22"/></linearGradient>
+    <radialGradient id="glow6" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#8f6bc9" stop-opacity=".55"/><stop offset="1" stop-color="#8f6bc9" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg6)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow6)"/>
+  <path d="M56 300 Q62 214 150 210 Q238 214 244 300 Z" fill="#3a2f52"/>
+  <path d="M114 300 Q150 244 186 300 Z" fill="#e6c8a0"/>
+  <ellipse cx="150" cy="156" rx="57" ry="57" fill="#e6c8a0"/>
+  <path d="M92 148 Q94 92 150 88 Q206 92 208 148 Q192 108 150 108 Q108 108 92 148Z" fill="#241a33"/>
+  <path d="M92 148 Q86 200 108 236 Q98 190 100 150Z" fill="#241a33"/>
+  <path d="M208 148 Q214 200 192 236 Q202 190 200 150Z" fill="#241a33"/>
+  <path d="M118 142 Q128 136 138 142" stroke="#4a3a1a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M162 142 Q172 136 182 142" stroke="#4a3a1a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <circle cx="128" cy="158" r="6" fill="#2e1c30"/><circle cx="130" cy="155" r="2.2" fill="#fff"/>
+  <circle cx="172" cy="158" r="6" fill="#2e1c30"/><circle cx="174" cy="155" r="2.2" fill="#fff"/>
+  <path d="M136 182 Q150 190 164 182" stroke="#a05a4a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <g transform="translate(200 230)">
+    <circle cx="0" cy="0" r="20" fill="none" stroke="#c9a24b" stroke-width="5"/>
+    <circle cx="0" cy="0" r="12" fill="#8f6bc9" opacity=".55"/>
+    <path d="M14 14 L34 34" stroke="#c9a24b" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

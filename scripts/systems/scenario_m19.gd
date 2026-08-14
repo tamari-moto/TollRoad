@@ -34,6 +34,7 @@ const TEST_PATH: String = "user://scenario_m19_tmp.json"
 func _init() -> void:
 	_test_main_loads()
 	_test_briefing_new_game()
+	_test_briefing_companion_choice()
 	_test_briefing_reread()
 	_test_continue_success()
 	_test_continue_failure()
@@ -98,6 +99,22 @@ func _hud_day_number(main: Node) -> int:
 	return int(bar.value) if bar != null else -1
 
 
+## 開始画面の同行者選びで指定の1人を押す。"" なら「一人旅（同行者なし）」。
+func _press_companion(main: Node, companion_id: String) -> Button:
+	var dialog: Node = UiUtil.find_node(main, "BriefingDialog")
+	if dialog == null:
+		_check(false, "BriefingDialog がある", "ない")
+		return null
+	var button_name: String = (
+		"CompanionNoneButton" if companion_id == GameData.COMPANION_NONE
+		else "Companion_%s_Button" % companion_id)
+	var button: Button = dialog.find_child(button_name, true, false)
+	_check(button != null, "同行者選びのボタン %s がある" % button_name, "ない")
+	if button != null:
+		button.pressed.emit()
+	return button
+
+
 func _log_count(main: Node) -> int:
 	var list: Node = UiUtil.find_node(main, "LogList")
 	return list.get_child_count() if list != null else 0
@@ -156,6 +173,59 @@ func _test_briefing_new_game() -> void:
 	_check(not SaveManager.has_save(TEST_PATH),
 		"二度目に閉じても保存しない（入口は一度きり）", "保存された")
 	_check(day_after_rest == 2, "検査の前提: 1日進めている", str(day_after_rest))
+
+	_teardown(parts)
+	SaveManager.delete_save(TEST_PATH)
+
+
+## 開始画面での同行者選び。新規開始でだけ選択欄を出し、選んだ相手が
+## セッションと保存に反映される。読み返しでは欄が消え、選択もいじられない。
+func _test_briefing_companion_choice() -> void:
+	print("--- 開始画面の同行者選び ---")
+	SaveManager.delete_save(TEST_PATH)
+	var parts: Dictionary = _make_main(19010)
+	if parts.is_empty():
+		return
+	var main: Node = parts["main"]
+	var state: Node = parts["state"]
+
+	var dialog: Node = UiUtil.find_node(main, "BriefingDialog")
+	_check(dialog != null, "BriefingDialog がある", "ない")
+	if dialog == null:
+		_teardown(parts)
+		return
+
+	var section: Control = dialog.find_child("CompanionSection", true, false)
+	_check(section != null and section.visible,
+		"新規開始の開始画面では同行者選びが見える", "見えない")
+
+	_check(state.session.active_companion == GameData.COMPANION_NONE,
+		"選ぶ前は同行者なし", state.session.active_companion)
+	_press_companion(main, "rocco")
+	_check(dialog.selected_companion == "rocco",
+		"押した相手が選択状態になる", dialog.selected_companion)
+	# 押しただけではまだセッションに反映しない（開始ボタンを押すまでは仮の選択）。
+	_check(state.session.active_companion == GameData.COMPANION_NONE,
+		"開始を押すまではセッションに反映しない", state.session.active_companion)
+
+	_press_start(main)
+	_check(state.session.active_companion == "rocco",
+		"開始を押すとセッションに反映する", state.session.active_companion)
+
+	var saved: GameSession = SaveManager.load_game(TEST_PATH)
+	_check(saved != null and saved.active_companion == "rocco",
+		"選んだ同行者ごと保存される",
+		saved.active_companion if saved != null else "セーブが無い")
+
+	# 目標の読み返しでは選択欄が消え、既に選んだ同行者もいじられない。
+	var briefing_button: Button = UiUtil.find_node(main, "BriefingButton") as Button
+	if briefing_button != null:
+		briefing_button.pressed.emit()
+	_check(section != null and not section.visible,
+		"読み返しでは同行者選びが消える", "見えている")
+	_press_start(main)
+	_check(state.session.active_companion == "rocco",
+		"読み返しを閉じても同行者は変わらない", state.session.active_companion)
 
 	_teardown(parts)
 	SaveManager.delete_save(TEST_PATH)

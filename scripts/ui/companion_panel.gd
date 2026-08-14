@@ -75,7 +75,7 @@ func refresh() -> void:
 		var data: Dictionary = GameData.COMPANIONS[companion_id]
 		var active: bool = _session.active_companion == companion_id
 		button.text = "%s — %s%s" % [data["name"], data["role"], "・選択中" if active else ""]
-		button.tooltip_text = data["desc"]
+		button.tooltip_text = "%s\n%s" % [data["desc"], GameData.companion_stat_line(companion_id)]
 		button.disabled = active
 
 

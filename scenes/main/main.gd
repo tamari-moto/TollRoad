@@ -282,13 +282,15 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 ## 仕組みを知らないままにしておく）。
 func _show_briefing(starts_play: bool = false) -> void:
 	_briefing_starts_play = starts_play
-	_briefing_dialog.show_briefing(_state_has_save())
+	_briefing_dialog.show_briefing(_state_has_save(), starts_play)
 
 
-## 開始画面を閉じた。新規開始の入口だったときだけ、そのセッションを保存する。
+## 開始画面を閉じた。新規開始の入口だったときだけ、選ばれた同行者を反映して
+## そのセッションを保存する。
 ##
 ## **読み返しでは何もしない。** 「目標」ボタンから開き直して閉じただけで
-## セーブを作り直すと、進行中の記録を壊す道が増えるため。
+## 同行者を「同行者なし」に巻き戻したりセーブを作り直したりすると、進行中の
+## 記録を壊す道が増えるため（読み返し時は show_briefing() が選択欄自体を隠す）。
 ##
 ## delete_save() は呼ばない。save_game() は同じパスへ上書きするので古い
 ## 記録は残らず、消す工程が無ければ「消したが書けなかった」窓も生まれない。
@@ -296,6 +298,7 @@ func _on_briefing_closed() -> void:
 	if not _briefing_starts_play:
 		return
 	_briefing_starts_play = false
+	_session.set_companion(_briefing_dialog.selected_companion)
 	_state_save_game()
 
 

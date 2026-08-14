@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="トビアスの肖像">
+  <defs>
+    <linearGradient id="bg9" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#332821"/><stop offset="1" stop-color="#201810"/></linearGradient>
+    <radialGradient id="glow9" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#c98a4a" stop-opacity=".55"/><stop offset="1" stop-color="#c98a4a" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg9)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow9)"/>
+  <path d="M52 300 Q58 212 150 208 Q242 212 248 300 Z" fill="#7a5a38"/>
+  <path d="M110 220 L190 220 L198 300 L102 300 Z" fill="#c9a24b" opacity=".8"/>
+  <ellipse cx="150" cy="154" rx="55" ry="55" fill="#e0b088"/>
+  <path d="M94 138 Q98 92 150 88 Q202 92 206 138 Q188 112 150 114 Q112 112 94 138Z" fill="#5c3a20"/>
+  <path d="M96 140 Q94 156 100 168" stroke="#5c3a20" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M204 140 Q206 156 200 168" stroke="#5c3a20" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M116 140 Q126 135 136 140" stroke="#4a3018" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M164 140 Q174 135 184 140" stroke="#4a3018" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <circle cx="126" cy="156" r="5.6" fill="#2e1c12"/><circle cx="128" cy="153" r="2" fill="#fff"/>
+  <circle cx="174" cy="156" r="5.6" fill="#2e1c12"/><circle cx="176" cy="153" r="2" fill="#fff"/>
+  <path d="M136 178 Q150 186 164 178" stroke="#a05a3a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <g transform="translate(214 244)">
+    <path d="M-16 0 Q-16 -16 0 -16 Q16 -16 16 0 Q16 12 0 18 Q-16 12 -16 0Z" fill="#8a5a30" stroke="#5c3a1a" stroke-width="1.5"/>
+    <circle cx="0" cy="-2" r="6" fill="#c9a24b"/>
+  </g>
+</svg>
