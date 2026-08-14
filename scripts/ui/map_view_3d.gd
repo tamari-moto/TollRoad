@@ -110,19 +110,48 @@ const TERRAIN_LACUNARITY: float = 2.0
 const TERRAIN_GAIN: float = 0.5
 ## fBm を -1〜1 へ広げ直す係数（_terrain_shape_at() のコメント参照）。
 ## 実測（TERRAIN_OCTAVES=4, GAIN=0.5）で素の値が ±0.35 前後だったため、
-## その逆数を取ってある。
-const FBM_NORMALIZE: float = 2.8
+## 逆数の 2.8 なら値域いっぱいに広がる。
+##
+## **これが「山の尖り」を決める定数**。値域を広げるだけの係数に見えるが、
+## 細かいオクターブの起伏も同じ倍率で拡大するため、傾斜に直接効く。
+## 「山が尖りすぎ」への対処でまず TERRAIN_RIDGE_MIX を下げたが、傾斜は
+## ほとんど動かず（0.22→0.14 で 16.7%→18.7% と、むしろ逆に動いた）、
+## 効いたのはこちらだった（2.8→2.0 で45度超が 15.3%→4.6%）。
+## 尖りを調整するときは RIDGE_MIX ではなくこの値を動かすこと。
+##
+## 2.0 だと値域は ±0.65 程度までしか届かず、TERRAIN_HIGHLAND_LEVEL に
+## 到達しにくくなるため、帯の閾値もそれに合わせて下げてある。
+const FBM_NORMALIZE: float = 2.0
 
 ## 稜線（リッジ）を作る割合。fBm をそのまま使うと丘は丸くなだらかにしか
 ## ならない。ノイズの絶対値を反転（1-|n|）すると 0 の等高線が尖った稜線
 ## として立ち上がり、山脈らしい鋭い峰ができる（ridged multifractal）。
 ## 1.0 にすると全体が尖って刺々しくなるため、なだらかな fBm と混ぜて
 ## 「平野もあれば険しい山もある」地形にする。
-const TERRAIN_RIDGE_MIX: float = 0.45
+##
+## 山脈帯（ridge_weight が最大の場所）でのリッジの割合。0.45 では山が
+## 尖りすぎだったため下げてある（ユーザー指定。当時の実測は見えている
+## 範囲の平均傾斜28.1度・45度超が11.1%）。
+##
+## この定数を下げるだけでは傾斜は下がらないことに注意。マスクに
+## コントラストを付けた（TERRAIN_RIDGE_REGION_LOW/HIGH）ことで、
+## 以前は誰も到達していなかった「重み最大」に面積の3割が到達するように
+## なったため、0.45→0.30 に下げても平均傾斜はむしろ上がった（30.1度、
+## 45度超15.3%）。山脈らしさを保ったまま尖りを落とせる値まで下げる。
+const TERRAIN_RIDGE_MIX: float = 0.30
 ## リッジを効かせる場所を決める、非常に粗いノイズの細かさ。この値で
 ## 「山脈になる帯」と「平野のままの帯」が地図上に大きく分かれる
 ## （どこも一様に尖っていると、それはそれで単調になるため）。
 const TERRAIN_RIDGE_REGION_SCALE: float = 0.018
+## 山脈帯マスクのコントラスト。FastNoiseLite の値は滅多に ±1 に届かず、
+## (n+1)*0.5 は 0.5 付近に集まる。そのまま重みに使うと、見えている範囲の
+## どこもが中途半端に尖った状態になり「山脈と平野の分かれ方が分からない」
+## 見た目になっていた（実測: 重みの値域が 0.095〜0.358 しかなく、0（完全な
+## 平野）にも TERRAIN_RIDGE_MIX（本物の山脈）にも一度も到達していなかった）。
+## smoothstep で下限・上限を切り、中間だけを滑らかに繋いで、平野は本当に
+## 平野、山脈は本当に山脈になるようにする。
+const TERRAIN_RIDGE_REGION_LOW: float = -0.22
+const TERRAIN_RIDGE_REGION_HIGH: float = 0.30
 ## 中央を掘り下げる深さ。レイヴンスパイアが盆地の底に見えるようにする。
 const BASIN_DEPTH: float = 2.2
 ## 盆地の広がり。_compute_scale() で算出する。
@@ -147,16 +176,29 @@ const TERRAIN_LOWLAND_COLOR := Color(0.21, 0.25, 0.22)
 const TERRAIN_HIGHLAND_COLOR := Color(0.38, 0.38, 0.34)
 ## 低地→高地の中間色は TERRAIN_UPLAND_COLOR をそのまま使う（既存の
 ## 地表色を基調として残し、その上下に帯を足す形にしてある）。
-const TERRAIN_LOWLAND_LEVEL: float = -0.35
-const TERRAIN_HIGHLAND_LEVEL: float = 0.45
+##
+## 閾値は「見えている範囲で3帯がどれだけの面積を占めるか」を実測して
+## 決める。標高の分布は正規分布に近く中央に集まるため、±0.35/0.45 では
+## 中腹が86.5%を占め、低地9.1%・高所4.4%しか出ずに帯がほぼ見えなかった。
+## 内側へ寄せて、低地・高所がそれぞれ2割前後になるようにしてある。
+const TERRAIN_LOWLAND_LEVEL: float = -0.18
+const TERRAIN_HIGHLAND_LEVEL: float = 0.20
 
 ## 標高帯の境界をノイズで上下させる幅（標高の正規化値）。境界を数式どおりの
 ## 高さで切ると、地図に等高線状の縞がくっきり出て人工的に見える。
 ## 場所ごとに境界をずらすことで、土と岩が入り混じった縁になる。
-const TERRAIN_BAND_JITTER: float = 0.18
-## 境界を乱すノイズの細かさ。起伏より細かくしないと、標高と一緒に境界も
-## 動いてしまい乱した意味が無くなる。
-const TERRAIN_BAND_JITTER_SCALE: float = 0.45
+##
+## 帯の幅（TERRAIN_HIGHLAND_LEVEL - TERRAIN_LOWLAND_LEVEL = 0.80）に対して
+## 十分大きくないと縞は消えない。0.18 では実効 ±0.148（帯幅の19%）しか
+## 揺らげず、縞が見えたままだった（ユーザー報告）。帯幅の半分程度まで
+## 上げ、境界がどこにあるか目で追えないようにする。
+const TERRAIN_BAND_JITTER: float = 0.42
+## 境界を乱すノイズの細かさ。起伏（TERRAIN_NOISE_SCALE）より細かくしないと、
+## 標高と一緒に境界も動いてしまい乱した意味が無くなる。旧値0.45では
+## 起伏の中間オクターブと波長が近く、境界が起伏に沿って動くぶん
+## 縞が残りやすかった。最細オクターブ側へ寄せて、帯の縁を細かく
+## 食い違わせる。
+const TERRAIN_BAND_JITTER_SCALE: float = 0.9
 
 ## 同じ帯の中でも色をわずかに散らす量（明度の振れ幅）。単色の面が広いと
 ## ローポリの平坦さが目立つため、頂点ごとに微量の濃淡を入れて質感を出す。
@@ -555,10 +597,13 @@ func _terrain_shape_at(x: float, z: float) -> float:
 
 	# どこを山脈にするかを、非常に粗いノイズで帯状に決める。
 	# 一様に混ぜると全域が同じ険しさになり、結局また単調になるため。
+	# smoothstep でコントラストを付け、平野（重み0）と山脈（重み最大）に
+	# 実際に到達させる（TERRAIN_RIDGE_REGION_LOW/HIGH のコメント参照）。
 	var region: float = _noise.get_noise_2d(
 		x * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 911.0,
 		z * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 313.0)
-	var ridge_weight: float = clampf((region + 1.0) * 0.5, 0.0, 1.0) * TERRAIN_RIDGE_MIX
+	var ridge_weight: float = smoothstep(
+		TERRAIN_RIDGE_REGION_LOW, TERRAIN_RIDGE_REGION_HIGH, region) * TERRAIN_RIDGE_MIX
 	return lerpf(fbm, ridge, ridge_weight)
 
 
@@ -666,17 +711,23 @@ func _elevation_level_at(vertex: Vector3) -> float:
 
 
 ## 正規化標高（-1〜1）に対応する地表色。低地→中腹→高所の3色を
-## 帯の境界で線形に補間する。
+## 帯の境界で補間する。
+##
+## 補間には smoothstep を使う。線形（lerp）だと帯の境目で色の変化率が
+## 不連続に折れ、そこが1本の線として目に見える（等高線状の縞の一因。
+## TERRAIN_BAND_JITTER で境界の位置を散らすだけでは、この折れ目自体は
+## 消えない）。smoothstep は両端で変化率が0になるので、帯どうしが
+## 滑らかに溶け合い、どこが境目か分からなくなる。
 func _elevation_band_color(level: float) -> Color:
 	if level <= TERRAIN_LOWLAND_LEVEL:
 		return TERRAIN_LOWLAND_COLOR
 	if level >= TERRAIN_HIGHLAND_LEVEL:
 		return TERRAIN_HIGHLAND_COLOR
 	if level < 0.0:
-		var t: float = inverse_lerp(TERRAIN_LOWLAND_LEVEL, 0.0, level)
-		return TERRAIN_LOWLAND_COLOR.lerp(TERRAIN_UPLAND_COLOR, t)
-	var u: float = inverse_lerp(0.0, TERRAIN_HIGHLAND_LEVEL, level)
-	return TERRAIN_UPLAND_COLOR.lerp(TERRAIN_HIGHLAND_COLOR, u)
+		return TERRAIN_LOWLAND_COLOR.lerp(TERRAIN_UPLAND_COLOR,
+			smoothstep(TERRAIN_LOWLAND_LEVEL, 0.0, level))
+	return TERRAIN_UPLAND_COLOR.lerp(TERRAIN_HIGHLAND_COLOR,
+		smoothstep(0.0, TERRAIN_HIGHLAND_LEVEL, level))
 
 
 ## 水平面上でその地点に最も近い王国都市（レイヴンスパイアは対象外。中心の
