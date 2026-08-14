@@ -53,7 +53,15 @@ const SKY_TOP_COLOR := Color(0.08, 0.09, 0.15)
 const SKY_HORIZON_COLOR := Color(0.30, 0.26, 0.28)
 const SKY_GROUND_COLOR := Color(0.05, 0.05, 0.07)
 const AMBIENT_LIGHT_ENERGY: float = 0.6
-const FOG_DENSITY: float = 0.01
+## 縁を霧に溶かして閉塞感を出すためのもの。強すぎると地形全体が
+## SKY_HORIZON_COLOR（明るい灰）へ寄って白飛びし、頂点カラーで塗り分けた
+## 標高帯が見えなくなる。実機のスクショで地形が一面の淡い灰色になり、
+## 細かい起伏の陰影だけが縞に見えていた原因がこれだった（頂点カラーは
+## どれも輝度0.38以下なので、明るさは霧由来と分かる）。
+## 0.01 では50%不透明になる距離が約69で、カメラの MAX_DISTANCE(34) の
+## 内側にも濃く掛かっていた。プレイ範囲は素の色が読め、地形の縁
+## （半径92前後）だけが溶ける濃さにする。
+const FOG_DENSITY: float = 0.004
 const GLOW_INTENSITY: float = 0.2
 const GLOW_BLOOM: float = 0.04
 ## グローがHDRとして扱う輝度の下限。既定は1.0だが、明示しないとエンジンの
@@ -84,10 +92,137 @@ const TERRAIN_MAX_QUAD_SIZE: float = 0.8
 ## から算出する。
 var _terrain_subdivisions: int = 64
 
-## 起伏の高さ。
+## 起伏の高さ。fBm の合成後（-1〜1 に正規化済み）に掛ける振幅なので、
+## オクターブを足しても地形全体の高さの幅はこの値のまま変わらない。
 const TERRAIN_HEIGHT: float = 2.4
-## ノイズの細かさ。
+## 一番粗いオクターブ（大陸の骨格）の細かさ。
 const TERRAIN_NOISE_SCALE: float = 0.10
+
+## --- 起伏の合成（fBm） ---
+## 単一オクターブのノイズは、どこを見ても同じ大きさのうねりしか無く
+## 「均一にぼこぼこした平面」に見える（実測: 旧実装がこれだった）。
+## 粗いオクターブから細かいオクターブへ、振幅を半減させながら重ねる
+## （fractional Brownian motion）ことで、大きな山塊の上に中くらいの尾根、
+## その上に細かい凹凸、という自然地形の入れ子構造になる。
+##
+## オクターブ数は増やすほど細かくなるが、TERRAIN_MAX_QUAD_SIZE(0.8) の
+## 格子で表現できない細かさまで足しても描画には出ず、height_at() と
+## 実際のメッシュのズレ（terrain_mesh_height_at() のコメント参照）を
+## 増やすだけなので、格子で解像できる範囲で止める。
+## 最細オクターブの波長は 1/(TERRAIN_NOISE_SCALE * LACUNARITY^(N-1))
+## = 1/(0.10*2.0^3) = 1.25 で、1マス0.8の格子でぎりぎり拾える。
+## 4オクターブでは細かい凹凸が画面全体に敷き詰められ、地形が「一面の
+## 細かいぼこぼこ」に見えていた（実機のスクショで判明。ヘッドレスの
+## 傾斜統計では平均23.6度と穏やかな値が出ており、この見え方は数値からは
+## 読めなかった）。最細オクターブは波長1.25で、都市の間隔(10.58)に対して
+## 細かすぎる。3つに減らし、大きな起伏の骨格だけを残す。
+const TERRAIN_OCTAVES: int = 3
+## オクターブごとに周波数を何倍にするか。
+const TERRAIN_LACUNARITY: float = 2.0
+## オクターブごとに振幅を何倍にするか。0.5 が古典的な fBm だが、
+## 細かいオクターブほど早く減衰させて起伏をなだらかにする
+## （「平地を広く」というユーザー指定。上げると細かい凹凸が戻る）。
+##
+## 0.40 まで下げていたのは、平地を高さで作っていた頃の名残。平地を
+## 場所（SETTLEMENT_*）で作るようになってからは、都市と街道の外は
+## むしろ起伏が要るので少し戻してある。
+const TERRAIN_GAIN: float = 0.46
+## fBm を -1〜1 へ広げ直す係数（_terrain_shape_at() のコメント参照）。
+## 実測（TERRAIN_OCTAVES=4, GAIN=0.5）で素の値が ±0.35 前後だったため、
+## 逆数の 2.8 なら値域いっぱいに広がる。
+##
+## **これが「山の尖り」を決める定数**。値域を広げるだけの係数に見えるが、
+## 細かいオクターブの起伏も同じ倍率で拡大するため、傾斜に直接効く。
+## 「山が尖りすぎ」への対処でまず TERRAIN_RIDGE_MIX を下げたが、傾斜は
+## ほとんど動かず（0.22→0.14 で 16.7%→18.7% と、むしろ逆に動いた）、
+## 効いたのはこちらだった（2.8→2.0 で45度超が 15.3%→4.6%）。
+## 尖りを調整するときは RIDGE_MIX ではなくこの値を動かすこと。
+##
+## 2.0 だと値域は ±0.65 程度までしか届かず、TERRAIN_HIGHLAND_LEVEL に
+## 到達しにくくなるため、帯の閾値もそれに合わせて下げてある。
+const FBM_NORMALIZE: float = 2.0
+
+## 低い側をどれだけ平らに均すか（_terrain_shape_at() の pow の指数）。
+## 1.0 で無効（従来どおり）、大きいほど 0 付近が平らになり平地が広がる。
+## 上げすぎると平地ばかりで山が孤立した突起に見えるので、2前後で止める。
+##
+## これは「中くらいの高さの土地」を平らにするだけで、地図上のどこが
+## 平地になるかは選んでいない（高さで選んでいて、場所では選んでいない）。
+## 場所で選ぶのは下の SETTLEMENT_* が担う。
+##
+## 平地を場所で選ぶ仕組み（SETTLEMENT_*）を入れた後は、こちらまで強く
+## 掛けると平地が二重になって地形全体が単調になる（ユーザー報告）。
+## 実測でも、平地化の範囲の外ですら34%が傾斜10度未満と、山地であるべき
+## 場所まで緩やかになっていた。都市と街道の外は起伏を残す役に回すため、
+## ほぼ無効（1.0が完全な無効）まで戻してある。
+const TERRAIN_FLATTEN: float = 1.15
+
+## --- 都市と街道の周辺を平らにする ---
+## 人は平地に街を作り、道は谷や尾根沿いの緩い斜面を通る。地形を先に決めて
+## から都市を後付けで乗せると、都市の柱や道の帯が急斜面に刺さり、
+## 「なぜそこに街があるのか」が読めない絵になる。都市と街道の周辺だけ
+## 起伏を押し下げて、街と道が乗る土地を平地として成立させる
+## （ユーザー指定で、平地を「場所」で選ぶ方式に切り替えた）。
+##
+## 起伏を0に潰すのではなく、周辺の高さへ滑らかに寄せる（_settlement_
+## flatten_at() 参照）。完全に平らな円盤を置くと、縁が段差になって
+## 人工物のように見えるため。
+##
+## 都市の中心からこの距離までは完全に平ら。CITY_RADIUS(0.55) の構造物と
+## VEGETATION_CITY_CLEARANCE(1.8) の空き地がここに収まる分だけあればよい。
+## 広げるほど平原が増えて単調になるので、収まる最小限にとどめる。
+const SETTLEMENT_FLAT_RADIUS: float = 2.1
+## そこからこの距離をかけて、元の起伏へ滑らかに戻す。
+## 長いほど平地が広がるが、都市間隔(CITY_SPACING=10.58)に対して長すぎると
+## 隣の都市の平地と地続きになり、地図全体が一枚の平原になる
+## （実測で平地化の範囲が見える面積の41.8%を占め、単調に見えていた）。
+const SETTLEMENT_FALLOFF: float = 4.0
+## 街道の帯を平らにする幅（中心線からの距離）。ROAD_WIDTH(0.5) の帯と、
+## その両脇が斜面に切り立たないだけの余裕を取る。
+const SETTLEMENT_ROAD_FLAT_WIDTH: float = 1.6
+## 街道の平らな帯から元の起伏へ戻すまでの距離。都市より短くして、
+## 道は「谷を縫う細い回廊」に見えるようにする（都市のように広い盆地を
+## 作ってしまうと、道沿いだけ地形が消えて見える）。
+const SETTLEMENT_ROAD_FALLOFF: float = 2.2
+## 平地化の最大の効き目。「起伏を少し残したい」と 0.85 にしていたが、
+## 残す割合が一定だと、素の起伏が急なところほど残り方も急になる。
+## 中心都市の足元は素の起伏が70.4度あり、15%残すだけで28.7度の斜面が
+## 残っていた（柱が刺さる）。1.0（完全に平ら）にして、起伏の見え方は
+## 縁の falloff の長さで作る。
+##
+## 「平らすぎてのっぺりする」場合に緩めるのはこの値ではなく
+## SETTLEMENT_FLAT_RADIUS（完全に平らな範囲を狭める）にすること。
+const SETTLEMENT_FLATTEN_STRENGTH: float = 1.0
+
+## 稜線（リッジ）を作る割合。fBm をそのまま使うと丘は丸くなだらかにしか
+## ならない。ノイズの絶対値を反転（1-|n|）すると 0 の等高線が尖った稜線
+## として立ち上がり、山脈らしい鋭い峰ができる（ridged multifractal）。
+## 1.0 にすると全体が尖って刺々しくなるため、なだらかな fBm と混ぜて
+## 「平野もあれば険しい山もある」地形にする。
+##
+## 山脈帯（ridge_weight が最大の場所）でのリッジの割合。0.45 では山が
+## 尖りすぎだったため下げてある（ユーザー指定。当時の実測は見えている
+## 範囲の平均傾斜28.1度・45度超が11.1%）。
+##
+## この定数を下げるだけでは傾斜は下がらないことに注意。マスクに
+## コントラストを付けた（TERRAIN_RIDGE_REGION_LOW/HIGH）ことで、
+## 以前は誰も到達していなかった「重み最大」に面積の3割が到達するように
+## なったため、0.45→0.30 に下げても平均傾斜はむしろ上がった（30.1度、
+## 45度超15.3%）。山脈らしさを保ったまま尖りを落とせる値まで下げる。
+const TERRAIN_RIDGE_MIX: float = 0.30
+## リッジを効かせる場所を決める、非常に粗いノイズの細かさ。この値で
+## 「山脈になる帯」と「平野のままの帯」が地図上に大きく分かれる
+## （どこも一様に尖っていると、それはそれで単調になるため）。
+const TERRAIN_RIDGE_REGION_SCALE: float = 0.018
+## 山脈帯マスクのコントラスト。FastNoiseLite の値は滅多に ±1 に届かず、
+## (n+1)*0.5 は 0.5 付近に集まる。そのまま重みに使うと、見えている範囲の
+## どこもが中途半端に尖った状態になり「山脈と平野の分かれ方が分からない」
+## 見た目になっていた（実測: 重みの値域が 0.095〜0.358 しかなく、0（完全な
+## 平野）にも TERRAIN_RIDGE_MIX（本物の山脈）にも一度も到達していなかった）。
+## smoothstep で下限・上限を切り、中間だけを滑らかに繋いで、平野は本当に
+## 平野、山脈は本当に山脈になるようにする。
+const TERRAIN_RIDGE_REGION_LOW: float = -0.22
+const TERRAIN_RIDGE_REGION_HIGH: float = 0.30
 ## 中央を掘り下げる深さ。レイヴンスパイアが盆地の底に見えるようにする。
 const BASIN_DEPTH: float = 2.2
 ## 盆地の広がり。_compute_scale() で算出する。
@@ -98,6 +233,55 @@ var _basin_radius: float = 0.0
 const TERRAIN_BASIN_COLOR := Color(0.16, 0.16, 0.20)
 const TERRAIN_UPLAND_COLOR := Color(0.30, 0.34, 0.30)
 const TERRAIN_ROCK_COLOR := Color(0.24, 0.22, 0.22)
+
+## --- 標高帯 ---
+## 盆地からの距離だけで塗ると、地形がどれだけ起伏していても色は同心円状に
+## しか変わらず、山と谷が同じ色になる（旧実装がこれで、起伏を増やしても
+## 「均一に塗られた面がぼこぼこしている」ようにしか見えなかった）。
+## 実際の標高（height_at() の値）で低地・中腹・高所を塗り分けると、
+## 稜線と谷が色でも読めるようになる。
+##
+## 境界は TERRAIN_HEIGHT に対する割合で持つ（高さの振幅を変えても
+## 帯の位置が相対的に保たれる）。-1.0 が最低地、1.0 が最高地に当たる。
+const TERRAIN_LOWLAND_COLOR := Color(0.21, 0.25, 0.22)
+const TERRAIN_HIGHLAND_COLOR := Color(0.38, 0.38, 0.34)
+## 低地→高地の中間色は TERRAIN_UPLAND_COLOR をそのまま使う（既存の
+## 地表色を基調として残し、その上下に帯を足す形にしてある）。
+##
+## 閾値は「見えている範囲で3帯がどれだけの面積を占めるか」を実測して
+## 決める。標高の分布は正規分布に近く中央に集まるため、±0.35/0.45 では
+## 中腹が86.5%を占め、低地9.1%・高所4.4%しか出ずに帯がほぼ見えなかった。
+## 内側へ寄せて、低地・高所がそれぞれ2割前後になるようにしてある。
+## TERRAIN_FLATTEN で低い側を0へ寄せたぶん、分布はさらに中央へ集まる。
+## 閾値もそれに合わせて内側へ寄せ直すこと（実測せずに据え置くと、また
+## 中腹が7割超を占めて帯がほぼ1色になる）。
+const TERRAIN_LOWLAND_LEVEL: float = -0.07
+const TERRAIN_HIGHLAND_LEVEL: float = 0.09
+
+## 標高帯の境界をノイズで上下させる幅（標高の正規化値）。境界を数式どおりの
+## 高さで切ると、地図に等高線状の縞がくっきり出て人工的に見える。
+## 場所ごとに境界をずらすことで、土と岩が入り混じった縁になる。
+##
+## 帯の幅（TERRAIN_HIGHLAND_LEVEL - TERRAIN_LOWLAND_LEVEL = 0.80）に対して
+## 十分大きくないと縞は消えない。0.18 では実効 ±0.148（帯幅の19%）しか
+## 揺らげず、縞が見えたままだった（ユーザー報告）。帯幅の半分程度まで
+## 上げ、境界がどこにあるか目で追えないようにする。
+## 帯幅（TERRAIN_HIGHLAND_LEVEL - TERRAIN_LOWLAND_LEVEL）に対する割合で
+## 考えること。帯幅を変えたのにここを据え置くと、揺らぎが帯幅を超えて
+## 標高と無関係な斑（まだら）になる。帯幅0.16 に対して半分程度にしてある。
+const TERRAIN_BAND_JITTER: float = 0.08
+## 境界を乱すノイズの細かさ。起伏（TERRAIN_NOISE_SCALE）より細かくしないと、
+## 標高と一緒に境界も動いてしまい乱した意味が無くなる。旧値0.45では
+## 起伏の中間オクターブと波長が近く、境界が起伏に沿って動くぶん
+## 縞が残りやすかった。最細オクターブ側へ寄せて、帯の縁を細かく
+## 食い違わせる。
+const TERRAIN_BAND_JITTER_SCALE: float = 0.9
+
+## 同じ帯の中でも色をわずかに散らす量（明度の振れ幅）。単色の面が広いと
+## ローポリの平坦さが目立つため、頂点ごとに微量の濃淡を入れて質感を出す。
+## 大きくすると砂嵐のようにざらつくので控えめに保つ。
+const TERRAIN_COLOR_GRAIN: float = 0.05
+const TERRAIN_COLOR_GRAIN_SCALE: float = 1.1
 
 ## バイオーム（最寄り都市の特産色）が地形に効く範囲。CITY_SPACING より
 ## やや広めに取り、隣接都市どうしの色がにじみ合って自然に混ざるようにする
@@ -261,6 +445,15 @@ var _noise: FastNoiseLite
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
 var positions: Dictionary = {}
 
+## city_id -> Vector2（水平面のみ）。height_at() が都市・街道の周辺を
+## 平らに均すのに使う。
+##
+## positions（高さ込み）ではなくこちらを持つ必要がある。positions は
+## height_at() を通して作られるため、height_at() がそれを参照すると
+## 循環する。水平配置はばね緩和だけで決まり高さに依存しないので、
+## _relax_positions() の結果をそのまま覚えておけば循環しない。
+var _flat_positions: Dictionary = {}
+
 
 func _init() -> void:
 	_build()
@@ -281,7 +474,10 @@ func _build() -> void:
 	# 高さ（height_at()）は _basin_radius に依存するため、まず水平面
 	# （X-Z）の配置をばね緩和で決め、その広がりから空間定数を算出してから
 	# 高さ込みの最終座標を確定させる、という順序を守る必要がある。
+	# height_at() は街道の平地化で _flat_positions も見るので、
+	# _compute_positions() より先に代入しておくこと。
 	var flat_positions: Dictionary = _relax_positions()
+	_flat_positions = flat_positions
 	_compute_scale(flat_positions)
 	_compute_positions(flat_positions)
 	_build_environment()
@@ -426,13 +622,167 @@ func _compute_positions(flat_positions: Dictionary) -> void:
 
 
 ## その地点の地面の高さ。都市も経路もこれに沿わせる。
+##
+## 連続関数であること（任意の x, z で呼べて、格子に依存しない）が
+## この関数の契約。草木・道・都市・巨人・リングがすべてこれを基準に
+## 接地するため、格子へ丸める処理をここに入れてはいけない
+## （描画メッシュとの整合が要る場合は terrain_mesh_height_at() を使う）。
 func height_at(x: float, z: float) -> float:
-	var h: float = _noise.get_noise_2d(x, z) * TERRAIN_HEIGHT
+	var shape: float = _terrain_shape_at(x, z)
+
+	# 都市と街道の周辺は起伏を押し下げ、街と道が乗る平地を作る。
+	# 0 へ寄せるのではなく、その地点の「なだらかな土地の高さ」
+	# （最も粗いオクターブだけを見た値）へ寄せる。0 に寄せると高地の
+	# 都市が周りから掘り下げられた穴の底に沈むため。
+	var flatten: float = _settlement_flatten_at(x, z)
+	if flatten > 0.0:
+		shape = lerpf(shape, _base_shape_at(x, z), flatten)
+
+	var h: float = shape * TERRAIN_HEIGHT
 	# 中央を掘り下げる。レイヴンスパイアが盆地の底になり、
 	# 外周の王国都市がそれを囲む地形として読める。
 	var distance: float = Vector2(x, z).length()
 	var basin: float = clampf(1.0 - distance / _basin_radius, 0.0, 1.0)
 	return h - basin * basin * BASIN_DEPTH
+
+
+## その地点の「なだらかな土地の高さ」。平地化の寄せ先に使う（0 ではなく
+## これへ寄せることで、高地の都市は高地のまま平らになる）。
+##
+## 寄せ先自体が滑らかでないと平地化にならない。最初は最も粗いオクターブ
+## （_noise.get_noise_2d(x, z)）に FBM_NORMALIZE を掛けた値を使ったが、
+## これは ±1 で飽和するうえ波長10程度で上下するため、都市の足元で
+## -0.00→-0.73→-0.62 と揺れ、そこへ寄せた結果かえって急斜面になった
+## （実測: 都市の最大傾斜64.4度、街道の平均40.4度と、平地化前より悪化）。
+##
+## SETTLEMENT_BASE_SCALE で波長を平地化の及ぶ範囲より十分長く取り、
+## 振幅も抑えて、寄せ先が「その一帯のなだらかな標高」になるようにする。
+const SETTLEMENT_BASE_SCALE: float = 0.28
+const SETTLEMENT_BASE_AMPLITUDE: float = 0.45
+
+func _base_shape_at(x: float, z: float) -> float:
+	return _noise.get_noise_2d(x * SETTLEMENT_BASE_SCALE, z * SETTLEMENT_BASE_SCALE) \
+		* SETTLEMENT_BASE_AMPLITUDE
+
+
+## その地点をどれだけ平らにするか（0〜SETTLEMENT_FLATTEN_STRENGTH）。
+## 都市の周辺と街道沿いで大きくなる。都市と道の両方が近い場所は、
+## 強い方を採る（足し合わせると二重に効いて不自然に深く沈む）。
+##
+## 公開しているのは pulse_scale_at() と同じ理由で、--script の検査から
+## 都市・街道の周辺が実際に平らになっているか直接確かめられるようにするため。
+func settlement_flatten_at(x: float, z: float) -> float:
+	return _settlement_flatten_at(x, z)
+
+
+func _settlement_flatten_at(x: float, z: float) -> float:
+	if _flat_positions.is_empty():
+		return 0.0
+	var point := Vector2(x, z)
+	var strongest: float = 0.0
+
+	for city_id: String in _flat_positions:
+		var distance: float = point.distance_to(_flat_positions[city_id])
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_FLAT_RADIUS, SETTLEMENT_FALLOFF))
+		if strongest >= 1.0:
+			return SETTLEMENT_FLATTEN_STRENGTH
+
+	# 街道。王道に加えて黒ゾーンの道（中心都市へ向かう放射）も含める。
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		if not (_flat_positions.has(edge[0]) and _flat_positions.has(edge[1])):
+			continue
+		var distance: float = _distance_to_segment(
+			point, _flat_positions[edge[0]], _flat_positions[edge[1]])
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_ROAD_FLAT_WIDTH, SETTLEMENT_ROAD_FALLOFF))
+
+	var center: Vector2 = _flat_positions.get(GameData.CAERLEON, Vector2.ZERO)
+	for gate: String in GameData.BLACK_ZONE_GATES:
+		if not _flat_positions.has(gate):
+			continue
+		var distance: float = _distance_to_segment(point, _flat_positions[gate], center)
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_ROAD_FLAT_WIDTH, SETTLEMENT_ROAD_FALLOFF))
+
+	return strongest * SETTLEMENT_FLATTEN_STRENGTH
+
+
+## flat_radius までは 1.0、そこから falloff をかけて 0 へ滑らかに落ちる係数。
+## smoothstep なので両端で変化率が0になり、平地と山地の継ぎ目に段差が
+## 出ない（線形だと縁が折れ線として見える）。
+func _falloff(distance: float, flat_radius: float, falloff: float) -> float:
+	if distance <= flat_radius:
+		return 1.0
+	return 1.0 - smoothstep(flat_radius, flat_radius + falloff, distance)
+
+
+## 起伏の素の形。-1〜1 に正規化した無次元の値を返す（振幅は height_at()
+## 側で TERRAIN_HEIGHT を掛けて与える）。なだらかな fBm と尖ったリッジを
+## 場所ごとの割合で混ぜる。
+##
+## 公開しているのは pulse_scale_at() と同じ理由で、--script の検査から
+## 値域や地点ごとの起伏の差を直接確かめられるようにするため
+## （_noise 以外に内部状態を持たない純関数）。
+func terrain_shape_at(x: float, z: float) -> float:
+	return _terrain_shape_at(x, z)
+
+
+func _terrain_shape_at(x: float, z: float) -> float:
+	# 素の fBm と、同じオクターブ列から作るリッジ。両方とも
+	# 振幅の総和で割って -1〜1（リッジは 0〜1）に正規化する。
+	# 正規化しないとオクターブ数を変えた瞬間に地形全体の高さが変わり、
+	# 都市の柱や現在地リングとの高さ関係が黙ってずれる。
+	var frequency: float = TERRAIN_NOISE_SCALE
+	var amplitude: float = 1.0
+	var total_amplitude: float = 0.0
+	var fbm: float = 0.0
+	var ridge: float = 0.0
+
+	for octave: int in TERRAIN_OCTAVES:
+		# FastNoiseLite.frequency は _build() で設定済みなので、ここでは
+		# 座標側を拡大してオクターブを作る（frequency を書き換えると
+		# 同じ _noise を使う草木の配置まで巻き添えで変わってしまう）。
+		var scale: float = frequency / TERRAIN_NOISE_SCALE
+		var n: float = _noise.get_noise_2d(x * scale, z * scale)
+		fbm += n * amplitude
+		# 1-|n| は n=0 の等高線で尖った峰になる。二乗して峰を細く、
+		# 谷を広く取ると、丸い丘ではなく山脈らしい断面になる。
+		var r: float = 1.0 - absf(n)
+		ridge += r * r * amplitude
+
+		total_amplitude += amplitude
+		frequency *= TERRAIN_LACUNARITY
+		amplitude *= TERRAIN_GAIN
+
+	# fBm はオクターブを重ねるほど、全オクターブが同時に極値を取る確率が
+	# 下がるため実効的な値域が狭まる（実測: 素の和を total_amplitude で
+	# 割ると ±0.35 程度にしか届かない）。理論上の最大値で割ると起伏が
+	# 目に見えて平坦になるので、実測の広がりに合わせた係数で正規化する。
+	# TERRAIN_OCTAVES / GAIN を変えたら scenario_m27 の値域検査が落ちるので、
+	# そのときはこの係数を測り直すこと。
+	fbm = clampf(fbm / total_amplitude * FBM_NORMALIZE, -1.0, 1.0)
+	# リッジは 0〜1 なので、fBm と混ぜられるよう -1〜1 へ写す。
+	ridge = clampf(ridge / total_amplitude, 0.0, 1.0) * 2.0 - 1.0
+
+	# 低い側を平らに均す。fBm をそのまま使うと、値が0付近の広い領域にも
+	# 常に中くらいの起伏が残り、平地というものが地形上に存在しなくなる
+	# （「平地を広く」というユーザー指定。実機では一面が細かい起伏で
+	# 埋まって見えていた）。絶対値を TERRAIN_FLATTEN 乗すると、-1〜1 の
+	# 範囲で 0 付近だけが強く0へ寄り、両端（谷底と峰）は元の高さを保つ。
+	# 符号を掛け直して谷と峰の向きを戻す。
+	fbm = signf(fbm) * pow(absf(fbm), TERRAIN_FLATTEN)
+
+	# どこを山脈にするかを、非常に粗いノイズで帯状に決める。
+	# 一様に混ぜると全域が同じ険しさになり、結局また単調になるため。
+	# smoothstep でコントラストを付け、平野（重み0）と山脈（重み最大）に
+	# 実際に到達させる（TERRAIN_RIDGE_REGION_LOW/HIGH のコメント参照）。
+	var region: float = _noise.get_noise_2d(
+		x * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 911.0,
+		z * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 313.0)
+	var ridge_weight: float = smoothstep(
+		TERRAIN_RIDGE_REGION_LOW, TERRAIN_RIDGE_REGION_HIGH, region) * TERRAIN_RIDGE_MIX
+	return lerpf(fbm, ridge, ridge_weight)
 
 
 func _build_terrain() -> void:
@@ -494,7 +844,18 @@ func _assign_terrain_colors(arrays: Array) -> void:
 
 		# height_at() の basin と同じ考え方（中心に近いほど1.0）。
 		var basin: float = clampf(1.0 - distance_from_center / _basin_radius, 0.0, 1.0)
-		var base: Color = TERRAIN_BASIN_COLOR.lerp(TERRAIN_UPLAND_COLOR, 1.0 - basin)
+
+		# 実際の標高で低地・中腹・高所を塗り分ける。境界はノイズで上下させ、
+		# 等高線状の縞が出ないようにする（TERRAIN_BAND_JITTER 参照）。
+		var jitter: float = _noise.get_noise_2d(
+			v.x * TERRAIN_BAND_JITTER_SCALE / TERRAIN_NOISE_SCALE + 57.0,
+			v.z * TERRAIN_BAND_JITTER_SCALE / TERRAIN_NOISE_SCALE + 149.0) * TERRAIN_BAND_JITTER
+		var elevation: float = _elevation_level_at(v)
+		var band: Color = _elevation_band_color(elevation + jitter)
+
+		# 盆地に近いほど、標高帯の色より盆地色を優先する（中心の危険地帯が
+		# 標高で塗り替えられて読めなくならないようにする）。
+		var base: Color = band.lerp(TERRAIN_BASIN_COLOR, basin)
 		var slope: float = clampf(1.0 - normals[i].y, 0.0, 1.0)
 		var color: Color = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
 
@@ -502,11 +863,55 @@ func _assign_terrain_colors(arrays: Array) -> void:
 		var biome_t: float = clampf(1.0 - biome["distance"] / BIOME_INFLUENCE_RADIUS, 0.0, 1.0)
 		color = color.lerp(biome["color"], biome_t * (1.0 - basin))
 
+		# 同じ帯の中の微妙な濃淡。広い単色面の平坦さを消す。
+		var grain: float = _noise.get_noise_2d(
+			v.x * TERRAIN_COLOR_GRAIN_SCALE / TERRAIN_NOISE_SCALE + 727.0,
+			v.z * TERRAIN_COLOR_GRAIN_SCALE / TERRAIN_NOISE_SCALE + 883.0) * TERRAIN_COLOR_GRAIN
+		color = Color(
+			clampf(color.r + grain, 0.0, 1.0),
+			clampf(color.g + grain, 0.0, 1.0),
+			clampf(color.b + grain, 0.0, 1.0))
+
+		# 縁を空の色へ溶かす。開始半径を _ring_radius（都市が乗る範囲の縁、
+		# 約21）に置くと、カメラの MAX_DISTANCE(34) の内側から色が抜け始め、
+		# プレイ範囲の地形まで淡い灰色に寄ってしまう（霧と二重に掛かって
+		# 白飛びして見えていた原因のひとつ）。カメラで見える範囲の外から
+		# 始める。
+		var fade_start: float = maxf(_ring_radius, MapCamera.MAX_DISTANCE)
 		var edge_t: float = clampf(
-			(distance_from_center - _ring_radius) / (half_extent - _ring_radius), 0.0, 1.0)
+			(distance_from_center - fade_start) / maxf(half_extent - fade_start, 0.001), 0.0, 1.0)
 		colors[i] = color.lerp(SKY_HORIZON_COLOR, edge_t)
 
 	arrays[Mesh.ARRAY_COLOR] = colors
+
+
+## 頂点の標高を、盆地の掘り下げを除いた -1〜1 の正規化値として返す。
+## height_at() の戻り値をそのまま使うと、中心付近は BASIN_DEPTH のぶん
+## 深く沈んでいるため常に最低の帯（低地色）になり、盆地色と二重に
+## 掛かってしまう。盆地の扱いは basin の項が別に持っているので、
+## ここでは起伏そのものの高さだけを見る。
+func _elevation_level_at(vertex: Vector3) -> float:
+	return clampf(_terrain_shape_at(vertex.x, vertex.z), -1.0, 1.0)
+
+
+## 正規化標高（-1〜1）に対応する地表色。低地→中腹→高所の3色を
+## 帯の境界で補間する。
+##
+## 補間には smoothstep を使う。線形（lerp）だと帯の境目で色の変化率が
+## 不連続に折れ、そこが1本の線として目に見える（等高線状の縞の一因。
+## TERRAIN_BAND_JITTER で境界の位置を散らすだけでは、この折れ目自体は
+## 消えない）。smoothstep は両端で変化率が0になるので、帯どうしが
+## 滑らかに溶け合い、どこが境目か分からなくなる。
+func _elevation_band_color(level: float) -> Color:
+	if level <= TERRAIN_LOWLAND_LEVEL:
+		return TERRAIN_LOWLAND_COLOR
+	if level >= TERRAIN_HIGHLAND_LEVEL:
+		return TERRAIN_HIGHLAND_COLOR
+	if level < 0.0:
+		return TERRAIN_LOWLAND_COLOR.lerp(TERRAIN_UPLAND_COLOR,
+			smoothstep(TERRAIN_LOWLAND_LEVEL, 0.0, level))
+	return TERRAIN_UPLAND_COLOR.lerp(TERRAIN_HIGHLAND_COLOR,
+		smoothstep(0.0, TERRAIN_HIGHLAND_LEVEL, level))
 
 
 ## 水平面上でその地点に最も近い王国都市（レイヴンスパイアは対象外。中心の
