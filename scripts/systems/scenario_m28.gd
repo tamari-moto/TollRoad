@@ -209,9 +209,14 @@ func _test_producer_advantage_remains() -> void:
 		if specialty == "":
 			continue
 		var local: int = s.market.stock_of(city_id, specialty)
-		# 同じ品目を、その品目を作っていない都市で見る。
+		# 同じ品目を、産地でない都市で見る。
+		#
+		# 以前は「生産量が0の都市」で選んでいたが、特産の距離段階
+		# （PRODUCTION_SPECIALTY_FAR = 1）が入って生産量0の都市が消え、
+		# 1組も選ばれなくなった。見たいのは「産地か否か」なので産地そのものを
+		# 除く形にする。近隣が少し採れること自体は m23 が押さえている。
 		for other_id: String in GameData.CITIES:
-			if MarketTable.production_of(other_id, specialty) > 0:
+			if other_id == city_id:
 				continue
 			checked += 1
 			if s.market.stock_of(other_id, specialty) < local:
