@@ -21,8 +21,75 @@ func _init() -> void:
 	_test_badges()
 	_test_best_deal_badge()
 	_test_ratio_accent()
+	_test_untradable_rows_hidden()
 	await _test_bar_renders()
 	_finish()
+
+
+## 売買できない品目は行ごと出さない。
+##
+## 見ているのは「隠れているか」ではなく**約束**の方 —
+## 出ている行は必ず買うか売るかができ、できない行は出ていないこと。
+## 実装の条件式（在庫0かつ所持0）を書き写すと、条件を変えたときに
+## 両方が同時にずれて素通りする。
+func _test_untradable_rows_hidden() -> void:
+	print("--- 売買できない行を出さない ---")
+	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")
+	if panel == null:
+		return
+	var session: GameSession = GameSession.new(16007)
+	panel.bind(session)
+
+	# 出ている行はどれも、買うか売るかのどちらかができる。
+	var shown_but_dead: PackedStringArray = []
+	for item_id: String in panel.visible_item_ids():
+		if session.max_buyable(item_id) <= 0 and session.cargo_count(item_id) <= 0:
+			# 資金不足で買えないだけの行は残す約束なので、在庫の有無で見る。
+			if session.stock_count(item_id) <= 0:
+				shown_but_dead.append(item_id)
+	_check(shown_but_dead.is_empty(), "出ている行はどれも取引の対象になる",
+		", ".join(shown_but_dead))
+
+	# 隠れている行はどれも、買うことも売ることもできない。
+	var hidden_but_alive: PackedStringArray = []
+	for item_id: String in panel.item_ids():
+		if panel.is_row_visible(item_id):
+			continue
+		if session.stock_count(item_id) > 0 or session.cargo_count(item_id) > 0:
+			hidden_but_alive.append(item_id)
+	_check(hidden_but_alive.is_empty(), "隠れている行はどれも取引できない",
+		", ".join(hidden_but_alive))
+
+	# レア品は生産されないため、初期状態ではどの都市でも出ない。
+	var rare_shown: PackedStringArray = []
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] != GameData.ItemKind.RARE:
+			continue
+		rare_shown.append(item_id)
+		_check(not panel.is_row_visible(item_id),
+			"探索専用の %s は市場に出ない" % item_id, "出ている")
+	_check(rare_shown.size() > 0, "レア品が存在する（前提の確認）", "ない")
+
+	# 手に入れると行が現れ、売れるようになる。
+	var rare: String = rare_shown[0]
+	session.cargo[rare] = 1
+	panel.refresh()
+	_check(panel.is_row_visible(rare), "所持すると %s の行が現れる" % rare, "出ない")
+	_check(panel.sell_button_for(rare) != null and not panel.sell_button_for(rare).disabled,
+		"現れた行は売れる", "売れない")
+
+	# 売り切ると再び消える。
+	session.sell(rare, 1)
+	panel.refresh()
+	_check(not panel.is_row_visible(rare), "売り切ると %s の行が消える" % rare, "残る")
+
+	# 資源はどの都市でも生産されるので、常に並んでいる（画面が空にならない）。
+	var visible_count: int = panel.visible_item_ids().size()
+	_check(visible_count > 0, "行が全部消えることはない", str(visible_count))
+	_check(visible_count < GameData.ITEMS.size(),
+		"何かは隠れている（検査が素通りしていない）", str(visible_count))
+
+	_despawn(panel)
 
 
 func _test_scale_covers_all_prices() -> void:
@@ -144,7 +211,9 @@ func _test_arrows() -> void:
 		var session: GameSession = GameSession.new(16002)
 		panel.bind(session)
 		var has_arrow: bool = false
-		for item_id: String in panel.item_ids():
+		# 見えている行だけを見る。売買できない行（在庫0かつ所持0）は隠れており、
+		# 中身を更新しないため。
+		for item_id: String in panel.visible_item_ids():
 			var text: String = panel.ratio_text_for(item_id)
 			if text.contains("▼") or text.contains("▲"):
 				has_arrow = true
@@ -245,7 +314,8 @@ func _test_ratio_accent() -> void:
 	var session: GameSession = GameSession.new(16006)
 	panel.bind(session)
 
-	for item_id: String in GameData.ITEMS:
+	# 隠れている行は中身を更新しないので、見えている行だけを見る。
+	for item_id: String in panel.visible_item_ids():
 		var price: int = session.prices.get_price(session.current_city, item_id)
 		var ratio: float = float(price) / float(GameData.ITEMS[item_id]["base_price"])
 		var accent: ColorRect = panel.accent_for(item_id)
