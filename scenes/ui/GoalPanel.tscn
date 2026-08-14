@@ -50,7 +50,7 @@ theme_override_constants/separation = 6
 [node name="DayLabel" type="Label" parent="Margin/Row/DayGroup"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "残り59日"
+text = "残り59日（月曜日）"
 
 [node name="DayBar" type="ProgressBar" parent="Margin/Row/DayGroup"]
 unique_name_in_owner = true

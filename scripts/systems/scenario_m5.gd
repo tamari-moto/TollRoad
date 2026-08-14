@@ -19,6 +19,7 @@ func _init() -> void:
 	_test_scene_files_load()
 	_test_hud_binding()
 	_test_goal_panel_binding()
+	_test_weekday()
 	_test_number_format()
 	_finish()
 
@@ -128,23 +129,38 @@ func _test_goal_panel_binding() -> void:
 	var day_label: Label = goal_panel.get_node("%DayLabel")
 	var day_bar: ProgressBar = goal_panel.get_node("%DayBar")
 
-	_check(day_label.text == "残り%d日" % (GameData.TOTAL_DAYS - 1), "残り日数が出る", day_label.text)
+	_check(day_label.text == "残り%d日（%s曜日）" % [GameData.TOTAL_DAYS - 1, GameData.weekday_name(1)],
+		"残り日数と曜日が出る", day_label.text)
 	_check(day_bar.max_value == GameData.TOTAL_DAYS, "日数バーの最大が総日数", str(day_bar.max_value))
 	_check(day_bar.value == 1, "日数バーが1日目を指す", str(day_bar.value))
 
-	# 日が進むと残り日数表示とバーが追従する。
+	# 日が進むと残り日数・曜日表示とバーが追従する。
 	session.rest()
-	_check(day_label.text == "残り%d日" % (GameData.TOTAL_DAYS - 2), "休息で残り日数が減る", day_label.text)
+	_check(day_label.text == "残り%d日（%s曜日）" % [GameData.TOTAL_DAYS - 2, GameData.weekday_name(2)],
+		"休息で残り日数と曜日が変わる", day_label.text)
 	_check(day_bar.value == 2, "日数バーが進む", str(day_bar.value))
 
-	# 60日を超えても日数バーは総日数で頭打ちになる（61日目分は進まない）。
+	# 60日を超えても日数バーは総日数で頭打ちになる（61日目分は進まない）。曜日も
+	# 60日目のまま（存在しない61日目の曜日を出さない）。
 	while not session.is_over():
 		session.rest()
-	_check(day_label.text == "残り0日", "終了後は残り0日と表示する", day_label.text)
+	_check(day_label.text == "残り0日（%s曜日）" % GameData.weekday_name(GameData.TOTAL_DAYS),
+		"終了後は残り0日・60日目の曜日と表示する", day_label.text)
 	_check(day_bar.value == GameData.TOTAL_DAYS, "終了後も日数バーは総日数で頭打ち", str(day_bar.value))
 
 	root.remove_child(goal_panel)
 	goal_panel.free()
+
+
+## 曜日は7日周期。将来の曜日連動要素（市場イベントなど）が同じ関数を
+## 経由できるよう、ここで周期と1日目の曜日を固定しておく。
+func _test_weekday() -> void:
+	print("--- 曜日の周期 ---")
+	_check(GameData.weekday_name(1) == "月", "1日目は月曜日", GameData.weekday_name(1))
+	_check(GameData.weekday_name(7) == "日", "7日目は日曜日", GameData.weekday_name(7))
+	_check(GameData.weekday_name(8) == "月", "8日目は1周して月曜日", GameData.weekday_name(8))
+	_check(GameData.weekday_name(60) == GameData.weekday_name(60 - 7),
+		"7日前と同じ曜日になる", "%s vs %s" % [GameData.weekday_name(60), GameData.weekday_name(53)])
 
 
 func _test_number_format() -> void:

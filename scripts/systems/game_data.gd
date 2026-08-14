@@ -8,6 +8,18 @@ const TOTAL_DAYS: int = 60
 const INITIAL_SILVER: int = 30000
 const INITIAL_CITY: String = "ironhollow"
 
+## 1日目を月曜日とする7日周期。曜日を使う要素（市場イベントなど）は
+## ここを経由して曜日を引く。day は GameSession.day と同じ1始まりの値。
+const WEEKDAY_NAMES: Array[String] = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+static func weekday_index(day: int) -> int:
+	return (day - 1) % WEEKDAY_NAMES.size()
+
+
+static func weekday_name(day: int) -> String:
+	return WEEKDAY_NAMES[weekday_index(day)]
+
 # --- アイテム ---
 ## 種別。装備は資源から製作される。RARE は探索でのみ手に入り、製作や
 ## 労働者の抽選（resource_ids()）の対象外。

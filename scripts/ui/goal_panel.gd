@@ -91,7 +91,7 @@ func _refresh_day() -> void:
 		return
 	var total: int = GameData.TOTAL_DAYS
 	var day: int = mini(_session.day, total)
-	_day_label.text = "残り%d日" % (total - day)
+	_day_label.text = "残り%d日（%s曜日）" % [total - day, GameData.weekday_name(day)]
 	_day_bar.max_value = total
 
 	# バーだけは滑らかに伸ばす。ツリー外では即座に反映する。
