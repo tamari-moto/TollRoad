@@ -88,12 +88,14 @@ func _press_start(main: Node) -> void:
 	button.pressed.emit()
 
 
-func _hud_day_text(main: Node) -> String:
-	var hud: Node = UiUtil.find_node(main, "HUD")
-	if hud == null:
-		return ""
-	var label: Label = hud.find_child("DayLabel", true, false) as Label
-	return label.text if label != null else ""
+## 日数表示は GoalPanel（HUD とは別パネル）が持つ。DayBar の値で日を確かめる
+## （DayLabel は「残りN日」表記のため、部分一致では判定しにくい）。
+func _hud_day_number(main: Node) -> int:
+	var panel: Node = UiUtil.find_node(main, "GoalPanel")
+	if panel == null:
+		return -1
+	var bar: ProgressBar = panel.find_child("DayBar", true, false) as ProgressBar
+	return int(bar.value) if bar != null else -1
 
 
 func _log_count(main: Node) -> int:
@@ -118,8 +120,8 @@ func _test_main_loads() -> void:
 	var main: Node = parts["main"]
 	_check(main.get_script() != null, "立てた Main にスクリプトが付いている", "付いていない")
 	# 差し込んだセッションが配られ、HUD に出ている。
-	_check(_hud_day_text(main).contains("1日目"), "HUD に1日目が出る",
-		_hud_day_text(main))
+	_check(_hud_day_number(main) == 1, "HUD に1日目が出る",
+		str(_hud_day_number(main)))
 	_teardown(parts)
 
 
@@ -234,8 +236,8 @@ func _test_continue_success() -> void:
 
 	_check(state.session.day == saved_day, "保存した日から再開する",
 		"%d / %d" % [state.session.day, saved_day])
-	_check(_hud_day_text(main_node).contains("%d日目" % saved_day),
-		"HUD が復帰後の日を出す（配り直しが起きている）", _hud_day_text(main_node))
+	_check(_hud_day_number(main_node) == saved_day,
+		"HUD が復帰後の日を出す（配り直しが起きている）", str(_hud_day_number(main_node)))
 	# 復帰した直後に開始画面をもう一度開かない。
 	if dialog != null:
 		_check(not dialog.visible, "復帰後に開始画面が開かない", "開いている")

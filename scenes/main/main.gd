@@ -39,6 +39,7 @@ const SIDE_PANEL_WIDTH: float = 600.0
 ## ハーネスから add_child() した直後の _ready() では**まだ null**になり、
 ## 接続がまるごと失敗する（実測）。hud.gd と同じ形に揃えてある。
 var _hud: PanelContainer
+var _goal_panel: PanelContainer
 var _tabs: TabContainer
 var _side_panel: PanelContainer
 var _tab_strip_buttons: Array[Button] = []
@@ -129,6 +130,7 @@ func _resolve_nodes() -> void:
 	if is_instance_valid(_hud):
 		return
 	_hud = UiUtil.find_node(self, "HUD")
+	_goal_panel = UiUtil.find_node(self, "GoalPanel")
 	_tabs = UiUtil.find_node(self, "Tabs")
 	_side_panel = UiUtil.find_node(self, "SidePanel")
 	_log_scroll = UiUtil.find_node(self, "LogScroll")
@@ -231,6 +233,7 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 		_session.day, GameData.TOTAL_DAYS, _session.silver, _session.current_city])
 
 	_hud.bind(_session)
+	_goal_panel.bind(_session)
 	for panel: Node in _panels:
 		panel.bind(_session)
 	_result_dialog.bind(_session)
@@ -302,6 +305,7 @@ func _apply_backdrop() -> void:
 	_map_panel.add_theme_stylebox_override("panel", UiTheme.make_transparent_style())
 
 	UiTheme.apply_panel_style(_hud)
+	UiTheme.apply_panel_style(_goal_panel)
 	UiTheme.apply_panel_style(UiUtil.find_node(self, "TabStrip") as Control)
 	UiTheme.apply_panel_style(_side_panel)
 	UiTheme.apply_panel_style(UiUtil.find_node(self, "LogActions") as Control)

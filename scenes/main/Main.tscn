@@ -1,7 +1,8 @@
-[gd_scene load_steps=13 format=3 uid="uid://b0m1n3econ0my"]
+[gd_scene load_steps=14 format=3 uid="uid://b0m1n3econ0my"]
 
 [ext_resource type="Script" path="res://scenes/main/main.gd" id="1"]
 [ext_resource type="PackedScene" uid="uid://cvh0d8tollhud" path="res://scenes/ui/HUD.tscn" id="2"]
+[ext_resource type="PackedScene" uid="uid://b1qh0alp4nl00" path="res://scenes/ui/GoalPanel.tscn" id="13"]
 [ext_resource type="PackedScene" uid="uid://cm4rk3tp4n3l0" path="res://scenes/ui/MarketPanel.tscn" id="3"]
 [ext_resource type="PackedScene" uid="uid://dc4rg0p4n3l00" path="res://scenes/ui/CargoPanel.tscn" id="4"]
 [ext_resource type="PackedScene" uid="uid://bm4pp4n3l0000" path="res://scenes/ui/MapPanel.tscn" id="5"]
@@ -43,7 +44,7 @@ anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -122.0
-offset_top = 72.0
+offset_top = 80.0
 offset_right = -12.0
 offset_bottom = -12.0
 grow_horizontal = 0
@@ -123,7 +124,7 @@ anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -122.0
-offset_top = 72.0
+offset_top = 80.0
 offset_right = -122.0
 offset_bottom = -12.0
 grow_horizontal = 0
@@ -246,6 +247,10 @@ size_flags_vertical = 4
 autowrap_mode = 3
 
 [node name="HUD" parent="UI/Root" instance=ExtResource("2")]
+unique_name_in_owner = true
+layout_mode = 1
+
+[node name="GoalPanel" parent="UI/Root" instance=ExtResource("13")]
 unique_name_in_owner = true
 layout_mode = 1
 

@@ -198,6 +198,7 @@ func _test_signal_arity() -> void:
 		"res://scenes/ui/MemoPanel.tscn",
 		"res://scenes/ui/IslandPanel.tscn",
 		"res://scenes/ui/HUD.tscn",
+		"res://scenes/ui/GoalPanel.tscn",
 		"res://scenes/ui/ExplorationPanel.tscn",
 	]
 

@@ -18,6 +18,8 @@ func _init() -> void:
 	_test_display_settings()
 	_test_scene_files_load()
 	_test_hud_binding()
+	_test_goal_panel_binding()
+	_test_weekday()
 	_test_number_format()
 	_finish()
 
@@ -48,10 +50,20 @@ func _test_scene_files_load() -> void:
 		_check(hud.has_method("bind"), "HUD に bind がある", "ない")
 
 		# unique_name_in_owner のノードが引ける（%記法の依存先）。
-		for node_name: String in ["SilverLabel", "DayLabel", "DayBar", "CityLabel", "CargoLabel"]:
+		# 日数系（DayLabel / DayBar）は GoalPanel へ移したのでここには無い。
+		for node_name: String in ["SilverLabel", "CityLabel", "CargoLabel"]:
 			_check(hud.get_node_or_null("%" + node_name) != null,
 				"HUD の %%%s が引ける" % node_name, "見つからない")
 		_despawn(hud)
+
+	_check(load("res://scenes/ui/GoalPanel.tscn") != null, "GoalPanel.tscn が読み込める", "失敗")
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	_check(goal_panel != null, "GoalPanel をインスタンス化できる", "失敗")
+	if goal_panel != null:
+		for node_name: String in ["NetWorthLabel", "GoalBar", "DayLabel", "DayBar"]:
+			_check(goal_panel.get_node_or_null("%" + node_name) != null,
+				"GoalPanel の %%%s が引ける" % node_name, "見つからない")
+		_despawn(goal_panel)
 
 	# Main.tscn も構築できること。ただし _ready は autoload を参照するため
 	# 走らせず、ツリー構造だけを検査する（root へ入れても _ready は走らない。
@@ -59,7 +71,7 @@ func _test_scene_files_load() -> void:
 	var main: Node = _spawn("res://scenes/main/Main.tscn")
 	_check(main != null, "Main をインスタンス化できる", "失敗")
 	if main != null:
-		for path: String in ["%HUD", "%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
+		for path: String in ["%HUD", "%GoalPanel", "%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 			_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
 		_despawn(main)
 
@@ -79,39 +91,73 @@ func _test_hud_binding() -> void:
 	hud.bind(session)
 
 	var silver_label: Label = hud.get_node("%SilverLabel")
-	var day_label: Label = hud.get_node("%DayLabel")
 	var city_label: Label = hud.get_node("%CityLabel")
 	var cargo_label: Label = hud.get_node("%CargoLabel")
-	var day_bar: ProgressBar = hud.get_node("%DayBar")
 
 	_check(silver_label.text.contains("30,000"), "初期シルバーが桁区切りで出る", silver_label.text)
-	_check(day_label.text == "1日目 / 60日", "日数が出る", day_label.text)
 	_check(city_label.text == GameData.CITIES[GameData.INITIAL_CITY]["name"], "現在地が出る", city_label.text)
 	_check(cargo_label.text == "積載 0 / 40", "積載が出る", cargo_label.text)
-	_check(day_bar.max_value == 60, "日数バーの最大が60", str(day_bar.max_value))
 
 	# 購入するとシルバーと積載の表示が追従する。
 	session.buy("ore", 10)
 	_check(not silver_label.text.contains("30,000"), "購入でシルバー表示が変わる", silver_label.text)
 	_check(cargo_label.text == "積載 10 / 40", "購入で積載表示が変わる", cargo_label.text)
 
-	# 日が進むと日数表示とバーが追従する。
-	session.rest()
-	_check(day_label.text == "2日目 / 60日", "休息で日数表示が進む", day_label.text)
-	_check(day_bar.value == 2, "日数バーが進む", str(day_bar.value))
-
 	# 移動すると現在地表示が変わる。
 	var neighbor: String = _adjacent_royal_city(session.current_city)
 	session.move_to(neighbor)
 	_check(city_label.text == GameData.CITIES[neighbor]["name"], "移動で現在地表示が変わる", city_label.text)
 
-	# 60日を超えても日数表示は60で頭打ちになる（61日目と出さない）。
-	while not session.is_over():
-		session.rest()
-	_check(day_label.text == "60日目 / 60日", "終了後も60日目と表示する", day_label.text)
-
 	root.remove_child(hud)
 	hud.free()
+
+
+## 目標到達度と残り日数は GoalPanel（HUD とは別パネル）が担う。
+func _test_goal_panel_binding() -> void:
+	print("--- GoalPanel がセッションを反映する ---")
+	# @onready を解決するためツリーに入れる（_spawn がツリー投入まで行う）。
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	if goal_panel == null:
+		_check(false, "GoalPanel.tscn が必要", "読み込めない")
+		return
+
+	var session: GameSession = GameSession.new(5002)
+	goal_panel.bind(session)
+
+	var day_label: Label = goal_panel.get_node("%DayLabel")
+	var day_bar: ProgressBar = goal_panel.get_node("%DayBar")
+
+	_check(day_label.text == "残り%d日（%s曜日）" % [GameData.TOTAL_DAYS - 1, GameData.weekday_name(1)],
+		"残り日数と曜日が出る", day_label.text)
+	_check(day_bar.max_value == GameData.TOTAL_DAYS, "日数バーの最大が総日数", str(day_bar.max_value))
+	_check(day_bar.value == 1, "日数バーが1日目を指す", str(day_bar.value))
+
+	# 日が進むと残り日数・曜日表示とバーが追従する。
+	session.rest()
+	_check(day_label.text == "残り%d日（%s曜日）" % [GameData.TOTAL_DAYS - 2, GameData.weekday_name(2)],
+		"休息で残り日数と曜日が変わる", day_label.text)
+	_check(day_bar.value == 2, "日数バーが進む", str(day_bar.value))
+
+	# 60日を超えても日数バーは総日数で頭打ちになる（61日目分は進まない）。曜日も
+	# 60日目のまま（存在しない61日目の曜日を出さない）。
+	while not session.is_over():
+		session.rest()
+	_check(day_label.text == "残り0日（%s曜日）" % GameData.weekday_name(GameData.TOTAL_DAYS),
+		"終了後は残り0日・60日目の曜日と表示する", day_label.text)
+	_check(day_bar.value == GameData.TOTAL_DAYS, "終了後も日数バーは総日数で頭打ち", str(day_bar.value))
+
+	_despawn(goal_panel)
+
+
+## 曜日は7日周期。将来の曜日連動要素（市場イベントなど）が同じ関数を
+## 経由できるよう、ここで周期と1日目の曜日を固定しておく。
+func _test_weekday() -> void:
+	print("--- 曜日の周期 ---")
+	_check(GameData.weekday_name(1) == "月", "1日目は月曜日", GameData.weekday_name(1))
+	_check(GameData.weekday_name(7) == "日", "7日目は日曜日", GameData.weekday_name(7))
+	_check(GameData.weekday_name(8) == "月", "8日目は1周して月曜日", GameData.weekday_name(8))
+	_check(GameData.weekday_name(60) == GameData.weekday_name(60 - 7),
+		"7日前と同じ曜日になる", "%s vs %s" % [GameData.weekday_name(60), GameData.weekday_name(53)])
 
 
 func _test_number_format() -> void:
