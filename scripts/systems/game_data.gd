@@ -197,6 +197,24 @@ const EXPLORE_CAERLEON_RELIC_CHANCE: float = 0.70
 const EXPLORE_BOOST_DAYS: int = 5
 const EXPLORE_BOOST_MULT: int = 2
 
+# --- 日送りランダムイベント ---
+## 現在地の specialty をキーに引く。未登録（specialty が空の都市）は DEFAULT を使う。
+## 都市IDではなく品目IDをキーにするため、都市を足しても書き足しは不要
+## （新しい specialty 品目を足したときだけ追記する）。
+const EVENT_CHANCE_DEFAULT: float = 0.08
+const EVENT_CHANCE_BY_SPECIALTY: Dictionary = {
+	"ore": 0.12, "wood": 0.10, "fiber": 0.10, "hide": 0.11,
+	"stone": 0.09, "coal": 0.12, "wool": 0.09, "quartz": 0.10, "clay": 0.08,
+}
+
+const EVENT_SILVER_GAIN_MIN: int = 80
+const EVENT_SILVER_GAIN_MAX: int = 260
+const EVENT_SILVER_LOSS_MIN: int = 80
+const EVENT_SILVER_LOSS_MAX: int = 260
+
+const EVENT_CARGO_MIN: int = 1
+const EVENT_CARGO_MAX: int = 2
+
 # --- 島と労働者 ---
 const ISLAND_LEVELS: Array[Dictionary] = [
 	{"cost": 0,      "workers": 0},

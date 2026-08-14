@@ -25,6 +25,7 @@ enum LogKind {
 	DAY,              ## 休息・倉庫からの引き取り
 	COMPANION_JOINED, ## 同行者の加入・切り替え
 	COMPANION_LEFT,   ## 同行者との別れ
+	EVENT,            ## 日送りランダムイベント（良し悪しを問わない）
 }
 
 signal day_advanced(day: int)
@@ -627,6 +628,67 @@ func _run_workers() -> void:
 	warehouse_changed.emit()
 
 
+## 日送りのたびに一定確率で発生する小さな出来事。シルバー・積荷の増減のみ
+## （相場の先読みや仲間への効果は対応する機能が無いため対象外）。
+## 現在地の specialty ごとに発生率が変わる（GameData.EVENT_CHANCE_BY_SPECIALTY）。
+func _roll_random_event() -> void:
+	var specialty: String = GameData.CITIES.get(current_city, {}).get("specialty", "")
+	var chance: float = GameData.EVENT_CHANCE_BY_SPECIALTY.get(specialty, GameData.EVENT_CHANCE_DEFAULT)
+	if _rng.randf() >= chance:
+		return
+	match _rng.randi_range(0, 3):
+		0:
+			_apply_event_silver_gain()
+		1:
+			_apply_event_silver_loss()
+		2:
+			if specialty != "" and free_capacity() >= GameData.ITEMS[specialty]["weight"]:
+				_apply_event_cargo_gain(specialty)
+			else:
+				_apply_event_silver_gain()
+		3:
+			if not cargo.is_empty():
+				_apply_event_cargo_loss()
+			else:
+				_apply_event_silver_loss()
+
+
+func _apply_event_silver_gain() -> void:
+	var amount: int = _rng.randi_range(GameData.EVENT_SILVER_GAIN_MIN, GameData.EVENT_SILVER_GAIN_MAX)
+	silver += amount
+	_log("行商人に道を教え、礼として%dシルバーを受け取った。" % amount, LogKind.EVENT)
+	silver_changed.emit(silver)
+
+
+func _apply_event_silver_loss() -> void:
+	var amount: int = mini(silver, _rng.randi_range(GameData.EVENT_SILVER_LOSS_MIN, GameData.EVENT_SILVER_LOSS_MAX))
+	silver -= amount
+	_log("馬車の修理でシルバーを%d失った。" % amount, LogKind.EVENT)
+	silver_changed.emit(silver)
+
+
+func _apply_event_cargo_gain(item_id: String) -> void:
+	var count: int = _rng.randi_range(GameData.EVENT_CARGO_MIN, GameData.EVENT_CARGO_MAX)
+	var granted: int = _grant_item(item_id, count)
+	_log("%sの商人から%sを%d個譲り受けた。" % [
+		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"], granted], LogKind.EVENT)
+	cargo_changed.emit()
+	silver_changed.emit(silver)
+
+
+func _apply_event_cargo_loss() -> void:
+	var keys: Array = cargo.keys()
+	var item_id: String = keys[_rng.randi_range(0, keys.size() - 1)]
+	var count: int = mini(cargo_count(item_id), _rng.randi_range(GameData.EVENT_CARGO_MIN, GameData.EVENT_CARGO_MAX))
+	var remaining: int = cargo_count(item_id) - count
+	if remaining > 0:
+		cargo[item_id] = remaining
+	else:
+		cargo.erase(item_id)
+	_log("荷崩れで%sを%d個失った。" % [GameData.ITEMS[item_id]["name"], count], LogKind.EVENT)
+	cargo_changed.emit()
+
+
 ## 島倉庫から積荷へ移せる最大数（積載空きで決まる）。
 func max_withdrawable() -> int:
 	var space: int = free_capacity()
@@ -709,6 +771,7 @@ func _advance_day() -> void:
 	_run_workers()
 	if _boost_days_left > 0:
 		_boost_days_left -= 1
+	_roll_random_event()
 	day_advanced.emit(day)
 
 
