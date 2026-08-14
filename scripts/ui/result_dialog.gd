@@ -67,9 +67,7 @@ func _populate() -> void:
 
 	if not is_instance_valid(_breakdown):
 		return
-	for child: Node in _breakdown.get_children():
-		_breakdown.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_breakdown)
 
 	var cargo_value: int = _stock_value(_session.cargo)
 	var warehouse_value: int = _stock_value(_session.warehouse)

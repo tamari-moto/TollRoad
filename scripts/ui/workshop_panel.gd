@@ -40,7 +40,7 @@ func _build() -> void:
 	for heading: String in ["装備", "材料", "消費", "作れる数", ""]:
 		var label := Label.new()
 		label.text = heading
-		label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+		label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
 		_grid.add_child(label)
 
 	for item_id: String in GameData.ITEMS:

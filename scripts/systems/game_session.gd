@@ -816,7 +816,8 @@ func from_dict(data: Dictionary) -> void:
 		market.reset()
 
 	if data.has("prices"):
-		prices.prices = _restore_prices(data["prices"])
+		# 検証と引き直しの判断は PriceTable に委ねる（market の from_dict と対称）。
+		prices.from_dict(data["prices"])
 	else:
 		# 相場が無ければ引き直す。get_price() が落ちる状態にはしない。
 		prices.reroll()
@@ -852,27 +853,6 @@ func _restore_memo(source: Dictionary) -> Dictionary:
 			if GameData.ITEMS.has(item_key):
 				entry_prices[item_key] = int(entry["prices"][item_id])
 		out[key] = {"day": int(entry.get("day", 1)), "prices": entry_prices}
-	return out
-
-
-## 保存された相場。今の GameData と噛み合わなければ引き直す。
-##
-## 一部だけ埋めると、その品目だけ乱数系列の外の値になる。都市や品目を
-## 足した後の古いセーブでは、丸ごと作り直す方が筋が通る（1日ぶん相場が
-## 変わるが、決定性は保たれる）。
-func _restore_prices(source: Dictionary) -> Dictionary:
-	var out: Dictionary = {}
-	for city_id: String in GameData.CITIES:
-		if not source.has(city_id):
-			prices.reroll()
-			return prices.prices
-		var city_prices: Dictionary = {}
-		for item_id: String in GameData.ITEMS:
-			if not source[city_id].has(item_id):
-				prices.reroll()
-				return prices.prices
-			city_prices[item_id] = int(source[city_id][item_id])
-		out[city_id] = city_prices
 	return out
 
 

@@ -258,8 +258,12 @@ func _test_ratio_accent() -> void:
 func _test_bar_renders() -> void:
 	print("--- バーが描画される大きさを持つ ---")
 	# M13 で踏んだ「サイズ 0 で描画されない」罠の再発防止。
+	# PriceBar は PackedScene ではないので _spawn() は使えない。代わりに
+	# _spawned へ手で登録し、途中で抜けても _finish() が回収できるようにする
+	# （await を挟むため、検査が失敗して抜ける経路が実在する）。
 	var bar: PriceBar = PriceBar.new()
 	root.add_child(bar)
+	_spawned.append(bar)
 	bar.size = Vector2(80, PriceBar.BAR_HEIGHT)
 	bar.ratio = 0.8
 	await process_frame
@@ -270,8 +274,7 @@ func _test_bar_renders() -> void:
 	_check(bar.mouse_filter == Control.MOUSE_FILTER_IGNORE,
 		"クリックを透過する（ボタンを妨げない）", str(bar.mouse_filter))
 
-	root.remove_child(bar)
-	bar.free()
+	_despawn(bar)
 
 	# 市場の中でも高さを持つ。
 	var panel: Node = _spawn("res://scenes/ui/MarketPanel.tscn")

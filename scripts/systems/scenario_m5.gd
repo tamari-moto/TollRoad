@@ -36,33 +36,32 @@ func _test_display_settings() -> void:
 
 func _test_scene_files_load() -> void:
 	print("--- シーンの読み込み ---")
-	var main_scene: PackedScene = load("res://scenes/main/Main.tscn")
-	_check(main_scene != null, "Main.tscn が読み込める", "失敗")
-	var hud_scene: PackedScene = load("res://scenes/ui/HUD.tscn")
-	_check(hud_scene != null, "HUD.tscn が読み込める", "失敗")
-
-	if hud_scene == null:
-		return
+	_check(load("res://scenes/main/Main.tscn") != null, "Main.tscn が読み込める", "失敗")
+	_check(load("res://scenes/ui/HUD.tscn") != null, "HUD.tscn が読み込める", "失敗")
 
 	# 実際にノードを構築できるか（書式ミスはここで露見する）。
-	var hud: Node = hud_scene.instantiate()
+	# _spawn() 経由にすると、途中で検査が失敗して抜けても _finish() が
+	# 取りこぼしを回収する（直に instantiate すると free に届かない経路ができる）。
+	var hud: Node = _spawn("res://scenes/ui/HUD.tscn")
 	_check(hud != null, "HUD をインスタンス化できる", "失敗")
-	_check(hud.has_method("bind"), "HUD に bind がある", "ない")
+	if hud != null:
+		_check(hud.has_method("bind"), "HUD に bind がある", "ない")
 
-	# unique_name_in_owner のノードが引ける（%記法の依存先）。
-	for node_name: String in ["SilverLabel", "DayLabel", "DayBar", "CityLabel", "CargoLabel"]:
-		_check(hud.get_node_or_null("%" + node_name) != null,
-			"HUD の %%%s が引ける" % node_name, "見つからない")
-	hud.free()
+		# unique_name_in_owner のノードが引ける（%記法の依存先）。
+		for node_name: String in ["SilverLabel", "DayLabel", "DayBar", "CityLabel", "CargoLabel"]:
+			_check(hud.get_node_or_null("%" + node_name) != null,
+				"HUD の %%%s が引ける" % node_name, "見つからない")
+		_despawn(hud)
 
 	# Main.tscn も構築できること。ただし _ready は autoload を参照するため
-	# 走らせず、ツリー構造だけを検査する。
-	var main: Node = main_scene.instantiate()
+	# 走らせず、ツリー構造だけを検査する（root へ入れても _ready は走らない。
+	# 実測で is_node_ready() は false のまま）。
+	var main: Node = _spawn("res://scenes/main/Main.tscn")
 	_check(main != null, "Main をインスタンス化できる", "失敗")
 	if main != null:
 		for path: String in ["%HUD", "%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 			_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
-		main.free()
+		_despawn(main)
 
 
 func _test_hud_binding() -> void:

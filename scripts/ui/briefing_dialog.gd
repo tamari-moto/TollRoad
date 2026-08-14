@@ -105,9 +105,7 @@ func _populate() -> void:
 func _populate_ranks() -> void:
 	if not is_instance_valid(_rank_list):
 		return
-	for child: Node in _rank_list.get_children():
-		_rank_list.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_rank_list)
 
 	for rank: Dictionary in GameData.RANKS:
 		var row := HBoxContainer.new()
