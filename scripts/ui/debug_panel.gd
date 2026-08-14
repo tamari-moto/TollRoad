@@ -14,9 +14,11 @@ const MarketTable = preload("res://scripts/systems/market_table.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const StatBar = preload("res://scripts/ui/stat_bar.gd")
+const CityRadarChart = preload("res://scripts/ui/city_radar_chart.gd")
 
-## 品目を選ぶと全都市を比較 / 都市を選ぶと全品目を一覧。
-enum View { BY_ITEM, BY_CITY }
+## 品目を選ぶと全都市を比較 / 都市を選ぶと全品目を一覧 / STATUS は
+## 都市を選ぶと基礎5資源の生産量を五角形で見せる（街のステータス画面の構想）。
+enum View { BY_ITEM, BY_CITY, STATUS }
 
 const PANEL_SIZE: Vector2 = Vector2(1080, 720)
 const NAME_LABEL_WIDTH: int = 200
@@ -38,11 +40,15 @@ var _rows: Dictionary = {}
 
 var _by_item_button: Button
 var _by_city_button: Button
+var _status_button: Button
 var _close_button: Button
 var _prev_button: Button
 var _next_button: Button
 var _picker_label: Label
 var _grid: VBoxContainer
+var _column_header: HBoxContainer
+var _scroll: ScrollContainer
+var _radar_chart: CityRadarChart
 
 
 func _init() -> void:
@@ -105,6 +111,11 @@ func _configure() -> void:
 	_by_city_button.tooltip_text = "都市を選び、全品目を一覧する"
 	header.add_child(_by_city_button)
 
+	_status_button = Button.new()
+	_status_button.text = "街のステータス"
+	_status_button.tooltip_text = "都市を選び、基礎5資源の生産量を五角形で見る"
+	header.add_child(_status_button)
+
 	_close_button = Button.new()
 	_close_button.text = "×"
 	_close_button.tooltip_text = "閉じる（F3）"
@@ -128,26 +139,33 @@ func _configure() -> void:
 	_next_button.text = "▶"
 	picker.add_child(_next_button)
 
-	var column_header := HBoxContainer.new()
-	column_header.add_theme_constant_override("separation", 8)
-	column.add_child(column_header)
-	_add_column_header(column_header, "名前", NAME_LABEL_WIDTH)
-	_add_column_header(column_header, "在庫（現在値/上限）", BAR_COLUMN_WIDTH)
-	_add_column_header(column_header, "需要（現在値/上限）", BAR_COLUMN_WIDTH)
-	_add_column_header(column_header, "買値/売値", PRICE_LABEL_WIDTH)
-	_add_column_header(column_header, "生産/消費", 0)
+	_column_header = HBoxContainer.new()
+	_column_header.add_theme_constant_override("separation", 8)
+	column.add_child(_column_header)
+	_add_column_header(_column_header, "名前", NAME_LABEL_WIDTH)
+	_add_column_header(_column_header, "在庫（現在値/上限）", BAR_COLUMN_WIDTH)
+	_add_column_header(_column_header, "需要（現在値/上限）", BAR_COLUMN_WIDTH)
+	_add_column_header(_column_header, "買値/売値", PRICE_LABEL_WIDTH)
+	_add_column_header(_column_header, "生産/消費", 0)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(scroll)
+	_scroll = ScrollContainer.new()
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(_scroll)
 
 	_grid = VBoxContainer.new()
 	_grid.add_theme_constant_override("separation", 4)
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_grid)
+	_scroll.add_child(_grid)
+
+	_radar_chart = CityRadarChart.new()
+	_radar_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_radar_chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_radar_chart.visible = false
+	column.add_child(_radar_chart)
 
 	_connect_once(_by_item_button.pressed, show_by_item_view)
 	_connect_once(_by_city_button.pressed, show_by_city_view)
+	_connect_once(_status_button.pressed, show_status_view)
 	_connect_once(_close_button.pressed, toggle_visible)
 	_connect_once(_prev_button.pressed, _on_prev_pressed)
 	_connect_once(_next_button.pressed, _on_next_pressed)
@@ -202,6 +220,13 @@ func show_by_city_view() -> void:
 	refresh()
 
 
+## 都市を選ぶと基礎5資源の生産量を五角形で見せるビューへ切り替える
+## （街のステータス画面の構想。まだ本編には出さず、デバッグ表示のみ）。
+func show_status_view() -> void:
+	_view = View.STATUS
+	refresh()
+
+
 func current_view() -> int:
 	return _view
 
@@ -250,6 +275,11 @@ func price_text_for(key: String) -> String:
 	return label.text if label != null else ""
 
 
+## STATUS ビューの五角形チャート本体。検査（scenario）から中身を直接確かめる。
+func radar_chart() -> CityRadarChart:
+	return _radar_chart
+
+
 # --- 内部 ---
 
 func _on_prev_pressed() -> void:
@@ -271,6 +301,22 @@ func _step_picker(delta: int) -> void:
 
 
 func _build_rows() -> void:
+	_column_header.visible = _view != View.STATUS
+	_scroll.visible = _view != View.STATUS
+	_radar_chart.visible = _view == View.STATUS
+
+	if _view == View.STATUS:
+		UiUtil.clear_children(_grid)
+		_rows.clear()
+		var status_city_id: String = _city_ids[_city_index]
+		var city_name: String = GameData.CITIES[status_city_id]["name"]
+		_picker_label.text = "都市: %s (%s)" % [city_name, status_city_id]
+		var raw_values: Dictionary = {}
+		for item_id3: String in CityRadarChart.AXES:
+			raw_values[item_id3] = MarketTable.production_of(status_city_id, item_id3)
+		_radar_chart.set_data(city_name, status_city_id, raw_values)
+		return
+
 	UiUtil.clear_children(_grid)
 	_rows.clear()
 
