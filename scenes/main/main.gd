@@ -244,8 +244,9 @@ func _bind_session(session: GameSession, with_briefing: bool = true) -> void:
 
 	_clear_log()
 	# 過去ログの復元では音を鳴らさない（全件が一斉に鳴ってしまう）。
+	# 種別は残っていないので本文から引き直させる（-1 を渡す）。
 	for entry: String in _session.log_entries:
-		_append_log(entry, false)
+		_append_log(entry, -1, false)
 
 	_rest_button.disabled = false
 	_result_button.visible = false
@@ -384,21 +385,12 @@ func _play(kind: Sfx.Kind) -> void:
 		_sfx.play(kind)
 
 
-## 航海日誌の内容から音を選ぶ。
-## 売買はボタン側で鳴らすため、ここでは扱わない（二重に鳴らさない）。
-func _play_for_log(message: String) -> void:
-	if message.contains("襲撃"):
-		_play(Sfx.Kind.RAID)
-	elif message.contains("探索"):
-		_play(Sfx.Kind.EXPLORE)
-	elif message.contains("製作"):
-		_play(Sfx.Kind.CRAFT)
-	elif message.contains("拡張") or message.contains("購入した"):
-		_play(Sfx.Kind.UPGRADE)
-	elif message.contains("移動"):
-		_play(Sfx.Kind.TRAVEL)
-	elif message.contains("休息") or message.contains("引き取"):
-		_play(Sfx.Kind.DAY)
+## 航海日誌の行の種別から音を選ぶ。
+## 売買はボタン側で鳴らすため、ここでは鳴らさない（二重に鳴らさない）。
+func _play_for_log(log_kind: int) -> void:
+	var sound: int = Sfx.sound_for_log_kind(log_kind)
+	if sound >= 0:
+		_play(sound as Sfx.Kind)
 
 
 ## キー操作。_input ではなく _unhandled_input を使うのは、ボタンや
@@ -485,17 +477,24 @@ func _clear_log() -> void:
 	UiUtil.clear_children(_log_list)
 
 
-func _append_log(message: String, with_sound: bool = true) -> void:
+## 日誌に1行足す。
+##
+## kind は GameSession.LogKind。既定の -1 は「種別が分からない」で、
+## セーブから復元した行（文字列しか残っていない）がこれに当たる。その場合
+## だけ本文から引き直す。
+func _append_log(message: String, kind: int = -1, with_sound: bool = true) -> void:
+	var log_kind: int = kind if kind >= 0 else Sfx.kind_for_message(message)
+
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	# 積荷の全損は最も重い事象なので、その行だけ色を変えて見落とさせない。
 	# 探索失敗も戦闘装備を失う重い事象なので同様に扱う。
-	if message.contains("襲撃") or message.contains("探索失敗"):
+	if Sfx.is_severe_log_kind(log_kind, message):
 		label.add_theme_color_override("font_color", UiTheme.WARN)
 	_log_list.add_child(label)
 	if with_sound:
-		_play_for_log(message)
+		_play_for_log(log_kind)
 
 	while _log_list.get_child_count() > LOG_DISPLAY_LIMIT:
 		var oldest: Node = _log_list.get_child(0)

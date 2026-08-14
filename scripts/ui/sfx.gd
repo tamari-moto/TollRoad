@@ -7,6 +7,9 @@ extends Node
 ## 生成した音はキャッシュする（同じ音を鳴らすたびに作り直さない）。
 
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+## LogKind を引くための preload。パスからの読み込みなので autoload レジストリを
+## 引かず、--script でも解決できる。
+const GameSessionScript = preload("res://scripts/systems/game_session.gd")
 
 const SAMPLE_RATE: int = 22050
 ## 同時に鳴らせる数。連打しても音が途切れないだけの数を確保する。
@@ -35,6 +38,59 @@ const VOLUMES: Dictionary = {
 	Kind.RAID: -8.0,
 	Kind.EXPLORE: -11.0,
 }
+
+## GameSession.LogKind -> Kind。日誌の行に鳴らす音の対応表。
+##
+## 対応が無い種別（TRADE / NONE）は鳴らさない。売買はボタン側で鳴らすため、
+## 日誌側でも鳴らすと二重になる。
+const LOG_KIND_SOUNDS: Dictionary = {
+	GameSessionScript.LogKind.CRAFT: Kind.CRAFT,
+	GameSessionScript.LogKind.UPGRADE: Kind.UPGRADE,
+	GameSessionScript.LogKind.TRAVEL: Kind.TRAVEL,
+	GameSessionScript.LogKind.RAID: Kind.RAID,
+	GameSessionScript.LogKind.EXPLORE: Kind.EXPLORE,
+	GameSessionScript.LogKind.DAY: Kind.DAY,
+}
+
+
+## 日誌の行の種別から鳴らす音を返す。鳴らさないなら -1。
+static func sound_for_log_kind(log_kind: int) -> int:
+	return LOG_KIND_SOUNDS.get(log_kind, -1)
+
+
+## 本文から行の種別を推測する。**セーブから復元した行専用。**
+##
+## 生きている行は GameSession が logged シグナルで種別を渡すので、こちらは
+## 使わない。log_entries は文字列の配列として保存されるため、復元した行だけ
+## 種別が失われる。その分をここで埋める。
+##
+## 本文の日本語に依存する以上、文面を変えれば対応は崩れる。判定を1箇所に
+## 閉じてあるのは、崩れたときに直す場所を1つにするため（かつては main.gd と
+## scenario_m15.gd が同じ判定を別々に持っており、両方が同時にずれていても
+## 検査が通ってしまう状態だった）。
+static func kind_for_message(message: String) -> int:
+	if message.contains("襲撃"):
+		return GameSessionScript.LogKind.RAID
+	if message.contains("探索"):
+		return GameSessionScript.LogKind.EXPLORE
+	if message.contains("製作"):
+		return GameSessionScript.LogKind.CRAFT
+	if message.contains("拡張") or message.contains("購入した"):
+		return GameSessionScript.LogKind.UPGRADE
+	if message.contains("移動"):
+		return GameSessionScript.LogKind.TRAVEL
+	if message.contains("休息") or message.contains("引き取"):
+		return GameSessionScript.LogKind.DAY
+	return GameSessionScript.LogKind.NONE
+
+
+## 積荷や装備を失う重い行か（日誌でその行だけ色を変える）。
+static func is_severe_log_kind(log_kind: int, message: String) -> bool:
+	if log_kind == GameSessionScript.LogKind.RAID:
+		return true
+	# 探索は成功と失敗で重さが違うため、種別だけでは決まらない。
+	return log_kind == GameSessionScript.LogKind.EXPLORE and message.contains("失敗")
+
 
 static var _cache: Dictionary = {}
 

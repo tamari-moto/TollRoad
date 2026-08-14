@@ -19,6 +19,7 @@ func _init() -> void:
 	_test_cache()
 	_test_playback()
 	_test_log_mapping()
+	_test_restored_log_fallback()
 	_finish()
 
 
@@ -120,70 +121,146 @@ func _test_playback() -> void:
 	sfx.free()
 
 
-func _test_log_mapping() -> void:
-	print("--- 航海日誌から音を選ぶ ---")
-	# 実際のログ文面が意図した音に対応するか。
-	# main.gd の _play_for_log と同じ判定をここで確かめる。
-	var session: GameSession = GameSession.new(15001)
+## logged シグナルが受け取った種別を溜める。
+var _seen_kinds: Array[int] = []
 
-	# 各行動を実行し、ログに想定の語が含まれることを確認する。
-	session.buy("ore", 4)
-	session.craft("sword", session.max_craftable("sword"))
-	var craft_logged: bool = false
-	for entry: String in session.log_entries:
-		if entry.contains("製作"):
-			craft_logged = true
-	_check(craft_logged, "製作がログに残る", "残らない")
+
+func _on_logged(_message: String, kind: int) -> void:
+	_seen_kinds.append(kind)
+
+
+## 行動 -> 日誌の種別。**本文の文言ではなく種別そのものを見る。**
+##
+## かつては main.gd の _play_for_log と同じ文字列判定をこの検査が別に持って
+## おり、両方が同時にずれても気づけなかった。GameSession が種別を渡すように
+## なったので、行動と種別の対応を直接確かめる。
+func _kinds_from(session: GameSession, action: Callable) -> Array[int]:
+	_seen_kinds = []
+	session.logged.connect(_on_logged)
+	action.call()
+	session.logged.disconnect(_on_logged)
+	return _seen_kinds
+
+
+func _test_log_mapping() -> void:
+	print("--- 航海日誌の行に種別が付く ---")
+
+	var craft_session: GameSession = GameSession.new(15001)
+	craft_session.buy("ore", 4)
+	var craft_kinds: Array[int] = _kinds_from(craft_session, func() -> void:
+		craft_session.craft("sword", craft_session.max_craftable("sword")))
+	_check(craft_kinds.has(GameSession.LogKind.CRAFT), "製作が CRAFT で記録される",
+		str(craft_kinds))
 
 	var rest_session: GameSession = GameSession.new(15002)
-	rest_session.rest()
-	var rest_logged: bool = false
-	for entry: String in rest_session.log_entries:
-		if entry.contains("休息"):
-			rest_logged = true
-	_check(rest_logged, "休息がログに残る", "残らない")
+	var rest_kinds: Array[int] = _kinds_from(rest_session, func() -> void:
+		rest_session.rest())
+	_check(rest_kinds.has(GameSession.LogKind.DAY), "休息が DAY で記録される",
+		str(rest_kinds))
 
 	var move_session: GameSession = GameSession.new(15003)
-	move_session.move_to(_adjacent_royal_city(move_session.current_city))
-	var move_logged: bool = false
-	for entry: String in move_session.log_entries:
-		if entry.contains("移動"):
-			move_logged = true
-	_check(move_logged, "移動がログに残る", "残らない")
+	var destination: String = _adjacent_royal_city(move_session.current_city)
+	var move_kinds: Array[int] = _kinds_from(move_session, func() -> void:
+		move_session.move_to(destination))
+	_check(move_kinds.has(GameSession.LogKind.TRAVEL), "移動が TRAVEL で記録される",
+		str(move_kinds))
 
 	var island: GameSession = GameSession.new(15004)
 	island.silver = 1000000
-	island.upgrade_island()
-	var upgrade_logged: bool = false
-	for entry: String in island.log_entries:
-		if entry.contains("拡張"):
-			upgrade_logged = true
-	_check(upgrade_logged, "拡張がログに残る", "残らない")
+	var island_kinds: Array[int] = _kinds_from(island, func() -> void:
+		island.upgrade_island())
+	_check(island_kinds.has(GameSession.LogKind.UPGRADE), "島の拡張が UPGRADE で記録される",
+		str(island_kinds))
 
-	# 襲撃のログ。
-	var raided: bool = false
+	# 騎乗の購入も拡張と同じ音。品目の購入（TRADE）と混ざらないこと。
+	var mount_session: GameSession = GameSession.new(15006)
+	mount_session.silver = 100000000
+	var target_mount: String = ""
+	for mount_id: String in GameData.MOUNTS:
+		if mount_id != mount_session.mount:
+			target_mount = mount_id
+			break
+	var mount_kinds: Array[int] = _kinds_from(mount_session, func() -> void:
+		mount_session.buy_mount(target_mount))
+	_check(mount_kinds.has(GameSession.LogKind.UPGRADE), "騎乗の購入が UPGRADE で記録される",
+		str(mount_kinds))
+
+	# 襲撃。移動の行に続いて出るので、両方の種別が並ぶ。
+	var raid_kinds: Array[int] = []
 	for seed_value: int in range(1, 300):
 		var s: GameSession = GameSession.new(seed_value)
 		s.buy("ore", 5)
 		if s.cargo_count("ore") == 0:
 			continue
-		s.move_to(GameData.CAERLEON)
+		var target: String = GameData.CAERLEON
+		var kinds: Array[int] = _kinds_from(s, func() -> void: s.move_to(target))
 		if s.cargo.is_empty():
-			for entry: String in s.log_entries:
-				if entry.contains("襲撃"):
-					raided = true
+			raid_kinds = kinds
 			break
-	_check(raided, "襲撃がログに残る", "残らない")
+	_check(raid_kinds.has(GameSession.LogKind.RAID), "襲撃が RAID で記録される",
+		str(raid_kinds))
 
-	# 売買のログは「購入」「売却」を含むが、音はボタン側で鳴らす。
-	# ここでは日誌側の判定に引っかからないことを確認する。
+	# 売買は TRADE。音はボタン側で鳴らすため、日誌からは鳴らさない。
 	var trade: GameSession = GameSession.new(15005)
-	trade.buy("ore", 1)
+	var trade_kinds: Array[int] = _kinds_from(trade, func() -> void:
+		trade.buy("ore", 1))
+	_check(trade_kinds.has(GameSession.LogKind.TRADE), "品目の購入が TRADE で記録される",
+		str(trade_kinds))
+	_check(Sfx.sound_for_log_kind(GameSession.LogKind.TRADE) < 0,
+		"TRADE では日誌から音を鳴らさない（ボタン側と二重にならない）",
+		str(Sfx.sound_for_log_kind(GameSession.LogKind.TRADE)))
+
+	# 種別 -> 音の対応。鳴らすべき種別に音が割り当たっていること。
+	for pair: Array in [
+		[GameSession.LogKind.CRAFT, Sfx.Kind.CRAFT],
+		[GameSession.LogKind.UPGRADE, Sfx.Kind.UPGRADE],
+		[GameSession.LogKind.TRAVEL, Sfx.Kind.TRAVEL],
+		[GameSession.LogKind.RAID, Sfx.Kind.RAID],
+		[GameSession.LogKind.EXPLORE, Sfx.Kind.EXPLORE],
+		[GameSession.LogKind.DAY, Sfx.Kind.DAY],
+	]:
+		_check(Sfx.sound_for_log_kind(pair[0]) == pair[1],
+			"種別 %d に音 %d が対応する" % [pair[0], pair[1]],
+			str(Sfx.sound_for_log_kind(pair[0])))
+
+
+## セーブから復元した行は種別を持たないため、本文から引き直す経路が要る。
+## こちらは日本語の文面に依存するので、実際のログ本文で確かめておく。
+func _test_restored_log_fallback() -> void:
+	print("--- 復元した行は本文から種別を引き直す ---")
+	var s: GameSession = GameSession.new(15007)
+	s.silver = 100000000
+	s.buy("ore", 2)
+	s.craft("sword", 1)
+	s.rest()
+	s.move_to(_adjacent_royal_city(s.current_city))
+	s.upgrade_island()
+
+	# 実際に出た本文を、保存・復元後と同じ「文字列だけ」の状態から引き直す。
+	var found: Dictionary = {}
+	for entry: String in s.log_entries:
+		found[Sfx.kind_for_message(entry)] = entry
+
+	for expected: int in [GameSession.LogKind.CRAFT, GameSession.LogKind.DAY,
+			GameSession.LogKind.TRAVEL, GameSession.LogKind.UPGRADE]:
+		_check(found.has(expected),
+			"復元した本文から種別 %d を引き直せる" % expected,
+			"引き直せない: %s" % str(found.keys()))
+
+	# 品目の購入は「購入」を含むが「購入した」ではないため UPGRADE にならない。
+	# （騎乗の購入とここで分かれる。文面を変えるとこの検査が落ちる）
 	var buy_entry: String = ""
-	for entry: String in trade.log_entries:
-		if entry.contains("購入"):
+	for entry: String in s.log_entries:
+		if entry.contains("個購入"):
 			buy_entry = entry
-	_check(buy_entry != "", "購入がログに残る", "残らない")
-	# 「購入」を含むが「購入した」ではないため、拡張音とは区別される。
-	_check(not buy_entry.contains("購入した"),
-		"品目の購入と騎乗の購入が区別される", buy_entry)
+	_check(buy_entry != "", "品目の購入がログに残る", "残らない")
+	_check(Sfx.kind_for_message(buy_entry) != GameSession.LogKind.UPGRADE,
+		"品目の購入が騎乗の購入と混ざらない", buy_entry)
+
+	# 襲撃の行は色を変える対象。探索失敗も同様、探索成功は対象外。
+	_check(Sfx.is_severe_log_kind(GameSession.LogKind.RAID, "襲撃された。積荷を全て失った。"),
+		"襲撃の行は重い事象として扱う", "扱わない")
+	_check(Sfx.is_severe_log_kind(GameSession.LogKind.EXPLORE, "ある都市 で探索失敗（罠）。"),
+		"探索失敗の行は重い事象として扱う", "扱わない")
+	_check(not Sfx.is_severe_log_kind(GameSession.LogKind.EXPLORE, "ある都市 で探索成功（宝）。"),
+		"探索成功は重い事象にしない", "重い扱いになっている")
