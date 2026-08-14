@@ -59,9 +59,19 @@
 
 都市は10（王国都市9＋レイヴンスパイア）。
 
+**街のステータス画面（構想・デバッグ表示のみ）**（2026-08-14）。基礎5資源
+（鉱石/木材/繊維/皮/石材）の都市ごとの生産量を五角形のレーダーチャートで
+見せる画面の構想スケッチを受け、まずデバッグパネル（F3）の第3ビューとして
+実装した。本編のサイドパネル（7タブ）にはまだ出していない。
+[city_radar_chart.gd](../scripts/ui/city_radar_chart.gd) が描画、
+[debug_panel.gd](../scripts/ui/debug_panel.gd) の「街のステータス」ボタンから
+切り替える。満点は特産地（road_distance 0）で最大になる
+`GameData.PRODUCTION_SPECIALTY` に正規化してあるので、都市を跨いでも
+同じ物差しで形を比較できる。
+
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m28.gd` の28本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m29.gd` の29本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。
