@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_camera_limits()
 	await _test_projection()
 	_test_glow()
+	_test_city_structure()
 	_finish()
 
 
@@ -509,19 +510,148 @@ func _test_projection() -> void:
 	_despawn(panel)
 
 
-## 都市パーツの発光が実際にグローの HDR 閾値を超えるか。
+## 都市の建物が光っていないこと、リングの発光はグローの HDR 閾値を超えること。
 ##
-## 「動くか」ではなく「妥当か」を見る検査（CLAUDE.md参照）: 輝度×発光エネルギー
-## が閾値を上回っていることそのものを確かめる。値だけ揃っていても閾値の方が
-## 高ければ無効化されたのと同じになるため、二値の関係を直接見る必要がある。
-## 一度、旧値（発光エネルギー0.35）ではどの色も閾値を超えず、グローが実際には
-## 出ていなかった不具合があった（実機で発見）。
+## **建物は光らせない。** 街並みを1〜2本の尖塔から7〜8軒に増やしたとき、
+## 発光体の数が数倍になって白飛びし、屋根の形が読めなくなった（実機で確認）。
+## 建物を光らせ直したら、この検査は落ちなければならない。
+##
+## リング側は「妥当か」を見る（CLAUDE.md参照）: 輝度×発光エネルギーが閾値を
+## 上回っていることそのものを確かめる。値だけ揃っていても閾値の方が高ければ
+## 無効化されたのと同じになるため、二値の関係を直接見る必要がある。一度、
+## 旧値（発光エネルギー0.35）では閾値を超えず、グローが実際には出ていなかった
+## 不具合があった（実機で発見）。
 func _test_glow() -> void:
 	print("--- 都市の発光グロー ---")
-	# 都市パーツに使われる色（map_view_3d.gd の _city_color() 参照）。
-	var city_colors: Array[Color] = [UiTheme.PIN_FRAME, UiTheme.WARN, UiTheme.FOCUS]
-	for color: Color in city_colors:
-		var luminance: float = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
-		var glow_value: float = luminance * MapView3D.CITY_EMISSION_ENERGY
-		_check(glow_value > MapView3D.GLOW_HDR_THRESHOLD,
-			"%s の発光がHDR閾値を超える" % color, "%.2f <= 閾値%.2f" % [glow_value, MapView3D.GLOW_HDR_THRESHOLD])
+
+	# 建物の実物のマテリアルを見る（色から計算し直すと、実装がどう変わっても
+	# 検査だけが素通りする）。現在地の町も含めて確かめるため、現在地を据える。
+	var world := MapView3D.new()
+	world.set_current_city("ironhollow")
+	var lit: int = 0
+	var checked: int = 0
+	for city_id: String in GameData.CITIES:
+		var container: Node3D = world.get_node_or_null(NodePath(city_id))
+		if container == null:
+			continue
+		for part: Node in container.get_children():
+			var mesh_part: MeshInstance3D = part as MeshInstance3D
+			if mesh_part == null or mesh_part.mesh == null:
+				continue
+			var material: StandardMaterial3D = mesh_part.mesh.surface_get_material(0)
+			if material == null:
+				continue
+			checked += 1
+			if material.emission_enabled:
+				lit += 1
+	_check(checked > 0, "都市の建物を検査できた", "パーツが見つからない")
+	_check(lit == 0, "都市の建物は光らない", "%d/%d 個が発光している" % [lit, checked])
+	world.free()
+
+	# 現在地リングは光る（現在地がひと目で分かる必要がある）。
+	var luminance: float = 0.2126 * UiTheme.FOCUS.r + 0.7152 * UiTheme.FOCUS.g \
+		+ 0.0722 * UiTheme.FOCUS.b
+	var glow_value: float = luminance * MapView3D.CITY_EMISSION_ENERGY
+	_check(glow_value > MapView3D.GLOW_HDR_THRESHOLD,
+		"リングの発光がHDR閾値を超える",
+		"%.2f <= 閾値%.2f" % [glow_value, MapView3D.GLOW_HDR_THRESHOLD])
+
+
+## 都市の構造（区画・門・高さの予算）。
+##
+## 門は「街道が伸びる方向」に立っていなければ意味がない（道の無い方角に
+## 門があると、そちらへ行けるように見える）。向きを実装から借りずに、
+## _flat_positions から期待する方向を組み直して照合する。
+func _test_city_structure() -> void:
+	print("--- 都市の構造（区画と門） ---")
+	var world: MapView3D = MapView3D.new()
+
+	# 高さの予算。区画・建物・門を足しても現在地リングにめり込まないこと。
+	# ここが破れると _test_selection_ring() の「柱より上に架かる」も破れる。
+	var over: int = 0
+	for city_id: String in GameData.CITIES:
+		for part: MeshInstance3D in world._city_structure_parts(city_id):
+			var mesh: Mesh = part.mesh
+			var height: float = 0.0
+			if mesh is CylinderMesh:
+				height = (mesh as CylinderMesh).height
+			elif mesh is BoxMesh:
+				height = (mesh as BoxMesh).size.y
+			elif mesh is PrismMesh:
+				height = (mesh as PrismMesh).size.y
+			if part.position.y + height * 0.5 > MapView3D.CITY_HEIGHT + 0.0001:
+				over += 1
+	_check(over == 0, "構造物が高さの予算に収まる", "%d 個が CITY_HEIGHT を超える" % over)
+
+	# 門の向きが街道と一致する。期待する向きは _flat_positions から作り直す。
+	var mismatched: int = 0
+	var missing: int = 0
+	for city_id: String in GameData.CITIES:
+		var origin: Vector2 = world._flat_positions[city_id]
+		var wanted: Array[Vector2] = []
+		var targets: Array[String] = GameData.road_neighbors(city_id)
+		if city_id == GameData.CAERLEON:
+			targets.append_array(GameData.BLACK_ZONE_GATES)
+		elif GameData.BLACK_ZONE_GATES.has(city_id):
+			targets.append(GameData.CAERLEON)
+		for target: String in targets:
+			wanted.append((world._flat_positions[target] - origin).normalized())
+
+		var actual: Array[Vector2] = world._city_gate_directions(city_id)
+		if actual.size() != wanted.size():
+			missing += 1
+		for want: Vector2 in wanted:
+			var found: bool = false
+			for got: Vector2 in actual:
+				if got.distance_to(want) < 0.001:
+					found = true
+					break
+			if not found:
+				mismatched += 1
+	_check(missing == 0, "門の数が街道の数と一致する", "%d 都市でずれている" % missing)
+	_check(mismatched == 0, "門が街道の向きに立つ", "%d 本の道に門が無い" % mismatched)
+
+	# 区画は接続数に連動し、行き止まりは1区画、交差点は増える。
+	_check(MapView3D._city_ward_count("oakhaven") == 1,
+		"行き止まりの町は1区画", str(MapView3D._city_ward_count("oakhaven")))
+	_check(MapView3D._city_ward_count("ironhollow") > MapView3D._city_ward_count("oakhaven"),
+		"交差点の町は区画が多い",
+		"%d <= %d" % [MapView3D._city_ward_count("ironhollow"), MapView3D._city_ward_count("oakhaven")])
+
+	# 城壁が門の正面を塞いでいないこと。塞ぐと出入口に見えず、門を
+	# 街道の向きに立てた意味が無くなる。
+	#
+	# **判定の角度に実装の定数（CITY_WALL_GATE_CLEARANCE）を使わない。**
+	# 使うと定数を 0 にしたとき実装と検査が同時にずれて素通りする（実際に
+	# 一度そうなった）。門柱が実際に占める幅から必要な隙間を出して照合する。
+	var gate_half_angle: float = atan2(MapView3D.CITY_GATE_WIDTH * 0.5,
+		MapView3D.CITY_RADIUS * MapView3D.CITY_GATE_DISTANCE)
+	var blocked: int = 0
+	for city_id2: String in GameData.CITIES:
+		var directions: Array[Vector2] = world._city_gate_directions(city_id2)
+		for wall: MeshInstance3D in world._city_wall_parts(directions, Color.WHITE):
+			var at := Vector2(wall.position.x, wall.position.z).normalized()
+			for direction: Vector2 in directions:
+				if absf(at.angle_to(direction)) < gate_half_angle:
+					blocked += 1
+	_check(blocked == 0, "城壁が門の正面を塞がない", "%d 枚が門を塞いでいる" % blocked)
+
+	# 装飾が草木の除外半径からはみ出さないこと。はみ出すと木や低木と重なる。
+	var outside: int = 0
+	for city_id3: String in GameData.CITIES:
+		for part2: MeshInstance3D in world._city_structure_parts(city_id3):
+			var reach: float = Vector2(part2.position.x, part2.position.z).length()
+			if reach > MapView3D.VEGETATION_CITY_CLEARANCE:
+				outside += 1
+	_check(outside == 0, "装飾が草木の除外半径に収まる", "%d 個がはみ出す" % outside)
+
+	# 小物の数は規模に連動し、指定の範囲に収まる。
+	_check(MapView3D._city_prop_count("ironhollow") > MapView3D._city_prop_count("wyndham"),
+		"大きな町ほど小物が多い",
+		"%d <= %d" % [MapView3D._city_prop_count("ironhollow"), MapView3D._city_prop_count("wyndham")])
+	for city_id4: String in GameData.CITIES:
+		var props: int = MapView3D._city_prop_count(city_id4)
+		_check(props >= MapView3D.CITY_PROP_MIN and props <= MapView3D.CITY_PROP_MAX,
+			"%s の小物が範囲内" % city_id4, str(props))
+
+	world.free()
