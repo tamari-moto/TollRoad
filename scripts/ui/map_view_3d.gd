@@ -84,10 +84,45 @@ const TERRAIN_MAX_QUAD_SIZE: float = 0.8
 ## から算出する。
 var _terrain_subdivisions: int = 64
 
-## 起伏の高さ。
+## 起伏の高さ。fBm の合成後（-1〜1 に正規化済み）に掛ける振幅なので、
+## オクターブを足しても地形全体の高さの幅はこの値のまま変わらない。
 const TERRAIN_HEIGHT: float = 2.4
-## ノイズの細かさ。
+## 一番粗いオクターブ（大陸の骨格）の細かさ。
 const TERRAIN_NOISE_SCALE: float = 0.10
+
+## --- 起伏の合成（fBm） ---
+## 単一オクターブのノイズは、どこを見ても同じ大きさのうねりしか無く
+## 「均一にぼこぼこした平面」に見える（実測: 旧実装がこれだった）。
+## 粗いオクターブから細かいオクターブへ、振幅を半減させながら重ねる
+## （fractional Brownian motion）ことで、大きな山塊の上に中くらいの尾根、
+## その上に細かい凹凸、という自然地形の入れ子構造になる。
+##
+## オクターブ数は増やすほど細かくなるが、TERRAIN_MAX_QUAD_SIZE(0.8) の
+## 格子で表現できない細かさまで足しても描画には出ず、height_at() と
+## 実際のメッシュのズレ（terrain_mesh_height_at() のコメント参照）を
+## 増やすだけなので、格子で解像できる範囲で止める。
+## 最細オクターブの波長は 1/(TERRAIN_NOISE_SCALE * LACUNARITY^(N-1))
+## = 1/(0.10*2.0^3) = 1.25 で、1マス0.8の格子でぎりぎり拾える。
+const TERRAIN_OCTAVES: int = 4
+## オクターブごとに周波数を何倍にするか。
+const TERRAIN_LACUNARITY: float = 2.0
+## オクターブごとに振幅を何倍にするか。0.5 が古典的な fBm。
+const TERRAIN_GAIN: float = 0.5
+## fBm を -1〜1 へ広げ直す係数（_terrain_shape_at() のコメント参照）。
+## 実測（TERRAIN_OCTAVES=4, GAIN=0.5）で素の値が ±0.35 前後だったため、
+## その逆数を取ってある。
+const FBM_NORMALIZE: float = 2.8
+
+## 稜線（リッジ）を作る割合。fBm をそのまま使うと丘は丸くなだらかにしか
+## ならない。ノイズの絶対値を反転（1-|n|）すると 0 の等高線が尖った稜線
+## として立ち上がり、山脈らしい鋭い峰ができる（ridged multifractal）。
+## 1.0 にすると全体が尖って刺々しくなるため、なだらかな fBm と混ぜて
+## 「平野もあれば険しい山もある」地形にする。
+const TERRAIN_RIDGE_MIX: float = 0.45
+## リッジを効かせる場所を決める、非常に粗いノイズの細かさ。この値で
+## 「山脈になる帯」と「平野のままの帯」が地図上に大きく分かれる
+## （どこも一様に尖っていると、それはそれで単調になるため）。
+const TERRAIN_RIDGE_REGION_SCALE: float = 0.018
 ## 中央を掘り下げる深さ。レイヴンスパイアが盆地の底に見えるようにする。
 const BASIN_DEPTH: float = 2.2
 ## 盆地の広がり。_compute_scale() で算出する。
@@ -98,6 +133,36 @@ var _basin_radius: float = 0.0
 const TERRAIN_BASIN_COLOR := Color(0.16, 0.16, 0.20)
 const TERRAIN_UPLAND_COLOR := Color(0.30, 0.34, 0.30)
 const TERRAIN_ROCK_COLOR := Color(0.24, 0.22, 0.22)
+
+## --- 標高帯 ---
+## 盆地からの距離だけで塗ると、地形がどれだけ起伏していても色は同心円状に
+## しか変わらず、山と谷が同じ色になる（旧実装がこれで、起伏を増やしても
+## 「均一に塗られた面がぼこぼこしている」ようにしか見えなかった）。
+## 実際の標高（height_at() の値）で低地・中腹・高所を塗り分けると、
+## 稜線と谷が色でも読めるようになる。
+##
+## 境界は TERRAIN_HEIGHT に対する割合で持つ（高さの振幅を変えても
+## 帯の位置が相対的に保たれる）。-1.0 が最低地、1.0 が最高地に当たる。
+const TERRAIN_LOWLAND_COLOR := Color(0.21, 0.25, 0.22)
+const TERRAIN_HIGHLAND_COLOR := Color(0.38, 0.38, 0.34)
+## 低地→高地の中間色は TERRAIN_UPLAND_COLOR をそのまま使う（既存の
+## 地表色を基調として残し、その上下に帯を足す形にしてある）。
+const TERRAIN_LOWLAND_LEVEL: float = -0.35
+const TERRAIN_HIGHLAND_LEVEL: float = 0.45
+
+## 標高帯の境界をノイズで上下させる幅（標高の正規化値）。境界を数式どおりの
+## 高さで切ると、地図に等高線状の縞がくっきり出て人工的に見える。
+## 場所ごとに境界をずらすことで、土と岩が入り混じった縁になる。
+const TERRAIN_BAND_JITTER: float = 0.18
+## 境界を乱すノイズの細かさ。起伏より細かくしないと、標高と一緒に境界も
+## 動いてしまい乱した意味が無くなる。
+const TERRAIN_BAND_JITTER_SCALE: float = 0.45
+
+## 同じ帯の中でも色をわずかに散らす量（明度の振れ幅）。単色の面が広いと
+## ローポリの平坦さが目立つため、頂点ごとに微量の濃淡を入れて質感を出す。
+## 大きくすると砂嵐のようにざらつくので控えめに保つ。
+const TERRAIN_COLOR_GRAIN: float = 0.05
+const TERRAIN_COLOR_GRAIN_SCALE: float = 1.1
 
 ## バイオーム（最寄り都市の特産色）が地形に効く範囲。CITY_SPACING より
 ## やや広めに取り、隣接都市どうしの色がにじみ合って自然に混ざるようにする
@@ -426,13 +491,75 @@ func _compute_positions(flat_positions: Dictionary) -> void:
 
 
 ## その地点の地面の高さ。都市も経路もこれに沿わせる。
+##
+## 連続関数であること（任意の x, z で呼べて、格子に依存しない）が
+## この関数の契約。草木・道・都市・巨人・リングがすべてこれを基準に
+## 接地するため、格子へ丸める処理をここに入れてはいけない
+## （描画メッシュとの整合が要る場合は terrain_mesh_height_at() を使う）。
 func height_at(x: float, z: float) -> float:
-	var h: float = _noise.get_noise_2d(x, z) * TERRAIN_HEIGHT
+	var h: float = _terrain_shape_at(x, z) * TERRAIN_HEIGHT
 	# 中央を掘り下げる。レイヴンスパイアが盆地の底になり、
 	# 外周の王国都市がそれを囲む地形として読める。
 	var distance: float = Vector2(x, z).length()
 	var basin: float = clampf(1.0 - distance / _basin_radius, 0.0, 1.0)
 	return h - basin * basin * BASIN_DEPTH
+
+
+## 起伏の素の形。-1〜1 に正規化した無次元の値を返す（振幅は height_at()
+## 側で TERRAIN_HEIGHT を掛けて与える）。なだらかな fBm と尖ったリッジを
+## 場所ごとの割合で混ぜる。
+##
+## 公開しているのは pulse_scale_at() と同じ理由で、--script の検査から
+## 値域や地点ごとの起伏の差を直接確かめられるようにするため
+## （_noise 以外に内部状態を持たない純関数）。
+func terrain_shape_at(x: float, z: float) -> float:
+	return _terrain_shape_at(x, z)
+
+
+func _terrain_shape_at(x: float, z: float) -> float:
+	# 素の fBm と、同じオクターブ列から作るリッジ。両方とも
+	# 振幅の総和で割って -1〜1（リッジは 0〜1）に正規化する。
+	# 正規化しないとオクターブ数を変えた瞬間に地形全体の高さが変わり、
+	# 都市の柱や現在地リングとの高さ関係が黙ってずれる。
+	var frequency: float = TERRAIN_NOISE_SCALE
+	var amplitude: float = 1.0
+	var total_amplitude: float = 0.0
+	var fbm: float = 0.0
+	var ridge: float = 0.0
+
+	for octave: int in TERRAIN_OCTAVES:
+		# FastNoiseLite.frequency は _build() で設定済みなので、ここでは
+		# 座標側を拡大してオクターブを作る（frequency を書き換えると
+		# 同じ _noise を使う草木の配置まで巻き添えで変わってしまう）。
+		var scale: float = frequency / TERRAIN_NOISE_SCALE
+		var n: float = _noise.get_noise_2d(x * scale, z * scale)
+		fbm += n * amplitude
+		# 1-|n| は n=0 の等高線で尖った峰になる。二乗して峰を細く、
+		# 谷を広く取ると、丸い丘ではなく山脈らしい断面になる。
+		var r: float = 1.0 - absf(n)
+		ridge += r * r * amplitude
+
+		total_amplitude += amplitude
+		frequency *= TERRAIN_LACUNARITY
+		amplitude *= TERRAIN_GAIN
+
+	# fBm はオクターブを重ねるほど、全オクターブが同時に極値を取る確率が
+	# 下がるため実効的な値域が狭まる（実測: 素の和を total_amplitude で
+	# 割ると ±0.35 程度にしか届かない）。理論上の最大値で割ると起伏が
+	# 目に見えて平坦になるので、実測の広がりに合わせた係数で正規化する。
+	# TERRAIN_OCTAVES / GAIN を変えたら scenario_m25 の値域検査が落ちるので、
+	# そのときはこの係数を測り直すこと。
+	fbm = clampf(fbm / total_amplitude * FBM_NORMALIZE, -1.0, 1.0)
+	# リッジは 0〜1 なので、fBm と混ぜられるよう -1〜1 へ写す。
+	ridge = clampf(ridge / total_amplitude, 0.0, 1.0) * 2.0 - 1.0
+
+	# どこを山脈にするかを、非常に粗いノイズで帯状に決める。
+	# 一様に混ぜると全域が同じ険しさになり、結局また単調になるため。
+	var region: float = _noise.get_noise_2d(
+		x * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 911.0,
+		z * TERRAIN_RIDGE_REGION_SCALE / TERRAIN_NOISE_SCALE + 313.0)
+	var ridge_weight: float = clampf((region + 1.0) * 0.5, 0.0, 1.0) * TERRAIN_RIDGE_MIX
+	return lerpf(fbm, ridge, ridge_weight)
 
 
 func _build_terrain() -> void:
@@ -494,7 +621,18 @@ func _assign_terrain_colors(arrays: Array) -> void:
 
 		# height_at() の basin と同じ考え方（中心に近いほど1.0）。
 		var basin: float = clampf(1.0 - distance_from_center / _basin_radius, 0.0, 1.0)
-		var base: Color = TERRAIN_BASIN_COLOR.lerp(TERRAIN_UPLAND_COLOR, 1.0 - basin)
+
+		# 実際の標高で低地・中腹・高所を塗り分ける。境界はノイズで上下させ、
+		# 等高線状の縞が出ないようにする（TERRAIN_BAND_JITTER 参照）。
+		var jitter: float = _noise.get_noise_2d(
+			v.x * TERRAIN_BAND_JITTER_SCALE / TERRAIN_NOISE_SCALE + 57.0,
+			v.z * TERRAIN_BAND_JITTER_SCALE / TERRAIN_NOISE_SCALE + 149.0) * TERRAIN_BAND_JITTER
+		var elevation: float = _elevation_level_at(v)
+		var band: Color = _elevation_band_color(elevation + jitter)
+
+		# 盆地に近いほど、標高帯の色より盆地色を優先する（中心の危険地帯が
+		# 標高で塗り替えられて読めなくならないようにする）。
+		var base: Color = band.lerp(TERRAIN_BASIN_COLOR, basin)
 		var slope: float = clampf(1.0 - normals[i].y, 0.0, 1.0)
 		var color: Color = base.lerp(TERRAIN_ROCK_COLOR, slope * 0.6)
 
@@ -502,11 +640,43 @@ func _assign_terrain_colors(arrays: Array) -> void:
 		var biome_t: float = clampf(1.0 - biome["distance"] / BIOME_INFLUENCE_RADIUS, 0.0, 1.0)
 		color = color.lerp(biome["color"], biome_t * (1.0 - basin))
 
+		# 同じ帯の中の微妙な濃淡。広い単色面の平坦さを消す。
+		var grain: float = _noise.get_noise_2d(
+			v.x * TERRAIN_COLOR_GRAIN_SCALE / TERRAIN_NOISE_SCALE + 727.0,
+			v.z * TERRAIN_COLOR_GRAIN_SCALE / TERRAIN_NOISE_SCALE + 883.0) * TERRAIN_COLOR_GRAIN
+		color = Color(
+			clampf(color.r + grain, 0.0, 1.0),
+			clampf(color.g + grain, 0.0, 1.0),
+			clampf(color.b + grain, 0.0, 1.0))
+
 		var edge_t: float = clampf(
 			(distance_from_center - _ring_radius) / (half_extent - _ring_radius), 0.0, 1.0)
 		colors[i] = color.lerp(SKY_HORIZON_COLOR, edge_t)
 
 	arrays[Mesh.ARRAY_COLOR] = colors
+
+
+## 頂点の標高を、盆地の掘り下げを除いた -1〜1 の正規化値として返す。
+## height_at() の戻り値をそのまま使うと、中心付近は BASIN_DEPTH のぶん
+## 深く沈んでいるため常に最低の帯（低地色）になり、盆地色と二重に
+## 掛かってしまう。盆地の扱いは basin の項が別に持っているので、
+## ここでは起伏そのものの高さだけを見る。
+func _elevation_level_at(vertex: Vector3) -> float:
+	return clampf(_terrain_shape_at(vertex.x, vertex.z), -1.0, 1.0)
+
+
+## 正規化標高（-1〜1）に対応する地表色。低地→中腹→高所の3色を
+## 帯の境界で線形に補間する。
+func _elevation_band_color(level: float) -> Color:
+	if level <= TERRAIN_LOWLAND_LEVEL:
+		return TERRAIN_LOWLAND_COLOR
+	if level >= TERRAIN_HIGHLAND_LEVEL:
+		return TERRAIN_HIGHLAND_COLOR
+	if level < 0.0:
+		var t: float = inverse_lerp(TERRAIN_LOWLAND_LEVEL, 0.0, level)
+		return TERRAIN_LOWLAND_COLOR.lerp(TERRAIN_UPLAND_COLOR, t)
+	var u: float = inverse_lerp(0.0, TERRAIN_HIGHLAND_LEVEL, level)
+	return TERRAIN_UPLAND_COLOR.lerp(TERRAIN_HIGHLAND_COLOR, u)
 
 
 ## 水平面上でその地点に最も近い王国都市（レイヴンスパイアは対象外。中心の

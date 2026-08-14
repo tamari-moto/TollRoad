@@ -118,15 +118,32 @@ func _test_terrain() -> void:
 
 		# 法線が上を向いていること。下向きだと地面が裏返り、光が
 		# 当たらず真っ黒に描画される（実際にそうなった）。
+		#
+		# 「裏返っていない」ことと「傾斜が急すぎない」ことは別の性質なので
+		# 分けて見る。以前は n.y > 0.5（＝60度以上の斜面を1枚でも許さない）
+		# ひとつで両方を兼ねていたが、これは地形の形の選択にまで踏み込んだ
+		# 条件で、稜線を立てた途端に落ちる。裏返りの検出だけなら符号で足り、
+		# 急峻さは別途あとの検査が上限で歯止めをかける。
 		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 		_check(normals.size() == vertices.size(), "全頂点に法線がある",
 			"%d / %d" % [normals.size(), vertices.size()])
 		var upward: int = 0
 		for n: Vector3 in normals:
-			if n.y > 0.5:
+			if n.y > 0.0:
 				upward += 1
 		_check(upward == normals.size(), "法線が上を向いている（地面が表向き）",
 			"上向き %d / %d" % [upward, normals.size()])
+
+		# 急斜面（60度超）はあってよいが、地形の大半がそうなっていたら
+		# 起伏を付けすぎている（都市や道が斜面に乗って読めなくなる）。
+		# 割合の上限で歯止めをかける。
+		var steep: int = 0
+		for n: Vector3 in normals:
+			if n.y <= 0.5:
+				steep += 1
+		var steep_ratio: float = float(steep) / float(normals.size())
+		_check(steep_ratio < 0.05, "急斜面が地形のごく一部にとどまる",
+			"60度超が %.1f%%" % (steep_ratio * 100.0))
 
 	# 経路と光源。
 	_check(world.get_node_or_null("Routes") != null, "経路のメッシュがある", "ない")
