@@ -759,7 +759,7 @@ func _terrain_shape_at(x: float, z: float) -> float:
 	# 下がるため実効的な値域が狭まる（実測: 素の和を total_amplitude で
 	# 割ると ±0.35 程度にしか届かない）。理論上の最大値で割ると起伏が
 	# 目に見えて平坦になるので、実測の広がりに合わせた係数で正規化する。
-	# TERRAIN_OCTAVES / GAIN を変えたら scenario_m25 の値域検査が落ちるので、
+	# TERRAIN_OCTAVES / GAIN を変えたら scenario_m27 の値域検査が落ちるので、
 	# そのときはこの係数を測り直すこと。
 	fbm = clampf(fbm / total_amplitude * FBM_NORMALIZE, -1.0, 1.0)
 	# リッジは 0〜1 なので、fBm と混ぜられるよう -1〜1 へ写す。

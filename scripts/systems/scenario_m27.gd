@@ -21,7 +21,7 @@ extends "res://scripts/systems/scenario_base.gd"
 ##      都市の沈み込みの深さで歯止めをかける。
 ##
 ## 実行:
-##   godot --headless --path . --script scripts/systems/scenario_m25.gd
+##   godot --headless --path . --script scripts/systems/scenario_m27.gd
 
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const MapCamera = preload("res://scripts/ui/map_camera.gd")
