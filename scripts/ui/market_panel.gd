@@ -199,6 +199,14 @@ func _build_row(item_id: String) -> Dictionary:
 		"held": held_label,
 		"buy": buy_button,
 		"sell": sell_button,
+		# 行ごと隠すために、グリッドへ直接入れたセルを控えておく。
+		# ラベルではなくセル（＝グリッドの子）でなければ、隠しても
+		# GridContainer は列を詰めてくれず空白の行が残る。
+		# GRID_COLUMNS と同じ数・同じ順で並べること。
+		"cells": [
+			name_cell, price_cell, ratio_label, supply_cell,
+			held_label, buy_button, sell_button,
+		] as Array[Control],
 	}
 
 
@@ -217,8 +225,11 @@ func refresh() -> void:
 	var over: bool = _session.is_over()
 
 	# 「今いちばんお得」な行を決めるため、先に全品目の比率と所持数を集める。
+	# 隠す行は候補から外す。見えない行に◎最安が付くと、どこにも出ないまま
+	# 「今日いちばん安いもの」を指す指標が消えてしまう。
 	var ratios: Dictionary = {}
 	var held_counts: Dictionary = {}
+	var visible_items: Dictionary = {}
 	var best_buy_item: String = ""
 	var best_sell_item: String = ""
 	for item_id: String in _rows:
@@ -228,6 +239,10 @@ func refresh() -> void:
 		var held: int = _session.cargo_count(item_id)
 		ratios[item_id] = ratio
 		held_counts[item_id] = held
+		var shown: bool = _is_tradable_here(item_id, held)
+		visible_items[item_id] = shown
+		if not shown:
+			continue
 		if best_buy_item == "" or ratio < ratios[best_buy_item]:
 			best_buy_item = item_id
 		if held > 0 and (best_sell_item == "" or ratio > ratios[best_sell_item]):
@@ -236,6 +251,14 @@ func refresh() -> void:
 	for item_id: String in _rows:
 		var row: Dictionary = _rows[item_id]
 		if not is_instance_valid(row["price"]):
+			continue
+		_set_row_visible(row, visible_items[item_id])
+		if not visible_items[item_id]:
+			# 隠した行の中身は更新しない。次に現れるときに refresh() が
+			# 作り直すため、古い値が見えることはない。
+			# ただし所持数の記録だけは合わせておく（隠れている間の増減を
+			# 復帰時にまとめてアニメーションさせないため）。
+			_displayed_held[item_id] = held_counts[item_id]
 			continue
 		var ratio: float = ratios[item_id]
 		var held: int = held_counts[item_id]
@@ -271,6 +294,34 @@ func refresh() -> void:
 		# なるだけでは区別できないので、ツールチップで理由を出す。
 		row["buy"].tooltip_text = _buy_blocked_reason(item_id)
 		row["sell"].tooltip_text = _sell_blocked_reason(item_id)
+
+	_update_row_stripes(visible_items)
+
+
+## その品目が今この都市で売買の対象になりうるか。
+##
+## 在庫が無ければ買えず、積荷に無ければ売れない。両方なら行を出す意味がない
+## ので隠す。**資金不足や積載超過では隠さない** — それは品目ではなくこちらの
+## 都合で、行が消えると「高くて買えない」ことすら分からなくなるため
+## （買値は見せたまま、ボタンを無効にしてツールチップで理由を出す）。
+##
+## 需要切れは売れない理由になるが、それだけでは隠さない。在庫があれば買えるし、
+## 積荷にあるなら「ここでは捌けない」と分かること自体が判断の材料になる。
+##
+## この条件により、レア品（探索でのみ手に入り生産は 0）は所持している都市でだけ
+## 行が出る。市場で買えない品目が常時並んでいる状態が無くなる。
+func _is_tradable_here(item_id: String, held: int) -> bool:
+	return _session.stock_count(item_id) > 0 or held > 0
+
+
+## 行を構成するセルをまとめて出し入れする。
+## GridContainer は隠れた子を配置から外すため、行の7セルすべてを隠せば
+## 行そのものが消える（1つでも残すと列がずれて以降の行が崩れる）。
+func _set_row_visible(row: Dictionary, shown: bool) -> void:
+	var cells: Array = row.get("cells", [])
+	for cell: Control in cells:
+		if is_instance_valid(cell):
+			cell.visible = shown
 
 
 ## 在庫と需要の欄。残りが少ないほど警戒色にして、品切れが近いことを示す。
@@ -315,21 +366,41 @@ func _sell_blocked_reason(item_id: String) -> String:
 
 ## 1行おきに薄い帯を敷き、横方向を追いやすくする。
 ## GridContainer には行の概念がないため、セルの背景として個別に敷く。
+##
+## 帯は全行へ最初に敷いておき、**見せるかどうかは refresh() のたびに
+## 決め直す**（`_update_row_stripes()`）。行が隠れると見えている行の並びが
+## 変わるため、作成時の順番で固定すると帯が2行続いたり消えたりする。
 func _apply_row_stripes() -> void:
 	if _grid == null:
 		return
-	# 色そのものが情報を持つセル（比率の色帯）には重ねない。
-	var striped_keys: Array[String] = [
-		"price", "bar", "badge", "ratio", "stock", "demand", "held"]
+	for item_id: String in _rows:
+		var row: Dictionary = _rows[item_id]
+		for control: Control in _striped_controls(row):
+			_add_stripe(control)
+
+
+## 帯を敷く対象のセル。色そのものが情報を持つセル（比率の色帯）には重ねない。
+func _striped_controls(row: Dictionary) -> Array[Control]:
+	var out: Array[Control] = []
+	for key: String in ["price", "bar", "badge", "ratio", "stock", "demand", "held"]:
+		var control: Control = row.get(key) as Control
+		if control != null and is_instance_valid(control):
+			out.append(control)
+	return out
+
+
+## 見えている行だけを数えて、1行おきに帯を出す。
+## 隠れた行を飛ばさないと、行が消えた箇所で縞が途切れて見える。
+func _update_row_stripes(visible_items: Dictionary) -> void:
 	var index: int = 0
 	for item_id: String in _rows:
-		if index % 2 == 1:
-			var row: Dictionary = _rows[item_id]
-			for key: String in striped_keys:
-				var control: Control = row.get(key) as Control
-				if control == null or not is_instance_valid(control):
-					continue
-				_add_stripe(control)
+		if not visible_items.get(item_id, true):
+			continue
+		var striped: bool = index % 2 == 1
+		for control: Control in _striped_controls(_rows[item_id]):
+			var stripe: ColorRect = control.get_node_or_null("Stripe") as ColorRect
+			if is_instance_valid(stripe):
+				stripe.visible = striped
 		index += 1
 
 
@@ -356,11 +427,35 @@ func _add_stripe(control: Control) -> void:
 
 
 ## 並んでいる品目のID。表示している順。
+## 隠れている行も含む（行を作ってあるかを見るための入口）。
+## 実際に見えているものは visible_item_ids() を使うこと。
 func item_ids() -> Array[String]:
 	var ids: Array[String] = []
 	for item_id: String in _rows:
 		ids.append(item_id)
 	return ids
+
+
+## 今この都市で実際に画面へ出ている品目のID。表示している順。
+## 売買のどちらもできない品目（在庫0かつ所持0）は含まれない。
+func visible_item_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for item_id: String in _rows:
+		if is_row_visible(item_id):
+			ids.append(item_id)
+	return ids
+
+
+## その品目の行が画面に出ているか。
+## 行の7セルは一括で出し入れするので、先頭のセルで代表させる。
+func is_row_visible(item_id: String) -> bool:
+	if not _rows.has(item_id):
+		return false
+	var cells: Array = _rows[item_id].get("cells", [])
+	if cells.is_empty():
+		return false
+	var first: Control = cells[0] as Control
+	return is_instance_valid(first) and first.visible
 
 
 ## その品目の価格バー。無ければ null。
