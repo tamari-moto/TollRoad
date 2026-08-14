@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="オルガの肖像">
+  <defs>
+    <linearGradient id="bg8" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#243026"/><stop offset="1" stop-color="#182016"/></linearGradient>
+    <radialGradient id="glow8" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#c9a24b" stop-opacity=".5"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg8)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow8)"/>
+  <path d="M58 300 Q64 216 150 212 Q236 216 242 300 Z" fill="#a9895c"/>
+  <path d="M116 300 Q150 250 184 300 Z" fill="#e6c98c"/>
+  <ellipse cx="150" cy="156" rx="57" ry="57" fill="#e0a878"/>
+  <path d="M92 150 Q96 96 150 92 Q204 96 208 150 Q198 118 150 118 Q102 118 92 150Z" fill="#6b8c6b"/>
+  <path d="M96 118 Q120 100 150 100 Q180 100 204 118 Q180 94 150 94 Q120 94 96 118Z" fill="#5c7a5c"/>
+  <path d="M118 142 Q128 137 138 142" stroke="#4a3018" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M162 142 Q172 137 182 142" stroke="#4a3018" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <circle cx="126" cy="158" r="6" fill="#2e1c12"/><circle cx="128" cy="155" r="2.2" fill="#fff"/>
+  <circle cx="174" cy="158" r="6" fill="#2e1c12"/><circle cx="176" cy="155" r="2.2" fill="#fff"/>
+  <path d="M136 182 Q150 192 164 182" stroke="#a05a3a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <g transform="translate(214 236)">
+    <path d="M0 20 Q-6 0 0 -20 Q6 0 0 20Z" fill="#6b8c6b" stroke="#3f5c3a" stroke-width="1.5"/>
+    <path d="M0 -18 Q-14 -4 -2 8" stroke="#3f5c3a" stroke-width="1.5" fill="none"/>
+    <path d="M0 -18 Q14 -4 2 8" stroke="#3f5c3a" stroke-width="1.5" fill="none"/>
+  </g>
+</svg>

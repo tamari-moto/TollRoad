@@ -97,12 +97,21 @@ func _init(rng_seed: int = 0) -> void:
 
 # --- 状態の参照 ---
 
-## 積載量（ロッコが同行していれば加算）。
+## 積載量（ロッコが同行していれば加算。基本ステータスの積載量補正も加算）。
 func capacity() -> int:
 	var base: int = GameData.MOUNTS[mount]["capacity"]
 	if active_companion == "rocco":
 		base += GameData.COMPANION_CAPACITY_BONUS
+	base += _companion_stat("capacity") * GameData.COMPANION_STAT_CAPACITY_PER_LEVEL
 	return base
+
+
+## 同行者の基本ステータス値（0〜5）。同行者が居なければ0。
+## 1人1特性（rocco の積載量等）とは別レイヤーで、これに加算される。
+func _companion_stat(axis: String) -> int:
+	if active_companion == GameData.COMPANION_NONE:
+		return 0
+	return GameData.COMPANION_STATS.get(active_companion, {}).get(axis, 0)
 
 
 func cargo_weight() -> int:
@@ -171,11 +180,14 @@ func demand_count(item_id: String) -> int:
 
 
 ## この都市でのこの品目の購入単価（在庫の希少さを反映し、
-## フィナが同行していれば割引後）。
+## フィナが同行していれば割引後）。基本ステータスの交渉力も同じ割引に加算される。
 func buy_price(item_id: String) -> int:
 	var price: int = prices.buy_price(current_city, item_id)
+	var discount: float = _companion_stat("negotiation") * GameData.COMPANION_STAT_NEGOTIATION_PER_LEVEL
 	if active_companion == "fina":
-		price = int(round(price * (1.0 - GameData.COMPANION_BUY_DISCOUNT)))
+		discount += GameData.COMPANION_BUY_DISCOUNT
+	if discount > 0.0:
+		price = int(round(price * (1.0 - discount)))
 	return price
 
 
@@ -218,12 +230,18 @@ func buy(item_id: String, count: int) -> bool:
 
 ## 売却。税は売上総額にかかる（Q2）。手取り = 総額 - 税。
 ## 買い取ってもらえるのはその都市の需要の範囲まで。
+## ミラが同行していれば税率が下がる。基本ステータスの目利きはそこからさらに
+## 減算される（下限0。ミラ本人はレベルが高いため税がゼロになることもある）。
 func sell(item_id: String, count: int) -> bool:
 	if is_over() or count <= 0 or count > max_sellable(item_id):
 		return false
 	var price: int = sell_price(item_id)
 	var gross: int = price * count
-	var tax: int = int(round(gross * GameData.SELL_TAX_RATE))
+	var tax_rate: float = GameData.SELL_TAX_RATE
+	if active_companion == "mira":
+		tax_rate = GameData.COMPANION_SELL_TAX_RATE
+	tax_rate = maxf(0.0, tax_rate - _companion_stat("appraisal") * GameData.COMPANION_STAT_APPRAISAL_PER_LEVEL)
+	var tax: int = int(round(gross * tax_rate))
 	var net: int = gross - tax
 	silver += net
 	_reduce_cargo(item_id, count)
@@ -253,11 +271,17 @@ func craft_fee_per_unit() -> int:
 
 ## 装備1個あたりの実質材料消費数。
 ## ボーナス都市では 3個消費して 3×0.3=0.9 → 四捨五入で1個還元、実質2個（Q: 1個ごとに計算）。
+## トビアスが同行していれば、この結果からさらに1個減る（最低1個、生産ボーナスとも重ねがけ）。
 func material_cost_per_unit(item_id: String) -> int:
+	var per_unit: int
 	if not has_craft_bonus(item_id):
-		return GameData.CRAFT_MATERIAL_COUNT
-	var refund: int = int(round(GameData.CRAFT_MATERIAL_COUNT * GameData.CRAFT_REFUND_RATE))
-	return GameData.CRAFT_MATERIAL_COUNT - refund
+		per_unit = GameData.CRAFT_MATERIAL_COUNT
+	else:
+		var refund: int = int(round(GameData.CRAFT_MATERIAL_COUNT * GameData.CRAFT_REFUND_RATE))
+		per_unit = GameData.CRAFT_MATERIAL_COUNT - refund
+	if active_companion == "tobias":
+		per_unit = maxi(1, per_unit - GameData.COMPANION_CRAFT_MATERIAL_DISCOUNT)
+	return per_unit
 
 
 ## 製作可能な最大数（材料・手数料・積載空きの制約）。
@@ -337,19 +361,26 @@ func _direct_leg(from_city: String, to_city: String) -> Dictionary:
 		or (from_city == GameData.CAERLEON and GameData.BLACK_ZONE_GATES.has(to_city))
 	)
 	if is_black_zone:
-		# ロッコが同行していれば襲撃率が下がる（下限は0）。
+		# ロッコが同行していれば襲撃率が下がる（下限は0）。基本ステータスの
+		# 警戒心も同じ下限で加算される。
 		var raid_chance: float = GameData.RAID_CHANCE
 		if active_companion == "rocco":
 			raid_chance = maxf(0.0, raid_chance - GameData.COMPANION_RAID_REDUCTION)
+		raid_chance = maxf(0.0,
+			raid_chance - _companion_stat("vigilance") * GameData.COMPANION_STAT_VIGILANCE_PER_LEVEL)
 		return {
 			"days": GameData.MOVE_BLACK_ZONE_DAYS,
 			"cost": GameData.MOVE_BLACK_ZONE_COST,
 			"raid_chance": raid_chance,
 		}
 	if GameData.is_adjacent(from_city, to_city):
+		# バロンが同行していれば王道区間の移動費用が下がる（黒ゾーンは対象外）。
+		var cost: int = GameData.MOVE_ADJACENT_COST
+		if active_companion == "baron":
+			cost = GameData.COMPANION_MOVE_COST
 		return {
 			"days": GameData.MOVE_ADJACENT_DAYS,
-			"cost": GameData.MOVE_ADJACENT_COST,
+			"cost": cost,
 			"raid_chance": 0.0,
 		}
 	return {}
@@ -496,10 +527,14 @@ func explore_equip_bonus() -> float:
 
 
 ## 探索の成功率。レイヴンスパイアは黒ゾーンの並びで基本確率が下がる。
+## ケイルが同行していれば基本成功率が上がる。基本ステータスの探索技能も加算される。
 func explore_chance() -> float:
 	var base: float = GameData.EXPLORE_BASE_CHANCE
 	if current_city == GameData.CAERLEON:
 		base -= GameData.EXPLORE_CAERLEON_PENALTY
+	if active_companion == "kale":
+		base += GameData.COMPANION_EXPLORE_BONUS
+	base += _companion_stat("exploration") * GameData.COMPANION_STAT_EXPLORATION_PER_LEVEL
 	return clampf(base + explore_equip_bonus(), 0.0, GameData.EXPLORE_MAX_CHANCE)
 
 
@@ -638,12 +673,15 @@ func _run_logistics() -> void:
 
 ## 労働者が1日ぶん働く。1人につきランダムな資源を2個運ぶ（Q4: 5資源から均等）。
 ## 探索成功のブーストが残っていれば産出量が倍になる。
+## オルガが同行していれば1人あたりの基礎産出が上がる。
 func _run_workers() -> void:
 	var workers: int = worker_count()
 	if workers <= 0:
 		return
 	var resources: Array[String] = GameData.resource_ids()
 	var per_worker: int = GameData.RESOURCES_PER_WORKER_PER_DAY
+	if active_companion == "olga":
+		per_worker = GameData.COMPANION_WORKER_YIELD
 	if _boost_days_left > 0:
 		per_worker *= GameData.EXPLORE_BOOST_MULT
 	var delivered: int = workers * per_worker

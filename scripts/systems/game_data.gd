@@ -275,19 +275,67 @@ const INITIAL_MOUNT: String = "donkey"
 const COMPANION_NONE: String = ""
 
 const COMPANIONS: Dictionary = {
-	"fina":     {"name": "フィナ",       "role": "猫獣人の交渉屋",   "desc": "買値が8%下がる。"},
-	"gadolf":   {"name": "ガドルフ",     "role": "ドワーフの老鍛冶", "desc": "製作の手数料が90→60に下がる。"},
-	"serafina": {"name": "セラフィーナ", "role": "元貴族の相場読み", "desc": "相場メモが古くならない。"},
-	"rocco":    {"name": "ロッコ",       "role": "頼れる運び屋",     "desc": "積載量+15、黒ゾーンの襲撃率-5pt。"},
+	"fina":     {"name": "フィナ",       "role": "猫獣人の交渉屋",     "desc": "買値が8%下がる。"},
+	"gadolf":   {"name": "ガドルフ",     "role": "ドワーフの老鍛冶",   "desc": "製作の手数料が90→60に下がる。"},
+	"serafina": {"name": "セラフィーナ", "role": "元貴族の相場読み",   "desc": "相場メモが古くならない。"},
+	"rocco":    {"name": "ロッコ",       "role": "頼れる運び屋",       "desc": "積載量+15、黒ゾーンの襲撃率-5pt。"},
+	"kale":     {"name": "ケイル",       "role": "元斥候・道案内人",   "desc": "探索の基本成功率が+5pt上がる。"},
+	"mira":     {"name": "ミラ",         "role": "目利きの故買屋",     "desc": "売却時の税率が5%→2%に下がる。"},
+	"baron":    {"name": "バロン",       "role": "退役衛兵",           "desc": "王道区間の移動費用が250→150に下がる。"},
+	"olga":     {"name": "オルガ",       "role": "島の元差配人",       "desc": "島の労働者1人あたりの産出が2→3に増える。"},
+	"tobias":   {"name": "トビアス",     "role": "倹約家の職人見習い", "desc": "製作の材料所要量が常に1個減る（最低1個）。"},
 }
 
 ## パネルに表示する順。
-const COMPANION_ORDER: Array[String] = ["fina", "gadolf", "serafina", "rocco"]
+const COMPANION_ORDER: Array[String] = [
+	"fina", "gadolf", "serafina", "rocco", "kale", "mira", "baron", "olga", "tobias"]
 
 const COMPANION_BUY_DISCOUNT: float = 0.08     # フィナ: 購入価格の割引率
 const COMPANION_CRAFT_FEE: int = 60            # ガドルフ: 手数料の置き換え値（通常は CRAFT_FEE=90）
 const COMPANION_CAPACITY_BONUS: int = 15       # ロッコ: 積載量の加算
 const COMPANION_RAID_REDUCTION: float = 0.05   # ロッコ: 襲撃率の減算
+const COMPANION_EXPLORE_BONUS: float = 0.05    # ケイル: 探索の基本成功率の加算
+const COMPANION_SELL_TAX_RATE: float = 0.02    # ミラ: 売却税率の置き換え値（通常は SELL_TAX_RATE=0.05）
+const COMPANION_MOVE_COST: int = 150           # バロン: 王道隣接区間の移動費用の置き換え値（通常は MOVE_ADJACENT_COST=250）
+const COMPANION_WORKER_YIELD: int = 3          # オルガ: 労働者1人あたりの産出の置き換え値（通常は RESOURCES_PER_WORKER_PER_DAY=2）
+const COMPANION_CRAFT_MATERIAL_DISCOUNT: int = 1  # トビアス: 製作材料1個あたりの減算（下限1）
+
+## 9人共通の基本ステータス（0〜5の段階値）。1人1特性とは別レイヤーで加算される。
+## 特性の軸と一致する人（フィナ/ロッコ/ケイル/ミラ/バロン）はここでも高い値を
+## 持ち、特性の無い人（ガドルフ/セラフィーナ/オルガ/トビアス）にもこの5軸で
+## 存在感を持たせる。値は初回の仮置きで、実測（プレイ検証）はしていない。
+const COMPANION_STATS: Dictionary = {
+	"fina":     {"capacity": 1, "negotiation": 5, "appraisal": 2, "exploration": 1, "vigilance": 1},
+	"gadolf":   {"capacity": 3, "negotiation": 1, "appraisal": 1, "exploration": 0, "vigilance": 2},
+	"serafina": {"capacity": 0, "negotiation": 2, "appraisal": 4, "exploration": 1, "vigilance": 1},
+	"rocco":    {"capacity": 5, "negotiation": 1, "appraisal": 1, "exploration": 1, "vigilance": 3},
+	"kale":     {"capacity": 2, "negotiation": 0, "appraisal": 1, "exploration": 5, "vigilance": 2},
+	"mira":     {"capacity": 1, "negotiation": 3, "appraisal": 5, "exploration": 1, "vigilance": 0},
+	"baron":    {"capacity": 3, "negotiation": 0, "appraisal": 1, "exploration": 1, "vigilance": 5},
+	"olga":     {"capacity": 2, "negotiation": 1, "appraisal": 2, "exploration": 1, "vigilance": 1},
+	"tobias":   {"capacity": 1, "negotiation": 2, "appraisal": 2, "exploration": 0, "vigilance": 1},
+}
+
+const COMPANION_STAT_CAPACITY_PER_LEVEL: int = 1          # 積載量補正: 1レベルあたりの加算
+const COMPANION_STAT_NEGOTIATION_PER_LEVEL: float = 0.01  # 交渉力: 1レベルあたりの買値割引
+const COMPANION_STAT_APPRAISAL_PER_LEVEL: float = 0.01    # 目利き: 1レベルあたりの売却税率の減算
+const COMPANION_STAT_EXPLORATION_PER_LEVEL: float = 0.01  # 探索技能: 1レベルあたりの探索成功率の加算
+const COMPANION_STAT_VIGILANCE_PER_LEVEL: float = 0.01    # 警戒心: 1レベルあたりの黒ゾーン襲撃率の減算
+
+
+## 基本ステータス5軸を1行にまとめた表示用文字列。COMPANION_STATS に無い
+## IDなら空文字を返す（"誰も同行しない"ボタンなど）。
+static func companion_stat_line(companion_id: String) -> String:
+	if not COMPANION_STATS.has(companion_id):
+		return ""
+	var s: Dictionary = COMPANION_STATS[companion_id]
+	return "積載+%d 交渉+%d%% 目利き+%d%% 探索+%d%% 警戒+%d%%" % [
+		int(s["capacity"]) * COMPANION_STAT_CAPACITY_PER_LEVEL,
+		int(round(int(s["negotiation"]) * COMPANION_STAT_NEGOTIATION_PER_LEVEL * 100)),
+		int(round(int(s["appraisal"]) * COMPANION_STAT_APPRAISAL_PER_LEVEL * 100)),
+		int(round(int(s["exploration"]) * COMPANION_STAT_EXPLORATION_PER_LEVEL * 100)),
+		int(round(int(s["vigilance"]) * COMPANION_STAT_VIGILANCE_PER_LEVEL * 100)),
+	]
 
 # --- 相場メモ ---
 ## この日数以上経過した記録は「古い記録」として扱う。

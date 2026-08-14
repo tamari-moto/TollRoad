@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" role="img" aria-label="バロンの肖像">
+  <defs>
+    <linearGradient id="bg7" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#242b33"/><stop offset="1" stop-color="#161c22"/></linearGradient>
+    <radialGradient id="glow7" cx="50%" cy="42%" r="55%"><stop offset="0" stop-color="#7a94b0" stop-opacity=".55"/><stop offset="1" stop-color="#7a94b0" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#bg7)"/>
+  <path d="M20 300 V110 Q20 30 150 30 Q280 30 280 110 V300 Z" fill="url(#glow7)"/>
+  <path d="M42 300 Q48 202 150 198 Q252 202 258 300 Z" fill="#4a5a6b"/>
+  <path d="M42 300 Q48 202 150 198 L150 300 Z" fill="#3c4a58"/>
+  <rect x="104" y="196" width="92" height="20" rx="6" fill="#8a8f96"/>
+  <ellipse cx="150" cy="152" rx="56" ry="56" fill="#d9a878"/>
+  <path d="M96 132 Q98 88 150 84 Q202 88 204 132 Q186 106 150 106 Q114 106 96 132Z" fill="#8a8f96"/>
+  <path d="M104 130 Q108 158 96 178 Q96 148 100 128Z" fill="#8a8f96"/>
+  <path d="M196 130 Q192 158 204 178 Q204 148 200 128Z" fill="#8a8f96"/>
+  <path d="M114 140 Q124 134 134 140" stroke="#5c4a30" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M166 140 Q176 134 186 140" stroke="#5c4a30" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="124" cy="156" r="6" fill="#2e1c12"/><circle cx="126" cy="153" r="2.2" fill="#fff"/>
+  <circle cx="176" cy="156" r="6" fill="#2e1c12"/><circle cx="178" cy="153" r="2.2" fill="#fff"/>
+  <path d="M118 176 L182 176" stroke="#8a8f96" stroke-width="3" stroke-linecap="round"/>
+  <path d="M136 178 Q150 186 164 178" stroke="#8a5a3a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M204 226 L232 202 L242 218 L214 244 Q198 244 204 226Z" fill="#8a8f96" stroke="#5f6670" stroke-width="2"/>
+  <path d="M212 224 L230 208" stroke="#5f6670" stroke-width="2"/>
+</svg>

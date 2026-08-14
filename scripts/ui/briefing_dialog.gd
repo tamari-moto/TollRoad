@@ -11,6 +11,7 @@ extends Window
 const GameData = preload("res://scripts/systems/game_data.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 
 signal closed
 ## 「続きから」が押された。main.gd が受けてセッションを差し替える。
@@ -22,6 +23,12 @@ var _rank_list: VBoxContainer
 var _hint: Label
 var _start_button: Button
 var _continue_button: Button
+var _companion_section: VBoxContainer
+var _companion_buttons: Dictionary = {}
+
+## 開始画面で選ばれた同行者。新規開始時に main.gd がこれを
+## session.set_companion() へそのまま渡す。既定は「誰も同行しない」。
+var selected_companion: String = GameData.COMPANION_NONE
 
 
 func _ready() -> void:
@@ -43,6 +50,7 @@ func _resolve() -> void:
 	if not close_requested.is_connected(_on_close):
 		close_requested.connect(_on_close)
 
+	_build_companion_section()
 	_build_continue_button()
 
 
@@ -64,6 +72,76 @@ func _build_continue_button() -> void:
 	column.add_child(_continue_button)
 	# 開始ボタンの直前に置く。続きがある人はこちらを押すことが多い。
 	column.move_child(_continue_button, _start_button.get_index())
+
+
+## 同行者選びを開始ボタンの前に足す。新規開始のときだけ show_briefing() が
+## 見せる（読み返しでは同行者は既に決まっているので出さない）。
+## companion_panel.gd と同じボタンの組み方（肖像をアイコンに、選択中は無効化）。
+func _build_companion_section() -> void:
+	if is_instance_valid(_companion_section) or not is_instance_valid(_start_button):
+		return
+	var column: Node = _start_button.get_parent()
+	if column == null:
+		return
+
+	_companion_section = VBoxContainer.new()
+	_companion_section.name = "CompanionSection"
+	_companion_section.add_theme_constant_override("separation", 6)
+
+	var label := Label.new()
+	label.text = "同行するギルド仲間を選ぶ（後からいつでも無料で切り替えられる）"
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_companion_section.add_child(label)
+
+	var none_button := Button.new()
+	none_button.name = "CompanionNoneButton"
+	none_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	none_button.custom_minimum_size = Vector2(0, 40)
+	none_button.tooltip_text = "誰も同行しない。効果は無いが制約も無い"
+	none_button.pressed.connect(_on_companion_pressed.bind(GameData.COMPANION_NONE))
+	_companion_section.add_child(none_button)
+	_companion_buttons[GameData.COMPANION_NONE] = none_button
+
+	for companion_id: String in GameData.COMPANION_ORDER:
+		var button := Button.new()
+		button.name = "Companion_%s_Button" % companion_id
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.custom_minimum_size = Vector2(0, UiIcons.COMPANION_ICON_SIZE.y)
+
+		var portrait: Texture2D = UiIcons.companion_texture(companion_id)
+		if portrait != null:
+			button.icon = portrait
+			button.expand_icon = true
+			button.add_theme_constant_override(
+				"icon_max_width", int(UiIcons.COMPANION_ICON_SIZE.x))
+
+		button.pressed.connect(_on_companion_pressed.bind(companion_id))
+		_companion_section.add_child(button)
+		_companion_buttons[companion_id] = button
+
+	column.add_child(_companion_section)
+	column.move_child(_companion_section, _start_button.get_index())
+	_refresh_companion_buttons()
+
+
+func _on_companion_pressed(companion_id: String) -> void:
+	selected_companion = companion_id
+	_refresh_companion_buttons()
+
+
+func _refresh_companion_buttons() -> void:
+	for companion_id: String in _companion_buttons:
+		var button: Button = _companion_buttons[companion_id]
+		if not is_instance_valid(button):
+			continue
+		var active: bool = selected_companion == companion_id
+		if companion_id == GameData.COMPANION_NONE:
+			button.text = "一人旅（同行者なし）%s" % ["・選択中" if active else ""]
+		else:
+			var data: Dictionary = GameData.COMPANIONS[companion_id]
+			button.text = "%s — %s%s" % [data["name"], data["role"], "・選択中" if active else ""]
+			button.tooltip_text = "%s\n%s" % [data["desc"], GameData.companion_stat_line(companion_id)]
+		button.disabled = active
 
 
 ## 目標ランクの閾値。
@@ -134,10 +212,19 @@ func _populate_ranks() -> void:
 ##
 ## can_continue が true のときだけ「続きから」を出す。呼び出し側が
 ## セーブの有無を判断して渡す（この画面は保存の仕組みを知らない）。
-func show_briefing(can_continue: bool = false) -> void:
+##
+## choose_companion が true のときだけ同行者選びを出す。新規開始でだけ true
+## になる（main.gd が starts_play をそのまま渡す）。true のたびに選択を
+## 「同行者なし」へ戻す。新規セッションの同行者は毎回そこから始まるため。
+func show_briefing(can_continue: bool = false, choose_companion: bool = false) -> void:
 	_resolve()
 	_populate()
 	set_continue_available(can_continue)
+	if choose_companion:
+		selected_companion = GameData.COMPANION_NONE
+	if is_instance_valid(_companion_section):
+		_companion_section.visible = choose_companion
+	_refresh_companion_buttons()
 	# 中身をウィンドウいっぱいに広げる（.tscn のアンカーだけでは 0 のまま）。
 	UiUtil.fill_window(self)
 	# ツリー外（--script のハーネス）では表示できない。文面だけ整えて返す。
