@@ -97,6 +97,13 @@ func _init(rng_seed: int = 0) -> void:
 
 # --- 状態の参照 ---
 
+## この局の seed。RNG の系列そのものは進むが、seed は開始時から変わらない
+## （復元時も to_dict()/from_dict() が同じ値を戻す）ので、見た目を局ごとに
+## 振り分ける種として使える。大陸図の都市の形がこれを使う（map_view_3d.gd）。
+func rng_seed() -> int:
+	return int(_rng.seed)
+
+
 ## 積載量（ロッコが同行していれば加算）。
 func capacity() -> int:
 	var base: int = GameData.MOUNTS[mount]["capacity"]
