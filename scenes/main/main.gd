@@ -19,6 +19,7 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
+const DebugPanel = preload("res://scripts/ui/debug_panel.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
@@ -52,6 +53,12 @@ var _status_label: Label
 var _result_dialog: Window
 var _briefing_dialog: Window
 var _map_panel: Control
+var _root: Control
+
+## デバッグモード（F3）。市場の在庫・需要・生産量・消費量を一覧表示する。
+## %SidePanel の7タブとは独立したオーバーレイなので _panels には乗るが
+## タブストリップの開閉ロジックには一切触れない。
+var _debug_panel: DebugPanel
 
 var _session: GameSession
 
@@ -91,6 +98,11 @@ func _configure() -> void:
 	_resolve_nodes()
 	if _rest_button == null:
 		return
+
+	if _debug_panel == null and _root != null:
+		_debug_panel = DebugPanel.new()
+		_root.add_child(_debug_panel)
+		_panels.append(_debug_panel)
 
 	_connect_once(_rest_button.pressed, _on_rest_pressed)
 	_connect_once(_result_button.pressed, _show_result)
@@ -142,6 +154,7 @@ func _resolve_nodes() -> void:
 	_result_dialog = UiUtil.find_node(self, "ResultDialog")
 	_briefing_dialog = UiUtil.find_node(self, "BriefingDialog")
 	_map_panel = UiUtil.find_node(self, "大陸図")
+	_root = UiUtil.find_node(self, "Root") as Control
 
 	_tab_strip_buttons.clear()
 	for node_name: String in ["MarketTabButton", "CargoTabButton",
@@ -414,6 +427,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_on_tab_strip_pressed(index)
 			get_viewport().set_input_as_handled()
 			return
+
+	if event.is_action("tr_debug_toggle"):
+		_debug_panel.toggle_visible()
+		get_viewport().set_input_as_handled()
+		return
 
 
 func _on_rest_pressed() -> void:

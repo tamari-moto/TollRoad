@@ -191,7 +191,9 @@ func _test_trade_arithmetic() -> void:
 
 func _test_trade_loop() -> void:
 	print("--- 交易ループ（初期都市の特産を買い、隣町で売る） ---")
-	var s: GameSession = GameSession.new(31337)
+	# 31337 のままだと隣接移動または2ホップ移動でランダムイベントが発生し、
+	# 移動費の厳密比較が崩れる。31338 は両方とも発生しない。
+	var s: GameSession = GameSession.new(31338)
 	var start: int = s.silver
 	var home: String = s.current_city
 	var neighbor: String = _adjacent_royal_city(home)
