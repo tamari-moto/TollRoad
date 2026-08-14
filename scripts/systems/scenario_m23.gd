@@ -21,6 +21,7 @@ const TEST_PATH: String = "user://scenario_m23_save.json"
 
 func _init() -> void:
 	_test_production_shape()
+	_test_specialty_distance_tiers()
 	_test_balance_guardrails()
 	_test_initial_stock_and_demand()
 	_test_buy_limited_by_stock()
@@ -85,6 +86,50 @@ func _test_production_shape() -> void:
 			MarketTable.consumption_of(_any_royal_city(), equipment)])
 
 
+## 特産資源は「本拠地でしか採れないが、近隣の街でも少しは採れる」形になって
+## いるか。road_distance() 自体の検査も兼ねる。
+func _test_specialty_distance_tiers() -> void:
+	print("--- 特産資源の生産は本拠地からの距離で段階する ---")
+
+	# road_distance() 単体。
+	_check(GameData.road_distance("ironhollow", "ironhollow") == 0,
+		"同一都市の距離は0", str(GameData.road_distance("ironhollow", "ironhollow")))
+	_check(GameData.road_distance(GameData.CAERLEON, "ironhollow") == -1,
+		"レイヴンスパイアは王道のどの都市とも繋がらない（距離-1）",
+		str(GameData.road_distance(GameData.CAERLEON, "ironhollow")))
+
+	var home: String = "ironhollow"
+	var neighbor: String = GameData.road_neighbors(home)[0]
+	_check(GameData.road_distance(home, neighbor) == 1,
+		"隣接都市の距離は1", str(GameData.road_distance(home, neighbor)))
+
+	var far_city: String = _far_royal_city(home)
+	_check(GameData.road_distance(home, far_city) == 2,
+		"2ホップ先の距離は2", str(GameData.road_distance(home, far_city)))
+
+	# 生産量の段階。
+	var item_id: String = GameData.CITIES[home]["specialty"]
+	_check(MarketTable.production_of(home, item_id) == GameData.PRODUCTION_SPECIALTY,
+		"本拠地は最大量を産する", str(MarketTable.production_of(home, item_id)))
+	_check(MarketTable.production_of(neighbor, item_id) == GameData.PRODUCTION_SPECIALTY_NEAR_1,
+		"隣接都市は1段階減った量を産する", str(MarketTable.production_of(neighbor, item_id)))
+	_check(MarketTable.production_of(far_city, item_id) == GameData.PRODUCTION_SPECIALTY_NEAR_2,
+		"2ホップ先はさらに減った量を産する", str(MarketTable.production_of(far_city, item_id)))
+	_check(MarketTable.production_of(GameData.CAERLEON, item_id) == GameData.PRODUCTION_SPECIALTY_FAR,
+		"レイヴンスパイアはごく僅かしか産しない",
+		str(MarketTable.production_of(GameData.CAERLEON, item_id)))
+
+	# 段階は単調に減る（0 にはしない — 「ごく僅かに残す」という決定のため）。
+	_check(GameData.PRODUCTION_SPECIALTY > GameData.PRODUCTION_SPECIALTY_NEAR_1
+			and GameData.PRODUCTION_SPECIALTY_NEAR_1 > GameData.PRODUCTION_SPECIALTY_NEAR_2
+			and GameData.PRODUCTION_SPECIALTY_NEAR_2 > GameData.PRODUCTION_SPECIALTY_FAR
+			and GameData.PRODUCTION_SPECIALTY_FAR > 0,
+		"生産量の段階は単調に減り、0にはならない",
+		"%d > %d > %d > %d > 0" % [GameData.PRODUCTION_SPECIALTY,
+			GameData.PRODUCTION_SPECIALTY_NEAR_1, GameData.PRODUCTION_SPECIALTY_NEAR_2,
+			GameData.PRODUCTION_SPECIALTY_FAR])
+
+
 func _test_balance_guardrails() -> void:
 	print("--- バランスの歯止め ---")
 	# 既存のバランス（意図された成長ルート）を壊さない範囲に量を保つ。
@@ -101,7 +146,8 @@ func _test_balance_guardrails() -> void:
 		"在庫 %d / 積載 %d" % [specialty_cap, biggest_capacity])
 
 	# とはいえ無限ではない。全品目が積載を満たせるなら在庫を入れた意味がない。
-	var other_cap: int = GameData.PRODUCTION_OTHER_RESOURCE * GameData.MARKET_CAP_DAYS
+	# 資源の非本拠地での最大値は隣接都市（NEAR_1）。
+	var other_cap: int = GameData.PRODUCTION_SPECIALTY_NEAR_1 * GameData.MARKET_CAP_DAYS
 	_check(other_cap < biggest_capacity,
 		"特産以外の在庫は積載を満たせない（巡回の動機が残る）",
 		"在庫 %d / 積載 %d" % [other_cap, biggest_capacity])

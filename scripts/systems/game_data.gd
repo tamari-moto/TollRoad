@@ -133,8 +133,16 @@ const MOD_CAERLEON_RESOURCE: float = 1.06
 ## （scenario_m23.gd の _test_balance_guardrails() が上限・下限で挟んでいる）。
 const PRODUCTION_SPECIALTY: int = 44
 const PRODUCTION_BONUS: int = 9
-const PRODUCTION_OTHER_RESOURCE: int = 6
 const PRODUCTION_OTHER_EQUIPMENT: int = 2
+
+## 特産資源は本拠地からの王道ホップ距離で段階的に減る（road_distance() 参照）。
+## 「その街でしか採れないが、近隣の街でも少しは採れる」という産地の実感を
+## 出すための段階。距離2を超える都市（黒ゾーンのレイヴンスパイア含む）は
+## ごく僅かな取引量だけ残す。都市を足しても表を書き足す必要は無い
+## （specialty と ROYAL_ROAD_EDGES から自動で決まる）。
+const PRODUCTION_SPECIALTY_NEAR_1: int = 16 ## 隣接都市（distance 1）
+const PRODUCTION_SPECIALTY_NEAR_2: int = 4  ## 2ホップ先（distance 2）
+const PRODUCTION_SPECIALTY_FAR: int = 1     ## それ以外
 
 ## 1日あたりの消費量（＝需要の回復量）。生産と逆向きで、自前で作れるものは
 ## 欲しがらない。レイヴンスパイアは装備の集積地なので装備を厚く買い取る。
@@ -312,6 +320,33 @@ static func road_neighbors(city_id: String) -> Array[String]:
 		elif edge[1] == city_id:
 			neighbors.append(edge[0])
 	return neighbors
+
+
+## 品目を specialty として持つ都市。無ければ空文字。
+static func city_for_specialty(item_id: String) -> String:
+	for city_id: String in CITIES:
+		if CITIES[city_id]["specialty"] == item_id:
+			return city_id
+	return ""
+
+
+## 王道上の最短ホップ数（road_neighbors() による BFS）。黒ゾーン経由は
+## 数えない。到達できない場合（レイヴンスパイアなど王道に一切繋がらない
+## 都市を含む場合）は -1。
+static func road_distance(city_a: String, city_b: String) -> int:
+	if city_a == city_b:
+		return 0
+	var visited: Dictionary = {city_a: 0}
+	var queue: Array[String] = [city_a]
+	while not queue.is_empty():
+		var current: String = queue.pop_front()
+		for neighbor: String in road_neighbors(current):
+			if neighbor == city_b:
+				return visited[current] + 1
+			if not visited.has(neighbor):
+				visited[neighbor] = visited[current] + 1
+				queue.append(neighbor)
+	return -1
 
 
 ## 純資産から到達ランク名を返す。

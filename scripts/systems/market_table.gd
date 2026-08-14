@@ -41,20 +41,30 @@ func reset() -> void:
 # --- 生産と消費の量（GameData の定義から導く） ---
 
 ## その都市がその品目を1日に何個生産するか。
-## 特産（specialty）と生産地（bonus）に厚く、それ以外は細く出る。
-## レアは誰も生産しない（探索でしか手に入らない）。
+## 生産地（bonus）は厚く、それ以外の装備は細く出る。レアは誰も生産しない
+## （探索でしか手に入らない）。特産資源（resource）は本拠地からの王道距離で
+## 段階的に減る — 「その街でしか採れないが、近隣の街でも少しは採れる」
+## という産地の実感を出すため（GameData.road_distance() 参照）。
 static func production_of(city_id: String, item_id: String) -> int:
 	var kind: int = GameData.ITEMS[item_id]["kind"]
 	if kind == GameData.ItemKind.RARE:
 		return 0
 	var city: Dictionary = GameData.CITIES[city_id]
-	if city["specialty"] == item_id:
-		return GameData.PRODUCTION_SPECIALTY
 	if city["bonus"] == item_id:
 		return GameData.PRODUCTION_BONUS
 	if kind == GameData.ItemKind.EQUIPMENT:
 		return GameData.PRODUCTION_OTHER_EQUIPMENT
-	return GameData.PRODUCTION_OTHER_RESOURCE
+	var home_city: String = GameData.city_for_specialty(item_id)
+	var distance: int = GameData.road_distance(home_city, city_id) if home_city != "" else -1
+	match distance:
+		0:
+			return GameData.PRODUCTION_SPECIALTY
+		1:
+			return GameData.PRODUCTION_SPECIALTY_NEAR_1
+		2:
+			return GameData.PRODUCTION_SPECIALTY_NEAR_2
+		_:
+			return GameData.PRODUCTION_SPECIALTY_FAR
 
 
 ## その都市がその品目を1日に何個買い取るか（需要の回復量）。
