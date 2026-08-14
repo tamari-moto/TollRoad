@@ -53,7 +53,15 @@ const SKY_TOP_COLOR := Color(0.08, 0.09, 0.15)
 const SKY_HORIZON_COLOR := Color(0.30, 0.26, 0.28)
 const SKY_GROUND_COLOR := Color(0.05, 0.05, 0.07)
 const AMBIENT_LIGHT_ENERGY: float = 0.6
-const FOG_DENSITY: float = 0.01
+## 縁を霧に溶かして閉塞感を出すためのもの。強すぎると地形全体が
+## SKY_HORIZON_COLOR（明るい灰）へ寄って白飛びし、頂点カラーで塗り分けた
+## 標高帯が見えなくなる。実機のスクショで地形が一面の淡い灰色になり、
+## 細かい起伏の陰影だけが縞に見えていた原因がこれだった（頂点カラーは
+## どれも輝度0.38以下なので、明るさは霧由来と分かる）。
+## 0.01 では50%不透明になる距離が約69で、カメラの MAX_DISTANCE(34) の
+## 内側にも濃く掛かっていた。プレイ範囲は素の色が読め、地形の縁
+## （半径92前後）だけが溶ける濃さにする。
+const FOG_DENSITY: float = 0.004
 const GLOW_INTENSITY: float = 0.2
 const GLOW_BLOOM: float = 0.04
 ## グローがHDRとして扱う輝度の下限。既定は1.0だが、明示しないとエンジンの
@@ -103,11 +111,18 @@ const TERRAIN_NOISE_SCALE: float = 0.10
 ## 増やすだけなので、格子で解像できる範囲で止める。
 ## 最細オクターブの波長は 1/(TERRAIN_NOISE_SCALE * LACUNARITY^(N-1))
 ## = 1/(0.10*2.0^3) = 1.25 で、1マス0.8の格子でぎりぎり拾える。
-const TERRAIN_OCTAVES: int = 4
+## 4オクターブでは細かい凹凸が画面全体に敷き詰められ、地形が「一面の
+## 細かいぼこぼこ」に見えていた（実機のスクショで判明。ヘッドレスの
+## 傾斜統計では平均23.6度と穏やかな値が出ており、この見え方は数値からは
+## 読めなかった）。最細オクターブは波長1.25で、都市の間隔(10.58)に対して
+## 細かすぎる。3つに減らし、大きな起伏の骨格だけを残す。
+const TERRAIN_OCTAVES: int = 3
 ## オクターブごとに周波数を何倍にするか。
 const TERRAIN_LACUNARITY: float = 2.0
-## オクターブごとに振幅を何倍にするか。0.5 が古典的な fBm。
-const TERRAIN_GAIN: float = 0.5
+## オクターブごとに振幅を何倍にするか。0.5 が古典的な fBm だが、
+## 細かいオクターブほど早く減衰させて起伏をなだらかにする
+## （「平地を広く」というユーザー指定。上げると細かい凹凸が戻る）。
+const TERRAIN_GAIN: float = 0.40
 ## fBm を -1〜1 へ広げ直す係数（_terrain_shape_at() のコメント参照）。
 ## 実測（TERRAIN_OCTAVES=4, GAIN=0.5）で素の値が ±0.35 前後だったため、
 ## 逆数の 2.8 なら値域いっぱいに広がる。
@@ -122,6 +137,11 @@ const TERRAIN_GAIN: float = 0.5
 ## 2.0 だと値域は ±0.65 程度までしか届かず、TERRAIN_HIGHLAND_LEVEL に
 ## 到達しにくくなるため、帯の閾値もそれに合わせて下げてある。
 const FBM_NORMALIZE: float = 2.0
+
+## 低い側をどれだけ平らに均すか（_terrain_shape_at() の pow の指数）。
+## 1.0 で無効（従来どおり）、大きいほど 0 付近が平らになり平地が広がる。
+## 上げすぎると平地ばかりで山が孤立した突起に見えるので、2前後で止める。
+const TERRAIN_FLATTEN: float = 1.9
 
 ## 稜線（リッジ）を作る割合。fBm をそのまま使うと丘は丸くなだらかにしか
 ## ならない。ノイズの絶対値を反転（1-|n|）すると 0 の等高線が尖った稜線
@@ -181,8 +201,11 @@ const TERRAIN_HIGHLAND_COLOR := Color(0.38, 0.38, 0.34)
 ## 決める。標高の分布は正規分布に近く中央に集まるため、±0.35/0.45 では
 ## 中腹が86.5%を占め、低地9.1%・高所4.4%しか出ずに帯がほぼ見えなかった。
 ## 内側へ寄せて、低地・高所がそれぞれ2割前後になるようにしてある。
-const TERRAIN_LOWLAND_LEVEL: float = -0.18
-const TERRAIN_HIGHLAND_LEVEL: float = 0.20
+## TERRAIN_FLATTEN で低い側を0へ寄せたぶん、分布はさらに中央へ集まる。
+## 閾値もそれに合わせて内側へ寄せ直すこと（実測せずに据え置くと、また
+## 中腹が7割超を占めて帯がほぼ1色になる）。
+const TERRAIN_LOWLAND_LEVEL: float = -0.07
+const TERRAIN_HIGHLAND_LEVEL: float = 0.09
 
 ## 標高帯の境界をノイズで上下させる幅（標高の正規化値）。境界を数式どおりの
 ## 高さで切ると、地図に等高線状の縞がくっきり出て人工的に見える。
@@ -192,7 +215,10 @@ const TERRAIN_HIGHLAND_LEVEL: float = 0.20
 ## 十分大きくないと縞は消えない。0.18 では実効 ±0.148（帯幅の19%）しか
 ## 揺らげず、縞が見えたままだった（ユーザー報告）。帯幅の半分程度まで
 ## 上げ、境界がどこにあるか目で追えないようにする。
-const TERRAIN_BAND_JITTER: float = 0.42
+## 帯幅（TERRAIN_HIGHLAND_LEVEL - TERRAIN_LOWLAND_LEVEL）に対する割合で
+## 考えること。帯幅を変えたのにここを据え置くと、揺らぎが帯幅を超えて
+## 標高と無関係な斑（まだら）になる。帯幅0.16 に対して半分程度にしてある。
+const TERRAIN_BAND_JITTER: float = 0.08
 ## 境界を乱すノイズの細かさ。起伏（TERRAIN_NOISE_SCALE）より細かくしないと、
 ## 標高と一緒に境界も動いてしまい乱した意味が無くなる。旧値0.45では
 ## 起伏の中間オクターブと波長が近く、境界が起伏に沿って動くぶん
@@ -595,6 +621,14 @@ func _terrain_shape_at(x: float, z: float) -> float:
 	# リッジは 0〜1 なので、fBm と混ぜられるよう -1〜1 へ写す。
 	ridge = clampf(ridge / total_amplitude, 0.0, 1.0) * 2.0 - 1.0
 
+	# 低い側を平らに均す。fBm をそのまま使うと、値が0付近の広い領域にも
+	# 常に中くらいの起伏が残り、平地というものが地形上に存在しなくなる
+	# （「平地を広く」というユーザー指定。実機では一面が細かい起伏で
+	# 埋まって見えていた）。絶対値を TERRAIN_FLATTEN 乗すると、-1〜1 の
+	# 範囲で 0 付近だけが強く0へ寄り、両端（谷底と峰）は元の高さを保つ。
+	# 符号を掛け直して谷と峰の向きを戻す。
+	fbm = signf(fbm) * pow(absf(fbm), TERRAIN_FLATTEN)
+
 	# どこを山脈にするかを、非常に粗いノイズで帯状に決める。
 	# 一様に混ぜると全域が同じ険しさになり、結局また単調になるため。
 	# smoothstep でコントラストを付け、平野（重み0）と山脈（重み最大）に
@@ -694,8 +728,14 @@ func _assign_terrain_colors(arrays: Array) -> void:
 			clampf(color.g + grain, 0.0, 1.0),
 			clampf(color.b + grain, 0.0, 1.0))
 
+		# 縁を空の色へ溶かす。開始半径を _ring_radius（都市が乗る範囲の縁、
+		# 約21）に置くと、カメラの MAX_DISTANCE(34) の内側から色が抜け始め、
+		# プレイ範囲の地形まで淡い灰色に寄ってしまう（霧と二重に掛かって
+		# 白飛びして見えていた原因のひとつ）。カメラで見える範囲の外から
+		# 始める。
+		var fade_start: float = maxf(_ring_radius, MapCamera.MAX_DISTANCE)
 		var edge_t: float = clampf(
-			(distance_from_center - _ring_radius) / (half_extent - _ring_radius), 0.0, 1.0)
+			(distance_from_center - fade_start) / maxf(half_extent - fade_start, 0.001), 0.0, 1.0)
 		colors[i] = color.lerp(SKY_HORIZON_COLOR, edge_t)
 
 	arrays[Mesh.ARRAY_COLOR] = colors
