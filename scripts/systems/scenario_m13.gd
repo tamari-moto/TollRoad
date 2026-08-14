@@ -34,11 +34,11 @@ func _test_goal_constant() -> void:
 			found = true
 	_check(found, "目標ランクが RANKS に実在する", "見つからない")
 
-	var hud = load("res://scripts/ui/hud.gd")
+	var goal_panel = load("res://scripts/ui/goal_panel.gd")
 	var briefing = load("res://scripts/ui/briefing_dialog.gd")
-	_check(hud.goal_amount() == 500000, "目標額は500,000", str(hud.goal_amount()))
-	_check(hud.goal_amount() == briefing.goal_amount(),
-		"HUD と開始画面が同じ目標額を使う", "食い違っている")
+	_check(goal_panel.goal_amount() == 500000, "目標額は500,000", str(goal_panel.goal_amount()))
+	_check(goal_panel.goal_amount() == briefing.goal_amount(),
+		"GoalPanel と開始画面が同じ目標額を使う", "食い違っている")
 
 
 func _test_briefing_content() -> void:
@@ -107,20 +107,21 @@ func _test_briefing_follows_data() -> void:
 	_despawn(dialog)
 
 
+## 純資産の目標表示は GoalPanel（HUD とは別パネル）が持つ。
 func _test_hud_net_worth() -> void:
-	print("--- HUD の純資産表示 ---")
-	var hud: Node = _spawn("res://scenes/ui/HUD.tscn")
-	if hud == null:
+	print("--- GoalPanel の純資産表示 ---")
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	if goal_panel == null:
 		return
 	var session: GameSession = GameSession.new(13001)
-	hud.bind(session)
+	goal_panel.bind(session)
 
-	var label: Label = UiUtil.find_node(hud, "NetWorthLabel")
-	var bar: ProgressBar = UiUtil.find_node(hud, "GoalBar")
+	var label: Label = UiUtil.find_node(goal_panel, "NetWorthLabel")
+	var bar: ProgressBar = UiUtil.find_node(goal_panel, "GoalBar")
 	_check(label != null, "NetWorthLabel がある", "ない")
 	_check(bar != null, "GoalBar がある", "ない")
 	if label == null or bar == null:
-		_despawn(hud)
+		_despawn(goal_panel)
 		return
 
 	_check(label.text.contains(UiUtil.format_number(session.net_worth())),
@@ -133,32 +134,38 @@ func _test_hud_net_worth() -> void:
 	_check(label.get_theme_color("font_color") == UiTheme.TEXT, "未達成は標準色", "違う")
 	session.silver = 600000
 	# シルバーを直接書き換えたのでシグナルは飛ばない。パネル規約の refresh() で更新する。
-	hud.refresh()
+	goal_panel.refresh()
 	_check(label.get_theme_color("font_color") == UiTheme.GOOD, "達成すると好調色", "変わらない")
 	_check(bar.value == 500000, "バーは目標で頭打ち", str(bar.value))
 
 	# 島倉庫も純資産に入る。
 	var island: GameSession = GameSession.new(13002)
 	island.silver = 1000000
-	hud.bind(island)
+	goal_panel.bind(island)
 	island.upgrade_island()
 	var before: String = label.text
 	island.rest()
 	_check(label.text != before, "島倉庫が増えると表示が更新される", "変わらない")
 
-	_despawn(hud)
+	_despawn(goal_panel)
 
 
 func _test_investment_is_visible() -> void:
 	print("--- 仕入れが投資だと分かるか ---")
 	var hud: Node = _spawn("res://scenes/ui/HUD.tscn")
-	if hud == null:
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	if hud == null or goal_panel == null:
+		if hud != null:
+			_despawn(hud)
+		if goal_panel != null:
+			_despawn(goal_panel)
 		return
 	var session: GameSession = GameSession.new(13003)
 	hud.bind(session)
+	goal_panel.bind(session)
 
 	var silver_label: Label = UiUtil.find_node(hud, "SilverLabel")
-	var worth_label: Label = UiUtil.find_node(hud, "NetWorthLabel")
+	var worth_label: Label = UiUtil.find_node(goal_panel, "NetWorthLabel")
 
 	var silver_before: int = session.silver
 	var worth_before: int = session.net_worth()
@@ -184,6 +191,7 @@ func _test_investment_is_visible() -> void:
 		"仕入れ後の純資産が表示される", worth_label.text)
 
 	_despawn(hud)
+	_despawn(goal_panel)
 
 
 func _test_main_scene() -> void:
