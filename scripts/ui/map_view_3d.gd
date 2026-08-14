@@ -1906,6 +1906,10 @@ func _build_selection_ring() -> void:
 	_selection_ring = MeshInstance3D.new()
 	_selection_ring.name = "SelectionRing"
 	_selection_ring.mesh = ImmediateMesh.new()
+	# 影を落とさない。自己発光する輪（unshaded + emission）なので、地面に
+	# 楕円の影が落ちると「光っているのに影がある」という矛盾した見た目に
+	# なる。現在地を示す UI であって、世界の中の物体ではない。
+	_selection_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_selection_ring)
 
 
