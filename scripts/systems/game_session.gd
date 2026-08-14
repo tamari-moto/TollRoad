@@ -15,14 +15,16 @@ const MarketTable = preload("res://scripts/systems/market_table.gd")
 ## 種別を持たないため、UI 側は kind_for_message() で本文から引き直す。
 ## 生きている行はここで種別が付くので、本文を書き換えても音は変わらない。
 enum LogKind {
-	NONE,      ## 音を鳴らさない行（同行者の加入、60日の終了など）
-	TRADE,     ## 売買。音はボタン側で鳴らすため日誌では鳴らさない
-	CRAFT,     ## 製作
-	UPGRADE,   ## 島の拡張・騎乗の購入
-	TRAVEL,    ## 移動
-	RAID,      ## 襲撃。積荷の全損
-	EXPLORE,   ## 探索（成功・失敗を問わない）
-	DAY,       ## 休息・倉庫からの引き取り
+	NONE,             ## 音を鳴らさない行（60日の終了、セーブの失敗など）
+	TRADE,            ## 売買。音はボタン側で鳴らすため日誌では鳴らさない
+	CRAFT,            ## 製作
+	UPGRADE,          ## 島の拡張・騎乗の購入
+	TRAVEL,           ## 移動
+	RAID,             ## 襲撃。積荷の全損
+	EXPLORE,          ## 探索（成功・失敗を問わない）
+	DAY,              ## 休息・倉庫からの引き取り
+	COMPANION_JOINED, ## 同行者の加入・切り替え
+	COMPANION_LEFT,   ## 同行者との別れ
 }
 
 signal day_advanced(day: int)
@@ -302,10 +304,11 @@ func set_companion(companion_id: String) -> bool:
 		return false
 	active_companion = companion_id
 	if companion_id == GameData.COMPANION_NONE:
-		_log("同行者と別れ、一人旅に戻った。")
+		_log("同行者と別れ、一人旅に戻った。", LogKind.COMPANION_LEFT)
 	else:
 		_log("%s が同行することになった（%s）。" % [
-			GameData.COMPANIONS[companion_id]["name"], GameData.COMPANIONS[companion_id]["desc"]])
+			GameData.COMPANIONS[companion_id]["name"], GameData.COMPANIONS[companion_id]["desc"]],
+			LogKind.COMPANION_JOINED)
 	companion_changed.emit(active_companion)
 	return true
 

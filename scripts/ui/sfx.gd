@@ -50,6 +50,10 @@ const LOG_KIND_SOUNDS: Dictionary = {
 	GameSessionScript.LogKind.RAID: Kind.RAID,
 	GameSessionScript.LogKind.EXPLORE: Kind.EXPLORE,
 	GameSessionScript.LogKind.DAY: Kind.DAY,
+	# 同行者の加入は島の拡張・騎乗の購入と同じ「強くなる」出来事として扱う。
+	# 別れは失う側なので控えめな低音に寄せる。
+	GameSessionScript.LogKind.COMPANION_JOINED: Kind.UPGRADE,
+	GameSessionScript.LogKind.COMPANION_LEFT: Kind.DAY,
 }
 
 
@@ -69,6 +73,12 @@ static func sound_for_log_kind(log_kind: int) -> int:
 ## scenario_m15.gd が同じ判定を別々に持っており、両方が同時にずれていても
 ## 検査が通ってしまう状態だった）。
 static func kind_for_message(message: String) -> int:
+	# 同行者の行を先に見る。効果の説明文に「製作」「襲撃」が入っているため、
+	# 後回しにすると仲間の加入が製作音や襲撃音になる（実際にそうなっていた）。
+	if message.contains("同行することになった"):
+		return GameSessionScript.LogKind.COMPANION_JOINED
+	if message.contains("一人旅に戻った"):
+		return GameSessionScript.LogKind.COMPANION_LEFT
 	if message.contains("襲撃"):
 		return GameSessionScript.LogKind.RAID
 	if message.contains("探索"):

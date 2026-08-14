@@ -210,6 +210,25 @@ func _test_log_mapping() -> void:
 		"TRADE では日誌から音を鳴らさない（ボタン側と二重にならない）",
 		str(Sfx.sound_for_log_kind(GameSession.LogKind.TRADE)))
 
+	# 同行者の加入・別れ。効果の説明文に「製作」「襲撃」が入る仲間がいるため、
+	# 本文任せにすると仲間ごとに違う音が鳴る（かつて実際にそうなっていた）。
+	# 全員が同じ種別で記録されることを確かめる。
+	for companion_id: String in GameData.COMPANIONS:
+		if companion_id == GameData.COMPANION_NONE:
+			continue
+		var joiner: GameSession = GameSession.new(15008)
+		var join_kinds: Array[int] = _kinds_from(joiner, func() -> void:
+			joiner.set_companion(companion_id))
+		_check(join_kinds.has(GameSession.LogKind.COMPANION_JOINED),
+			"%s の加入が COMPANION_JOINED で記録される" % companion_id, str(join_kinds))
+
+	var leaver: GameSession = GameSession.new(15009)
+	leaver.set_companion("fina")
+	var leave_kinds: Array[int] = _kinds_from(leaver, func() -> void:
+		leaver.set_companion(GameData.COMPANION_NONE))
+	_check(leave_kinds.has(GameSession.LogKind.COMPANION_LEFT),
+		"同行者との別れが COMPANION_LEFT で記録される", str(leave_kinds))
+
 	# 種別 -> 音の対応。鳴らすべき種別に音が割り当たっていること。
 	for pair: Array in [
 		[GameSession.LogKind.CRAFT, Sfx.Kind.CRAFT],
@@ -218,6 +237,8 @@ func _test_log_mapping() -> void:
 		[GameSession.LogKind.RAID, Sfx.Kind.RAID],
 		[GameSession.LogKind.EXPLORE, Sfx.Kind.EXPLORE],
 		[GameSession.LogKind.DAY, Sfx.Kind.DAY],
+		[GameSession.LogKind.COMPANION_JOINED, Sfx.Kind.UPGRADE],
+		[GameSession.LogKind.COMPANION_LEFT, Sfx.Kind.DAY],
 	]:
 		_check(Sfx.sound_for_log_kind(pair[0]) == pair[1],
 			"種別 %d に音 %d が対応する" % [pair[0], pair[1]],
@@ -256,6 +277,25 @@ func _test_restored_log_fallback() -> void:
 	_check(buy_entry != "", "品目の購入がログに残る", "残らない")
 	_check(Sfx.kind_for_message(buy_entry) != GameSession.LogKind.UPGRADE,
 		"品目の購入が騎乗の購入と混ざらない", buy_entry)
+
+	# 復元した仲間の行も全員が同じ種別に引き直せること。
+	# 効果の説明文に「製作」「襲撃」を含む仲間がいるため、判定の順序を
+	# 入れ替えるとここが落ちる（旧実装ではガドルフが製作音、ロッコが襲撃音に
+	# なっていた）。desc を書き換えたときにも気づけるよう全員を回す。
+	for companion_id: String in GameData.COMPANIONS:
+		if companion_id == GameData.COMPANION_NONE:
+			continue
+		var joiner: GameSession = GameSession.new(15010)
+		joiner.set_companion(companion_id)
+		var join_entry: String = joiner.log_entries[-1]
+		_check(Sfx.kind_for_message(join_entry) == GameSession.LogKind.COMPANION_JOINED,
+			"復元した %s の加入行が COMPANION_JOINED になる" % companion_id, join_entry)
+
+	var left: GameSession = GameSession.new(15011)
+	left.set_companion("fina")
+	left.set_companion(GameData.COMPANION_NONE)
+	_check(Sfx.kind_for_message(left.log_entries[-1]) == GameSession.LogKind.COMPANION_LEFT,
+		"復元した別れの行が COMPANION_LEFT になる", left.log_entries[-1])
 
 	# 襲撃の行は色を変える対象。探索失敗も同様、探索成功は対象外。
 	_check(Sfx.is_severe_log_kind(GameSession.LogKind.RAID, "襲撃された。積荷を全て失った。"),
