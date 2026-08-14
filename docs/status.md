@@ -51,7 +51,7 @@
 
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m24.gd` の24本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m25.gd` の25本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。

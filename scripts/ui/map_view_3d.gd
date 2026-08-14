@@ -141,7 +141,38 @@ const FBM_NORMALIZE: float = 2.0
 ## 低い側をどれだけ平らに均すか（_terrain_shape_at() の pow の指数）。
 ## 1.0 で無効（従来どおり）、大きいほど 0 付近が平らになり平地が広がる。
 ## 上げすぎると平地ばかりで山が孤立した突起に見えるので、2前後で止める。
+##
+## これは「中くらいの高さの土地」を平らにするだけで、地図上のどこが
+## 平地になるかは選んでいない（高さで選んでいて、場所では選んでいない）。
+## 場所で選ぶのは下の SETTLEMENT_* が担う。
 const TERRAIN_FLATTEN: float = 1.9
+
+## --- 都市と街道の周辺を平らにする ---
+## 人は平地に街を作り、道は谷や尾根沿いの緩い斜面を通る。地形を先に決めて
+## から都市を後付けで乗せると、都市の柱や道の帯が急斜面に刺さり、
+## 「なぜそこに街があるのか」が読めない絵になる。都市と街道の周辺だけ
+## 起伏を押し下げて、街と道が乗る土地を平地として成立させる
+## （ユーザー指定で、平地を「場所」で選ぶ方式に切り替えた）。
+##
+## 起伏を0に潰すのではなく、周辺の高さへ滑らかに寄せる（_settlement_
+## flatten_at() 参照）。完全に平らな円盤を置くと、縁が段差になって
+## 人工物のように見えるため。
+##
+## 都市の中心からこの距離までは完全に平ら。CITY_RADIUS(0.55) の構造物と
+## VEGETATION_CITY_CLEARANCE(1.8) の空き地がここに収まる。
+const SETTLEMENT_FLAT_RADIUS: float = 2.6
+## そこからこの距離をかけて、元の起伏へ滑らかに戻す。
+const SETTLEMENT_FALLOFF: float = 5.5
+## 街道の帯を平らにする幅（中心線からの距離）。ROAD_WIDTH(0.5) の帯と、
+## その両脇が斜面に切り立たないだけの余裕を取る。
+const SETTLEMENT_ROAD_FLAT_WIDTH: float = 1.6
+## 街道の平らな帯から元の起伏へ戻すまでの距離。都市より短くして、
+## 道は「谷を縫う細い回廊」に見えるようにする（都市のように広い盆地を
+## 作ってしまうと、道沿いだけ地形が消えて見える）。
+const SETTLEMENT_ROAD_FALLOFF: float = 3.2
+## 平地化の最大の効き目。1.0 だと完全に平らな面になり、起伏が消えて
+## のっぺりする。少し残して、緩やかな土地の起伏が見えるようにする。
+const SETTLEMENT_FLATTEN_STRENGTH: float = 0.85
 
 ## 稜線（リッジ）を作る割合。fBm をそのまま使うと丘は丸くなだらかにしか
 ## ならない。ノイズの絶対値を反転（1-|n|）すると 0 の等高線が尖った稜線
@@ -394,6 +425,15 @@ var _noise: FastNoiseLite
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
 var positions: Dictionary = {}
 
+## city_id -> Vector2（水平面のみ）。height_at() が都市・街道の周辺を
+## 平らに均すのに使う。
+##
+## positions（高さ込み）ではなくこちらを持つ必要がある。positions は
+## height_at() を通して作られるため、height_at() がそれを参照すると
+## 循環する。水平配置はばね緩和だけで決まり高さに依存しないので、
+## _relax_positions() の結果をそのまま覚えておけば循環しない。
+var _flat_positions: Dictionary = {}
+
 
 func _init() -> void:
 	_build()
@@ -414,7 +454,10 @@ func _build() -> void:
 	# 高さ（height_at()）は _basin_radius に依存するため、まず水平面
 	# （X-Z）の配置をばね緩和で決め、その広がりから空間定数を算出してから
 	# 高さ込みの最終座標を確定させる、という順序を守る必要がある。
+	# height_at() は街道の平地化で _flat_positions も見るので、
+	# _compute_positions() より先に代入しておくこと。
 	var flat_positions: Dictionary = _relax_positions()
+	_flat_positions = flat_positions
 	_compute_scale(flat_positions)
 	_compute_positions(flat_positions)
 	_build_environment()
@@ -565,12 +608,93 @@ func _compute_positions(flat_positions: Dictionary) -> void:
 ## 接地するため、格子へ丸める処理をここに入れてはいけない
 ## （描画メッシュとの整合が要る場合は terrain_mesh_height_at() を使う）。
 func height_at(x: float, z: float) -> float:
-	var h: float = _terrain_shape_at(x, z) * TERRAIN_HEIGHT
+	var shape: float = _terrain_shape_at(x, z)
+
+	# 都市と街道の周辺は起伏を押し下げ、街と道が乗る平地を作る。
+	# 0 へ寄せるのではなく、その地点の「なだらかな土地の高さ」
+	# （最も粗いオクターブだけを見た値）へ寄せる。0 に寄せると高地の
+	# 都市が周りから掘り下げられた穴の底に沈むため。
+	var flatten: float = _settlement_flatten_at(x, z)
+	if flatten > 0.0:
+		shape = lerpf(shape, _base_shape_at(x, z), flatten)
+
+	var h: float = shape * TERRAIN_HEIGHT
 	# 中央を掘り下げる。レイヴンスパイアが盆地の底になり、
 	# 外周の王国都市がそれを囲む地形として読める。
 	var distance: float = Vector2(x, z).length()
 	var basin: float = clampf(1.0 - distance / _basin_radius, 0.0, 1.0)
 	return h - basin * basin * BASIN_DEPTH
+
+
+## その地点の「なだらかな土地の高さ」。平地化の寄せ先に使う（0 ではなく
+## これへ寄せることで、高地の都市は高地のまま平らになる）。
+##
+## 寄せ先自体が滑らかでないと平地化にならない。最初は最も粗いオクターブ
+## （_noise.get_noise_2d(x, z)）に FBM_NORMALIZE を掛けた値を使ったが、
+## これは ±1 で飽和するうえ波長10程度で上下するため、都市の足元で
+## -0.00→-0.73→-0.62 と揺れ、そこへ寄せた結果かえって急斜面になった
+## （実測: 都市の最大傾斜64.4度、街道の平均40.4度と、平地化前より悪化）。
+##
+## SETTLEMENT_BASE_SCALE で波長を平地化の及ぶ範囲より十分長く取り、
+## 振幅も抑えて、寄せ先が「その一帯のなだらかな標高」になるようにする。
+const SETTLEMENT_BASE_SCALE: float = 0.28
+const SETTLEMENT_BASE_AMPLITUDE: float = 0.45
+
+func _base_shape_at(x: float, z: float) -> float:
+	return _noise.get_noise_2d(x * SETTLEMENT_BASE_SCALE, z * SETTLEMENT_BASE_SCALE) \
+		* SETTLEMENT_BASE_AMPLITUDE
+
+
+## その地点をどれだけ平らにするか（0〜SETTLEMENT_FLATTEN_STRENGTH）。
+## 都市の周辺と街道沿いで大きくなる。都市と道の両方が近い場所は、
+## 強い方を採る（足し合わせると二重に効いて不自然に深く沈む）。
+##
+## 公開しているのは pulse_scale_at() と同じ理由で、--script の検査から
+## 都市・街道の周辺が実際に平らになっているか直接確かめられるようにするため。
+func settlement_flatten_at(x: float, z: float) -> float:
+	return _settlement_flatten_at(x, z)
+
+
+func _settlement_flatten_at(x: float, z: float) -> float:
+	if _flat_positions.is_empty():
+		return 0.0
+	var point := Vector2(x, z)
+	var strongest: float = 0.0
+
+	for city_id: String in _flat_positions:
+		var distance: float = point.distance_to(_flat_positions[city_id])
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_FLAT_RADIUS, SETTLEMENT_FALLOFF))
+		if strongest >= 1.0:
+			return SETTLEMENT_FLATTEN_STRENGTH
+
+	# 街道。王道に加えて黒ゾーンの道（中心都市へ向かう放射）も含める。
+	for edge: Array in GameData.ROYAL_ROAD_EDGES:
+		if not (_flat_positions.has(edge[0]) and _flat_positions.has(edge[1])):
+			continue
+		var distance: float = _distance_to_segment(
+			point, _flat_positions[edge[0]], _flat_positions[edge[1]])
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_ROAD_FLAT_WIDTH, SETTLEMENT_ROAD_FALLOFF))
+
+	var center: Vector2 = _flat_positions.get(GameData.CAERLEON, Vector2.ZERO)
+	for gate: String in GameData.BLACK_ZONE_GATES:
+		if not _flat_positions.has(gate):
+			continue
+		var distance: float = _distance_to_segment(point, _flat_positions[gate], center)
+		strongest = maxf(strongest, _falloff(
+			distance, SETTLEMENT_ROAD_FLAT_WIDTH, SETTLEMENT_ROAD_FALLOFF))
+
+	return strongest * SETTLEMENT_FLATTEN_STRENGTH
+
+
+## flat_radius までは 1.0、そこから falloff をかけて 0 へ滑らかに落ちる係数。
+## smoothstep なので両端で変化率が0になり、平地と山地の継ぎ目に段差が
+## 出ない（線形だと縁が折れ線として見える）。
+func _falloff(distance: float, flat_radius: float, falloff: float) -> float:
+	if distance <= flat_radius:
+		return 1.0
+	return 1.0 - smoothstep(flat_radius, flat_radius + falloff, distance)
 
 
 ## 起伏の素の形。-1〜1 に正規化した無次元の値を返す（振幅は height_at()
