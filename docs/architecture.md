@@ -15,6 +15,9 @@ game_data.gd — 定数のみ。何にも依存しない葉
     ↑ preload
     ├── market_table.gd — 全都市×全品目の在庫と需要
     ↑ preload             生産量は CITIES の specialty/bonus から導く
+    ├── logistics.gd — 都市間の物流。産地の在庫を消費地へ渡す
+    ↑ preload           _rng は GameSession から参照で受け取る
+    │                   在庫を動かすだけで価格には触らない
     ├── price_table.gd — 全都市×全品目の価格表
     ↑ preload             _rng は GameSession から参照で受け取る
     │                     在庫の掛け率を MarketTable から借りる
@@ -39,7 +42,8 @@ game_data.gd — 定数のみ。何にも依存しない葉
 | ファイル | 持つもの | 持たないもの |
 |---|---|---|
 | `game_data.gd` | 全ての静的定義（品目9・都市6・ランク・島・騎乗・各種係数）と static ヘルパ4つ | 状態。インスタンス化されない |
-| `market_table.gd` | `stock[city][item]` / `demand[city][item]`、日次の補充、在庫の薄さに応じた**価格の掛け率** | 乱数（生産量は決定的）。価格そのもの（掛けるのは PriceTable の仕事） |
+| `market_table.gd` | `stock[city][item]` / `demand[city][item]`、日次の補充、在庫の薄さに応じた**価格の掛け率** | 乱数（生産量は決定的）。価格そのもの（掛けるのは PriceTable の仕事）。**都市間の移動**（運ぶのは Logistics の仕事） |
+| `logistics.gd` | 走行中の隊商と、産地→消費地の定常の交易路。経路探索（王道＋黒ゾーン） | 価格。描画（荷車の見た目は map_view_3d.gd）。在庫の上限（`receive_stock()` が MarketTable 側で頭打ちになる） |
 | `price_table.gd` | `prices[city][item]`（その日の建値）と `reroll()`、在庫を反映した `buy_price()` / `sell_price()` | 乱数源（`_rng` は借り物）。日付の概念。在庫の増減 |
 | `game_session.gd` | 可変状態（下記）とプレイヤーの全行動。ルールの中枢。`to_dict()` / `from_dict()` | UI への参照。autoload への依存。**保存の形式**（JSON かどうかを知らない） |
 | `save_manager.gd` | `user://` への読み書き、版の判定、範囲の丸め | 状態の意味（写し取りは GameSession の担当） |
@@ -90,17 +94,24 @@ preload されるだけで一度も生成されない状態が続いていたた
 ### RNG は単一インスタンスを共有する
 
 `GameSession._init()` が `RandomNumberGenerator` を1つ作り、
-`PriceTable.new(_rng)` へ**参照で**渡す。乱数を消費するのは4箇所:
+`PriceTable.new(_rng)` と `Logistics.new(_rng)` へ**参照で**渡す。
+乱数を消費するのは5箇所:
 
 | 箇所 | 消費 |
 |---|---|
+| `logistics.gd` の隊商の抽選 | 出発1本につき2（行き先の選択と積載量）／日 |
 | `price_table.gd` の価格ゆらぎ | 全都市 × 全品目（`GameData.CITIES.size() * GameData.ITEMS.size()` 回）／日 |
 | `game_session.gd` の襲撃判定 | 黒ゾーン移動1回につき1 |
 | `game_session.gd` の労働者の抽選 | 労働者数 × 2 回／日 |
 | `game_session.gd` の探索判定 | 成功判定に1、成功時はさらに報酬の抽選で最大3 |
 
-**消費の順序は `_advance_day()` が固定している**（価格リロール → メモ記録 → 労働者）。
+**消費の順序は `_advance_day()` が固定している**（在庫の補充 → **物流** →
+価格リロール → メモ記録 → 労働者）。
 この順序を変えると、同じシードでも過去の記録と別の展開になる。
+
+物流が価格リロールの**前**にあるのは、隊商が今日運び込んだ分まで含めた
+在庫でその日の価格を決めるため。着荷が翌日の価格にしか効かないと、
+地図で荷車が着くのを見てから市場を開いても値が動いていない。
 
 副作用として、**島レベルが違うと労働者の消費数が変わり、以降の価格系列がずれる**。
 同じシードでも行動が違えば別の相場になるということで、これは意図した性質。

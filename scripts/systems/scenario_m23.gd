@@ -164,17 +164,31 @@ func _test_balance_guardrails() -> void:
 
 
 func _test_initial_stock_and_demand() -> void:
-	print("--- 初日は在庫・需要とも満杯 ---")
+	print("--- 初日の在庫・需要 ---")
 	# 初日に品切れの都市を引かせない（開始直後に何も買えないのは事故に見える）。
+	#
+	# 「全品目が満杯」では確かめない。物流（logistics.gd）を入れてからは
+	# 輸入品は途中まで減った状態から始まる（満杯で始めると誰も不足せず、
+	# 隊商が数日間1本も出ないため）。産地が満杯であることと、輸入品にも
+	# 買える量があることを別々に見る。
 	var s: GameSession = GameSession.new(23001)
-	var empty_stock: int = 0
+	var empty_local: int = 0
+	var empty_import: int = 0
 	for city_id: String in GameData.CITIES:
 		for item_id: String in GameData.ITEMS:
 			var cap: int = MarketTable.stock_cap(city_id, item_id)
-			if cap > 0 and s.market.stock_of(city_id, item_id) < cap:
-				empty_stock += 1
-	_check(empty_stock == 0, "全都市・全品目が在庫の上限から始まる",
-		"%d 件が満杯でない" % empty_stock)
+			if cap <= 0:
+				continue
+			var on_hand: int = s.market.stock_of(city_id, item_id)
+			if MarketTable.production_of(city_id, item_id) > 0:
+				if on_hand < cap:
+					empty_local += 1
+			elif on_hand <= 0:
+				empty_import += 1
+	_check(empty_local == 0, "産地は在庫の上限から始まる",
+		"%d 件が満杯でない" % empty_local)
+	_check(empty_import == 0, "輸入品も初日から買える量がある",
+		"%d 件が在庫ゼロ" % empty_import)
 
 	# 現在地では、特産が実際に買える量あること。
 	var specialty: String = GameData.CITIES[s.current_city]["specialty"]

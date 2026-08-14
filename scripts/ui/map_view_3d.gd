@@ -430,6 +430,36 @@ const RING_PULSE_PERIOD: float = 2.8
 ## 脈動で半径が変わる割合。控えめに保つ。
 const RING_PULSE_AMOUNT: float = 0.06
 
+## --- 隊商（荷車） ---
+## 街道を進む荷車。物流（logistics.gd）が持つ隊商を地図の上に写したもの。
+## ロジックは logistics.gd にあり、ここは「今どこにいるか」を受け取って
+## 置くだけ（このファイルは在庫や品目の意味を知らない）。
+##
+## 荷車1台の大きさ。都市の柱（CITY_HEIGHT=1.5）より十分小さくして、
+## 都市と見間違えないようにする。道幅（ROAD_WIDTH=0.5）に収まる幅にする。
+const CONVOY_BODY_SIZE := Vector3(0.34, 0.20, 0.46)
+## 荷台に積む荷物の大きさ（品目の色で塗る部分）。荷車の色は品目で変わるので、
+## 何が運ばれているかが地図から読める。
+const CONVOY_CARGO_SIZE := Vector3(0.26, 0.16, 0.30)
+## 車体の色。荷物の色（品目色）と混ざらない中間的な木の色にする。
+const CONVOY_BODY_COLOR := Color(0.28, 0.22, 0.16)
+## 道の上に浮かせる高さ。道の帯（LIFT=0.08）より上に出して、
+## 帯にめり込んで見えないようにする。
+const CONVOY_LIFT: float = 0.14
+
+## 荷車が1日ぶんの区間を進むのにかける秒数。日送りは一瞬で終わるが、
+## 荷車が瞬間移動すると「運ばれている」ようには見えない。実時間で
+## 補間して、地図を見ている間に少しずつ進むようにする。
+##
+## 長すぎると日を送るたびに前日の進みが残って位置がずれていき、短すぎると
+## 瞬間移動に戻る。日送りの間隔（プレイヤーの操作）より十分短くする。
+const CONVOY_TRAVEL_SECONDS: float = 1.6
+
+## 荷車が上下に揺れる幅と周期。街道を進んでいる感じを出すための微妙な動き。
+## 大きくすると地面から浮いて見えるので、CONVOY_LIFT より小さく保つ。
+const CONVOY_BOB_AMOUNT: float = 0.05
+const CONVOY_BOB_PERIOD: float = 0.9
+
 var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
@@ -440,6 +470,17 @@ var _giants: Array[Node3D] = []
 ## 脈動のためにリングを引き直し続けるので、現在地を覚えておく。
 var _ring_city: String = ""
 var _pulse_time: float = 0.0
+
+## 荷車のノード。隊商の通し番号（logistics.id_of()）-> Node3D。
+## 配列の添字ではなく通し番号で持つ理由は logistics.gd の _next_id 参照
+## （到着で配列が詰められるため添字は識別子にならない）。
+var _convoy_nodes: Dictionary = {}
+## 荷車の見た目の進み具合。通し番号 -> {"from","to","shown","target"}。
+## shown を target へ実時間で寄せることで、日送りの瞬間移動を
+## 街道上の移動として見せる（CONVOY_TRAVEL_SECONDS 参照）。
+var _convoy_motion: Dictionary = {}
+## 揺れの位相。全ての荷車で共有する（1台ごとにずらす必要はない）。
+var _convoy_bob_time: float = 0.0
 var _noise: FastNoiseLite
 
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
@@ -1611,14 +1652,38 @@ func _build_selection_ring() -> void:
 	add_child(_selection_ring)
 
 
-## 脈動させる。地図を見ている間ずっと動くので、変化幅は小さく保つ。
+## 脈動させ、荷車を進める。地図を見ている間ずっと動くので、変化幅は小さく保つ。
+##
+## 荷車の更新はリングの有無に依存させないこと。リングの早期 return に
+## 巻き込むと、現在地が未設定の間だけ荷車が止まる。
 func _process(delta: float) -> void:
+	_advance_convoy_motion(delta)
+
 	if _ring_city == "" or not is_instance_valid(_selection_ring):
 		return
 	if not _selection_ring.visible:
 		return
 	_pulse_time += delta
 	_redraw_selection_ring(positions[_ring_city], pulse_scale())
+
+
+## 荷車の見た目の進み具合を目標へ寄せ、位置を更新する。
+##
+## 日送りは一瞬で終わるが、荷車が瞬間移動すると「運ばれている」ように
+## 見えない。1日ぶんの区間を CONVOY_TRAVEL_SECONDS かけて詰める。
+func _advance_convoy_motion(delta: float) -> void:
+	if _convoy_nodes.is_empty():
+		return
+	_convoy_bob_time += delta
+
+	var step: float = delta / CONVOY_TRAVEL_SECONDS
+	for id: Variant in _convoy_motion:
+		var motion: Dictionary = _convoy_motion[id]
+		var shown: float = motion["shown"]
+		var target: float = motion["target"]
+		if not is_equal_approx(shown, target):
+			motion["shown"] = move_toward(shown, target, step)
+	_place_convoys()
 
 
 ## 経過時間に対する半径の倍率。1.0 を中心にゆっくり上下する。
@@ -1701,6 +1766,135 @@ func _add_ring(mesh: ImmediateMesh, center: Vector3, radius: float,
 ## 高地の都市では輪もそのぶん高くなる。
 func ring_height(center: Vector3) -> float:
 	return height_at(center.x, center.z) + RING_LIFT
+
+
+# --- 隊商（荷車） ---
+#
+# 街道を進む荷車。logistics.gd が持つ隊商を地図に写す。
+#
+# このファイルは在庫や品目の意味を知らない。sync_convoys() が受け取るのは
+# 「通し番号・区間の両端・その区間内の進み・色」だけで、なぜその荷車が
+# 走っているかは物流の側にある（UI 層はルールを持たない、という既存の分担）。
+
+## 走らせる荷車を今の隊商の一覧に合わせる。
+##
+## 引数は隊商1本ぶんの辞書の配列で、キーは id / from / to / t / color。
+## map_panel が logistics.gd から組み立てて渡す（この 3D 層が
+## GameSession を直接読まないのは、他のパネルと同じ分担にするため）。
+##
+## 消えた隊商（到着したもの）のノードは取り除き、新しく現れたものには
+## ノードを作る。既にあるものは目標の位置だけ更新し、実際の移動は
+## _process() が実時間で補間する。
+func sync_convoys(convoys: Array[Dictionary]) -> void:
+	var seen: Dictionary = {}
+
+	for convoy: Dictionary in convoys:
+		var id: int = convoy["id"]
+		seen[id] = true
+		if not _convoy_nodes.has(id):
+			_convoy_nodes[id] = _make_convoy_node(convoy["color"])
+			add_child(_convoy_nodes[id])
+			# 現れた瞬間から目標位置に置く（出発地から滑り出すと、
+			# 途中まで進んだ隊商が読み込み直後に巻き戻って見える）。
+			_convoy_motion[id] = {
+				"from": convoy["from"], "to": convoy["to"],
+				"shown": float(convoy["t"]), "target": float(convoy["t"]),
+			}
+		else:
+			var motion: Dictionary = _convoy_motion[id]
+			# 区間が変わったら見た目も新しい区間の頭から進ませる。
+			# 前の区間の進み具合を持ち越すと、都市を通過するたびに
+			# 荷車が飛ぶ。
+			if motion["from"] != convoy["from"] or motion["to"] != convoy["to"]:
+				motion["from"] = convoy["from"]
+				motion["to"] = convoy["to"]
+				motion["shown"] = 0.0
+			motion["target"] = float(convoy["t"])
+
+	for id: Variant in _convoy_nodes.keys():
+		if seen.has(id):
+			continue
+		var node: Node3D = _convoy_nodes[id]
+		if is_instance_valid(node):
+			node.queue_free()
+		_convoy_nodes.erase(id)
+		_convoy_motion.erase(id)
+
+	_place_convoys()
+
+
+## 荷車1台のメッシュ。車体（木の色）の上に荷物（品目の色）を積む。
+## 品目の色が付くのは荷物の方だけで、車体は共通の色に保つ
+## （全体を品目色で塗ると、色の薄い品目の荷車が地形に溶けて見えなくなる）。
+func _make_convoy_node(cargo_color: Color) -> Node3D:
+	var container := Node3D.new()
+	container.name = "Convoy"
+
+	var mesh := ArrayMesh.new()
+	var body := BoxMesh.new()
+	body.size = CONVOY_BODY_SIZE
+	_append_primitive_surface(mesh, body,
+		Vector3(0.0, CONVOY_BODY_SIZE.y * 0.5, 0.0), CONVOY_BODY_COLOR)
+
+	var cargo := BoxMesh.new()
+	cargo.size = CONVOY_CARGO_SIZE
+	_append_primitive_surface(mesh, cargo,
+		Vector3(0.0, CONVOY_BODY_SIZE.y + CONVOY_CARGO_SIZE.y * 0.5, 0.0), cargo_color)
+
+	var instance := MeshInstance3D.new()
+	instance.name = "Cart"
+	instance.mesh = mesh
+	container.add_child(instance)
+	return container
+
+
+## 全ての荷車を、今の見た目の進み具合に応じて街道の上へ置く。
+func _place_convoys() -> void:
+	for id: Variant in _convoy_nodes:
+		var node: Node3D = _convoy_nodes[id]
+		if not is_instance_valid(node):
+			continue
+		var motion: Dictionary = _convoy_motion[id]
+		node.transform = convoy_transform_at(
+			motion["from"], motion["to"], motion["shown"], _convoy_bob_time)
+
+
+## 区間 from_city -> to_city の t（0〜1）の地点に置く荷車の姿勢。
+##
+## 公開しているのは pulse_scale_at() と同じ理由で、--script の検査から
+## 荷車が街道の上（都市の間、地面の高さ）に乗っているか直接確かめられる
+## ようにするため。bob は揺れの位相で、0 を渡せば揺れ無しの位置になる。
+func convoy_transform_at(from_city: String, to_city: String, t: float,
+		bob: float = 0.0) -> Transform3D:
+	if not positions.has(from_city) or not positions.has(to_city):
+		return Transform3D.IDENTITY
+
+	var a: Vector3 = positions[from_city]
+	var b: Vector3 = positions[to_city]
+	var clamped: float = clampf(t, 0.0, 1.0)
+	var x: float = lerpf(a.x, b.x, clamped)
+	var z: float = lerpf(a.z, b.z, clamped)
+
+	# 高さは両端の補間ではなく地形から引き直す。直線で結ぶと、
+	# 起伏のある区間で荷車が地面にめり込む・浮く（道の帯が
+	# height_at() をなぞっているのと同じ理由）。
+	var y: float = height_at(x, z) + CONVOY_LIFT
+	y += sin(TAU * bob / CONVOY_BOB_PERIOD) * CONVOY_BOB_AMOUNT
+
+	var origin := Vector3(x, y, z)
+	var basis := Basis.IDENTITY
+	# 進行方向へ向ける。真上から見ることが多いので、向きが揃っていないと
+	# 荷車が横滑りしているように見える。
+	var direction := Vector2(b.x - a.x, b.z - a.z)
+	if direction.length() > 0.001:
+		basis = Basis(Vector3.UP, atan2(direction.x, direction.y))
+	return Transform3D(basis, origin)
+
+
+## 走っている荷車の台数。検査が「隊商の数だけノードがある」ことを
+## 確かめるのに使う。
+func convoy_node_count() -> int:
+	return _convoy_nodes.size()
 
 
 func _build_light() -> void:
