@@ -262,6 +262,15 @@ func _test_prices_preserved() -> void:
 			changed += 1
 	_check(changed == 0, "復元直後は当日の相場のまま", "%d 項目が違う" % changed)
 
+	# 相場が丸ごと揃っているセーブでは、復元は乱数を1度も引かない。
+	# state が動いていたら PriceTable.from_dict() が余計に reroll() している
+	# （ロード後の展開が保存時とずれるが、相場の値だけを見ていても気づけない）。
+	var saved_state: String = str(original.to_dict()["rng"]["state"])
+	var restored_state: String = str(restored.to_dict()["rng"]["state"])
+	_check(restored_state == saved_state,
+		"揃ったセーブの復元は乱数を消費しない",
+		"保存 %s / 復元後 %s" % [saved_state, restored_state])
+
 	# 1日進めれば相場は動く（凍りついていない）。
 	restored.rest()
 	var moved: int = 0
@@ -270,6 +279,33 @@ func _test_prices_preserved() -> void:
 		if restored.prices.get_price(parts[0], parts[1]) != today[key]:
 			moved += 1
 	_check(moved > 0, "復元後も1日進めば相場が動く", "1項目も動かない")
+
+	# 手で編集された壊れたセーブ（相場が辞書でない）。読めない値で落ちず、
+	# 欠けたセーブとまったく同じ「1度だけ引き直す」経路に落ちること。
+	#
+	# 断り書き: この検査は PriceTable 側の型チェックの有無を区別できない。
+	# 型を確かめずに .has() を呼ぶ実装でも、エラーの戻り値 null が結局は
+	# 同じ引き直しに落ちるため通ってしまう（実測済み。SCRIPT ERROR は出るが
+	# シナリオは止まらず、状態も一致する）。ここが守るのは「壊れたセーブでも
+	# 遊べる状態に戻り、乱数を余計に消費しない」ことまで。エラーを出さずに
+	# 戻ることは目視か GDScript 側の仕組みでしか確かめられない。
+	var broken: Dictionary = original.to_dict()
+	broken["prices"] = broken["prices"].duplicate(true)
+	broken["prices"][GameData.CITIES.keys()[0]] = "壊れた値"
+	var repaired: GameSession = _restore_from(broken)
+
+	var missing: Dictionary = original.to_dict()
+	missing["prices"] = missing["prices"].duplicate(true)
+	missing["prices"].erase(GameData.CITIES.keys()[0])
+	var refilled: GameSession = _restore_from(missing)
+
+	var repaired_state: String = str(repaired.to_dict()["rng"]["state"])
+	var refilled_state: String = str(refilled.to_dict()["rng"]["state"])
+	_check(repaired_state == refilled_state,
+		"相場が壊れたセーブは欠けたセーブと同じく1度だけ引き直す",
+		"壊れ %s / 欠け %s" % [repaired_state, refilled_state])
+	_check(repaired.prices.prices == refilled.prices.prices,
+		"引き直した相場が欠けたセーブの場合と一致する", "違う相場になった")
 
 
 ## 欠けたキーは既定値のまま残る。

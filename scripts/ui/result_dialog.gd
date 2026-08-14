@@ -67,9 +67,7 @@ func _populate() -> void:
 
 	if not is_instance_valid(_breakdown):
 		return
-	for child: Node in _breakdown.get_children():
-		_breakdown.remove_child(child)
-		child.queue_free()
+	UiUtil.clear_children(_breakdown)
 
 	var cargo_value: int = _stock_value(_session.cargo)
 	var warehouse_value: int = _stock_value(_session.warehouse)
@@ -114,7 +112,10 @@ func _add_row(label_text: String, value_text: String) -> void:
 	var name_label := Label.new()
 	name_label.text = label_text
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_color_override("font_color", Color(0.65, 0.65, 0.7))
+	# 内訳の項目名は製作所の見出しと同じ「添え物の文字」なので TEXT_DIM に寄せる。
+	# 以前は生の Color(0.65, 0.65, 0.7) だった（どの定数とも一致しない中間色で、
+	# 意図した色というより書き置きだったと判断した）。
+	name_label.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
 	row.add_child(name_label)
 
 	var value_label := Label.new()

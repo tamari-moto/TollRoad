@@ -16,7 +16,7 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 ## このシナリオ専用のセーブ先。SAVE_PATH は使わない（プレイヤーの
 ## セーブを消してしまうため）。最後に削除する。
-const TEST_SAVE_PATH: String = "user://scenario_m23_save.json"
+const TEST_PATH: String = "user://scenario_m23_save.json"
 
 
 func _init() -> void:
@@ -386,8 +386,8 @@ func _test_save_round_trip() -> void:
 		str(restored.market.stock_of(s.current_city, item_id)))
 
 	# ファイル経由でも往復する。
-	_check(SaveManager.save_game(s, TEST_SAVE_PATH), "保存できる", "失敗")
-	var loaded: GameSession = SaveManager.load_game(TEST_SAVE_PATH)
+	_check(SaveManager.save_game(s, TEST_PATH), "保存できる", "失敗")
+	var loaded: GameSession = SaveManager.load_game(TEST_PATH)
 	_check(loaded != null, "読み込める", SaveManager.last_error())
 	if loaded != null:
 		_check(loaded.market.stock_of(s.current_city, item_id)
@@ -416,8 +416,8 @@ func _test_save_round_trip() -> void:
 		"欠けた在庫は全体を作り直す",
 		str(broken_session.market.stock_of(s.current_city, item_id)))
 
-	SaveManager.delete_save(TEST_SAVE_PATH)
-	_check(not SaveManager.has_save(TEST_SAVE_PATH), "検査用のセーブを消した", "残っている")
+	SaveManager.delete_save(TEST_PATH)
+	_check(not SaveManager.has_save(TEST_PATH), "検査用のセーブを消した", "残っている")
 
 
 func _test_market_panel_shows_supply() -> void:

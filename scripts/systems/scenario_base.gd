@@ -21,6 +21,12 @@ var _spawned: Array[Node] = []
 
 
 ## 条件が偽なら失敗を1件数え、実際の値を添えて出力する。
+##
+## **この print の書式を変えないこと。** scenario_all.gd は別プロセスで動かす
+## シナリオ（AWAIT_SCENARIOS）の結果を、子の出力に含まれる "  OK   " と
+## "  FAIL " の**個数を数えて**集計している（子は _failures を返せないため）。
+## 先頭の空白の数まで一致している必要があり、整形すると該当シナリオの件数が
+## 黙って 0 になる。**落ちるのではなく「全部合格」に見える**ので気づけない。
 func _check(condition: bool, description: String, actual: String) -> void:
 	_checks += 1
 	if condition:

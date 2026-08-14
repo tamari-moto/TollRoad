@@ -38,42 +38,42 @@ func _test_display_settings() -> void:
 
 func _test_scene_files_load() -> void:
 	print("--- シーンの読み込み ---")
-	var main_scene: PackedScene = load("res://scenes/main/Main.tscn")
-	_check(main_scene != null, "Main.tscn が読み込める", "失敗")
-	var hud_scene: PackedScene = load("res://scenes/ui/HUD.tscn")
-	_check(hud_scene != null, "HUD.tscn が読み込める", "失敗")
-
-	if hud_scene == null:
-		return
+	_check(load("res://scenes/main/Main.tscn") != null, "Main.tscn が読み込める", "失敗")
+	_check(load("res://scenes/ui/HUD.tscn") != null, "HUD.tscn が読み込める", "失敗")
 
 	# 実際にノードを構築できるか（書式ミスはここで露見する）。
-	var hud: Node = hud_scene.instantiate()
+	# _spawn() 経由にすると、途中で検査が失敗して抜けても _finish() が
+	# 取りこぼしを回収する（直に instantiate すると free に届かない経路ができる）。
+	var hud: Node = _spawn("res://scenes/ui/HUD.tscn")
 	_check(hud != null, "HUD をインスタンス化できる", "失敗")
-	_check(hud.has_method("bind"), "HUD に bind がある", "ない")
+	if hud != null:
+		_check(hud.has_method("bind"), "HUD に bind がある", "ない")
 
-	# unique_name_in_owner のノードが引ける（%記法の依存先）。
-	for node_name: String in ["SilverLabel", "CityLabel", "CargoLabel"]:
-		_check(hud.get_node_or_null("%" + node_name) != null,
-			"HUD の %%%s が引ける" % node_name, "見つからない")
-	hud.free()
+		# unique_name_in_owner のノードが引ける（%記法の依存先）。
+		# 日数系（DayLabel / DayBar）は GoalPanel へ移したのでここには無い。
+		for node_name: String in ["SilverLabel", "CityLabel", "CargoLabel"]:
+			_check(hud.get_node_or_null("%" + node_name) != null,
+				"HUD の %%%s が引ける" % node_name, "見つからない")
+		_despawn(hud)
 
-	var goal_scene: PackedScene = load("res://scenes/ui/GoalPanel.tscn")
-	_check(goal_scene != null, "GoalPanel.tscn が読み込める", "失敗")
-	if goal_scene != null:
-		var goal_panel: Node = goal_scene.instantiate()
+	_check(load("res://scenes/ui/GoalPanel.tscn") != null, "GoalPanel.tscn が読み込める", "失敗")
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	_check(goal_panel != null, "GoalPanel をインスタンス化できる", "失敗")
+	if goal_panel != null:
 		for node_name: String in ["NetWorthLabel", "GoalBar", "DayLabel", "DayBar"]:
 			_check(goal_panel.get_node_or_null("%" + node_name) != null,
 				"GoalPanel の %%%s が引ける" % node_name, "見つからない")
-		goal_panel.free()
+		_despawn(goal_panel)
 
 	# Main.tscn も構築できること。ただし _ready は autoload を参照するため
-	# 走らせず、ツリー構造だけを検査する。
-	var main: Node = main_scene.instantiate()
+	# 走らせず、ツリー構造だけを検査する（root へ入れても _ready は走らない。
+	# 実測で is_node_ready() は false のまま）。
+	var main: Node = _spawn("res://scenes/main/Main.tscn")
 	_check(main != null, "Main をインスタンス化できる", "失敗")
 	if main != null:
 		for path: String in ["%HUD", "%GoalPanel", "%LogScroll", "%LogList", "%RestButton", "%StatusLabel"]:
 			_check(main.get_node_or_null(path) != null, "Main の %s が引ける" % path, "見つからない")
-		main.free()
+		_despawn(main)
 
 
 func _test_hud_binding() -> void:
@@ -115,13 +115,11 @@ func _test_hud_binding() -> void:
 ## 目標到達度と残り日数は GoalPanel（HUD とは別パネル）が担う。
 func _test_goal_panel_binding() -> void:
 	print("--- GoalPanel がセッションを反映する ---")
-	var goal_scene: PackedScene = load("res://scenes/ui/GoalPanel.tscn")
-	if goal_scene == null:
+	# @onready を解決するためツリーに入れる（_spawn がツリー投入まで行う）。
+	var goal_panel: Node = _spawn("res://scenes/ui/GoalPanel.tscn")
+	if goal_panel == null:
 		_check(false, "GoalPanel.tscn が必要", "読み込めない")
 		return
-
-	var goal_panel: Node = goal_scene.instantiate()
-	root.add_child(goal_panel)
 
 	var session: GameSession = GameSession.new(5002)
 	goal_panel.bind(session)
@@ -148,8 +146,7 @@ func _test_goal_panel_binding() -> void:
 		"終了後は残り0日・60日目の曜日と表示する", day_label.text)
 	_check(day_bar.value == GameData.TOTAL_DAYS, "終了後も日数バーは総日数で頭打ち", str(day_bar.value))
 
-	root.remove_child(goal_panel)
-	goal_panel.free()
+	_despawn(goal_panel)
 
 
 ## 曜日は7日周期。将来の曜日連動要素（市場イベントなど）が同じ関数を

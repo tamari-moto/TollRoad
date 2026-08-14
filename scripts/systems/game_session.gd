@@ -9,6 +9,24 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const PriceTable = preload("res://scripts/systems/price_table.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
 
+## 日誌の行の種別。UI が音と色を選ぶのに使う。
+##
+## セーブには入れない（log_entries は文字列の配列のまま）。復元した行は
+## 種別を持たないため、UI 側は kind_for_message() で本文から引き直す。
+## 生きている行はここで種別が付くので、本文を書き換えても音は変わらない。
+enum LogKind {
+	NONE,             ## 音を鳴らさない行（60日の終了、セーブの失敗など）
+	TRADE,            ## 売買。音はボタン側で鳴らすため日誌では鳴らさない
+	CRAFT,            ## 製作
+	UPGRADE,          ## 島の拡張・騎乗の購入
+	TRAVEL,           ## 移動
+	RAID,             ## 襲撃。積荷の全損
+	EXPLORE,          ## 探索（成功・失敗を問わない）
+	DAY,              ## 休息・倉庫からの引き取り
+	COMPANION_JOINED, ## 同行者の加入・切り替え
+	COMPANION_LEFT,   ## 同行者との別れ
+}
+
 signal day_advanced(day: int)
 signal silver_changed(amount: int)
 signal cargo_changed()
@@ -18,7 +36,12 @@ signal warehouse_changed()
 signal island_upgraded(level: int)
 signal mount_changed(mount_id: String)
 signal companion_changed(companion_id: String)
-signal logged(message: String)
+## 日誌に1行増えた。kind は行の種別（LogKind）で、UI が音と色を選ぶのに使う。
+##
+## 本文の日本語から種別を当てさせない。文面を書き換えるたびに音と色が
+## 黙って変わる（鳴らなくなっても検査は通ってしまう）ため、出す側が種別を
+## 添える形にしてある。
+signal logged(message: String, kind: int)
 
 var day: int = 1
 var silver: int = GameData.INITIAL_SILVER
@@ -176,7 +199,7 @@ func buy(item_id: String, count: int) -> bool:
 	market.consume_stock(current_city, item_id, count)
 	_log("%s で %s を %d 個購入（単価 %d、計 %d、在庫の残り %d）" % [
 		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
-		count, price, total, stock_count(item_id)])
+		count, price, total, stock_count(item_id)], LogKind.TRADE)
 	silver_changed.emit(silver)
 	cargo_changed.emit()
 	market_changed.emit()
@@ -197,7 +220,7 @@ func sell(item_id: String, count: int) -> bool:
 	market.consume_demand(current_city, item_id, count)
 	_log("%s で %s を %d 個売却（単価 %d、総額 %d、税 %d、手取り %d、需要の残り %d）" % [
 		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
-		count, price, gross, tax, net, demand_count(item_id)])
+		count, price, gross, tax, net, demand_count(item_id)], LogKind.TRADE)
 	silver_changed.emit(silver)
 	cargo_changed.emit()
 	market_changed.emit()
@@ -263,7 +286,7 @@ func craft(item_id: String, count: int) -> bool:
 		bonus_note = "、生産ボーナスで %s を %d 個還元" % [GameData.ITEMS[material]["name"], saved]
 	_log("%s で %s を %d 個製作（%s %d 個消費、手数料 %d%s）" % [
 		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"], count,
-		GameData.ITEMS[material]["name"], material_used, fee, bonus_note])
+		GameData.ITEMS[material]["name"], material_used, fee, bonus_note], LogKind.CRAFT)
 
 	silver_changed.emit(silver)
 	cargo_changed.emit()
@@ -281,10 +304,11 @@ func set_companion(companion_id: String) -> bool:
 		return false
 	active_companion = companion_id
 	if companion_id == GameData.COMPANION_NONE:
-		_log("同行者と別れ、一人旅に戻った。")
+		_log("同行者と別れ、一人旅に戻った。", LogKind.COMPANION_LEFT)
 	else:
 		_log("%s が同行することになった（%s）。" % [
-			GameData.COMPANIONS[companion_id]["name"], GameData.COMPANIONS[companion_id]["desc"]])
+			GameData.COMPANIONS[companion_id]["name"], GameData.COMPANIONS[companion_id]["desc"]],
+			LogKind.COMPANION_JOINED)
 	companion_changed.emit(active_companion)
 	return true
 
@@ -426,7 +450,7 @@ func move_to(destination: String) -> bool:
 	var path: Array[String] = _shortest_path(current_city, destination)
 	var route: Dictionary = route_to(destination)
 	silver -= route["cost"]
-	_log("%s へ移動（%d日、費用 %d）" % [GameData.CITIES[destination]["name"], route["days"], route["cost"]])
+	_log("%s へ移動（%d日、費用 %d）" % [GameData.CITIES[destination]["name"], route["days"], route["cost"]], LogKind.TRAVEL)
 	silver_changed.emit(silver)
 
 	var raided_this_trip: bool = false
@@ -444,7 +468,7 @@ func move_to(destination: String) -> bool:
 
 	if raided_this_trip:
 		cargo.clear()
-		_log("襲撃された。積荷を全て失った。")
+		_log("襲撃された。積荷を全て失った。", LogKind.RAID)
 		cargo_changed.emit()
 	return true
 
@@ -506,7 +530,7 @@ func _apply_explore_success(is_caerleon: bool) -> void:
 	# 都市ごとに異なる explore_flavor だけに頼ると一部の都市で拾えなくなる。
 	_log("%s で探索成功（%s）。シルバー %d と%s獲得。%d日間、島の労働者の産出が増える" % [
 		GameData.CITIES[current_city]["name"], GameData.CITIES[current_city]["explore_flavor"],
-		silver_gain, reward_note, GameData.EXPLORE_BOOST_DAYS])
+		silver_gain, reward_note, GameData.EXPLORE_BOOST_DAYS], LogKind.EXPLORE)
 	silver_changed.emit(silver)
 	cargo_changed.emit()
 
@@ -519,10 +543,10 @@ func _apply_explore_failure() -> void:
 			lost = true
 	var flavor: String = GameData.CITIES[current_city]["explore_flavor"]
 	if lost:
-		_log("%s で探索失敗（%s）。積荷の戦闘装備を失った。" % [GameData.CITIES[current_city]["name"], flavor])
+		_log("%s で探索失敗（%s）。積荷の戦闘装備を失った。" % [GameData.CITIES[current_city]["name"], flavor], LogKind.EXPLORE)
 		cargo_changed.emit()
 	else:
-		_log("%s で探索失敗（%s）。" % [GameData.CITIES[current_city]["name"], flavor])
+		_log("%s で探索失敗（%s）。" % [GameData.CITIES[current_city]["name"], flavor], LogKind.EXPLORE)
 
 
 ## 積載の空きまで item_id を count 個だけ積む。積み切れない分はシルバーに換算する。
@@ -580,7 +604,7 @@ func upgrade_island() -> bool:
 		return false
 	silver -= cost
 	island_level += 1
-	_log("島をレベル%d へ拡張した（費用 %d、労働者 %d 人）" % [island_level, cost, worker_count()])
+	_log("島をレベル%d へ拡張した（費用 %d、労働者 %d 人）" % [island_level, cost, worker_count()], LogKind.UPGRADE)
 	silver_changed.emit(silver)
 	island_upgraded.emit(island_level)
 	return true
@@ -632,7 +656,7 @@ func withdraw_from_warehouse() -> bool:
 			warehouse.erase(item_id)
 		moved += take
 
-	_log("島倉庫から %d 個を引き取った（倉庫の残り %d 個）" % [moved, warehouse_total()])
+	_log("島倉庫から %d 個を引き取った（倉庫の残り %d 個）" % [moved, warehouse_total()], LogKind.DAY)
 	cargo_changed.emit()
 	warehouse_changed.emit()
 	_advance_day()
@@ -651,7 +675,7 @@ func buy_mount(mount_id: String) -> bool:
 	silver -= cost
 	mount = mount_id
 	_log("%s を購入した（費用 %d、積載 %d）" % [
-		GameData.MOUNTS[mount_id]["name"], cost, capacity()])
+		GameData.MOUNTS[mount_id]["name"], cost, capacity()], LogKind.UPGRADE)
 	silver_changed.emit(silver)
 	mount_changed.emit(mount_id)
 	return true
@@ -663,7 +687,7 @@ func buy_mount(mount_id: String) -> bool:
 func rest() -> bool:
 	if is_over():
 		return false
-	_log("休息した。")
+	_log("休息した。", LogKind.DAY)
 	_advance_day()
 	return true
 
@@ -816,7 +840,8 @@ func from_dict(data: Dictionary) -> void:
 		market.reset()
 
 	if data.has("prices"):
-		prices.prices = _restore_prices(data["prices"])
+		# 検証と引き直しの判断は PriceTable に委ねる（market の from_dict と対称）。
+		prices.from_dict(data["prices"])
 	else:
 		# 相場が無ければ引き直す。get_price() が落ちる状態にはしない。
 		prices.reroll()
@@ -855,27 +880,6 @@ func _restore_memo(source: Dictionary) -> Dictionary:
 	return out
 
 
-## 保存された相場。今の GameData と噛み合わなければ引き直す。
-##
-## 一部だけ埋めると、その品目だけ乱数系列の外の値になる。都市や品目を
-## 足した後の古いセーブでは、丸ごと作り直す方が筋が通る（1日ぶん相場が
-## 変わるが、決定性は保たれる）。
-func _restore_prices(source: Dictionary) -> Dictionary:
-	var out: Dictionary = {}
-	for city_id: String in GameData.CITIES:
-		if not source.has(city_id):
-			prices.reroll()
-			return prices.prices
-		var city_prices: Dictionary = {}
-		for item_id: String in GameData.ITEMS:
-			if not source[city_id].has(item_id):
-				prices.reroll()
-				return prices.prices
-			city_prices[item_id] = int(source[city_id][item_id])
-		out[city_id] = city_prices
-	return out
-
-
 # --- 内部 ---
 
 func _reduce_cargo(item_id: String, count: int) -> void:
@@ -886,7 +890,7 @@ func _reduce_cargo(item_id: String, count: int) -> void:
 		cargo.erase(item_id)
 
 
-func _log(message: String) -> void:
+func _log(message: String, kind: LogKind = LogKind.NONE) -> void:
 	var entry: String = "[%d日目] %s" % [day, message]
 	log_entries.append(entry)
-	logged.emit(entry)
+	logged.emit(entry, kind)
