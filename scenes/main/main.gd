@@ -436,6 +436,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	if event.is_action("tr_toon_toggle"):
+		_toggle_toon()
+		get_viewport().set_input_as_handled()
+		return
+
 
 func _on_rest_pressed() -> void:
 	_session.rest()
@@ -462,6 +467,22 @@ func _sync_giants_visibility() -> void:
 	var world: MapView3D = _map_panel.world()
 	if world != null:
 		world.set_giants_visible(_session.is_over())
+
+
+## 大陸図のトゥーン表示を切り替える（F4）。絵作りを見比べるためのもので、
+## ゲームの状態には触らない。デバッグパネル（F3）に入れないのは、
+## あちらが 1080x720 で地図をほぼ覆ってしまい、切り替えた結果が
+## 見えないため。航海日誌に状態を出して、今どちらを見ているかを残す。
+func _toggle_toon() -> void:
+	if not is_instance_valid(_map_panel):
+		return
+	var world: MapView3D = _map_panel.world()
+	if world == null:
+		return
+	world.toggle_toon()
+	# 効果音は鳴らさない（絵を見比べている最中に鳴っても意味が無い）。
+	_append_log("大陸図のトゥーン表示: %s" % ("入" if world.is_toon_enabled() else "切"),
+		-1, false)
 
 
 func _refresh_status() -> void:

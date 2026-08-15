@@ -75,7 +75,22 @@ const GLOW_HDR_THRESHOLD: float = 1.0
 ## グローが実際には出ていなかった（実機で確認）。輝度×この値が閾値を確実に
 ## 超えるよう引き上げる。閾値側を下げる手もあるが、空・フォグの色（輝度0.27
 ## 程度）に波及しない保証がその都度必要になるため、発光源側だけを直す方を選んだ。
-const CITY_EMISSION_ENERGY: float = 3.0
+##
+## **ただし 3.0 は行き過ぎだった。** 輝度 0.749 × 3.0 = 2.25 で、トーンマップ
+## （LINEAR、tonemap_white 1.0）が 1.0 超えを白へクリップするため、
+## グロウを一切通さなくても柱の面そのものが純白に潰れていた。近距離で柱が
+## 画面を大きく占めると白いベタ面になり形が読めない（実機で確認。遠景では
+## 小さいので「光っている点」として成立していた）。
+##
+## FILMIC トーンマップも試したが直らず、地形まで明るくなる副作用の方が
+## 大きかった（_build_environment() のコメント参照）。発光側で直す。
+##
+## 1.6 は輝度 1.20。閾値 1.0 は確実に超えるのでグロウは出続け（旧値0.35 の
+## 「一度も超えない」という失敗の逆行にはならない）、クリップ量は
+## 1.25 → 0.20 と 1/6 に減る。**この値を動かすときは、閾値を超えること
+## （下限 1.34 = 1.0/0.749）と、クリップで形が潰れないこと（上限 2.0 前後）の
+## 両方を満たすか確かめること。**
+const CITY_EMISSION_ENERGY: float = 1.6
 
 ## 配置全体の半径（3D 空間の単位）。緩和後の実際の座標の広がりから
 ## _compute_scale() が算出する（環のような閉形式の計算はしない）。
@@ -94,6 +109,16 @@ const TERRAIN_MAX_QUAD_SIZE: float = 0.8
 ## 地形の分割数。_compute_scale() が _terrain_size と TERRAIN_MAX_QUAD_SIZE
 ## から算出する。
 var _terrain_subdivisions: int = 64
+
+## 地形の頂点法線を隣へ広げて均す回数（_smooth_normals() 参照）。
+## 0 で平滑化なし＝面の外積を合算しただけの法線に戻る。
+##
+## 格子（1マス0.798）が縞として見えるのを消すために入れた。トゥーンで
+## N・L を段に切ると、1マスごとの法線差が段の境界として格子に沿って出る。
+## **頂点は動かさないので height_at() とのズレは増えない**（草木の接地は
+## 影響を受けない）。増やすほど縞は消えるが、fBm 3オクターブで作った
+## 稜線と谷の陰影まで均されて平板になるので、効く最小限で止めること。
+const NORMAL_SMOOTHING_ITERATIONS: int = 2
 
 ## 起伏の高さ。fBm の合成後（-1〜1 に正規化済み）に掛ける振幅なので、
 ## オクターブを足しても地形全体の高さの幅はこの値のまま変わらない。
@@ -563,6 +588,149 @@ const CONVOY_TRAVEL_SECONDS: float = 1.6
 const CONVOY_BOB_AMOUNT: float = 0.05
 const CONVOY_BOB_PERIOD: float = 0.9
 
+## --- トゥーン（試作。シェーダーは書かない） ---
+## バンド陰影は StandardMaterial3D の diffuse_mode/specular_mode、輪郭線は
+## 裏面を法線方向へ押し出した next_pass（inverted hull）で作る。どちらも
+## 標準プロパティだけで済むので、既存のマテリアルの型・shading_mode・
+## albedo_color は変わらない — ShaderMaterial へ差し替えると
+## scenario_m24（巨人）と scenario_m17（リング）が型で落ちる。
+##
+## 既定を false にして現状の絵を基準として残す。暗い画面（全ての色が輝度
+## 0.38 以下）では差分が微妙で、切り替えずに覚えで比べても当てにならない。
+## F4（tr_toon_toggle）で同じカメラ位置のまま切り替えて見比べる。
+const TOON_ENABLED_BY_DEFAULT: bool = false
+
+## 方向光の向きと強さ（トゥーン切のとき＝これまでの値）。トゥーン入の値と
+## 並べて読めるよう定数にした。斜め上から当てて起伏に陰影を付ける向き。
+const SUN_PITCH_DEGREES: float = -52.0
+const SUN_YAW_DEGREES: float = -38.0
+const SUN_LIGHT_ENERGY: float = 1.1
+
+## --- 影 ---
+## どちらもエンジンの既定値をそのまま使っていて、この地図のスケール
+## （地形の一辺185・カメラは MAX_DISTANCE 34 までしか引けない）に対して
+## 決め直されていなかった。トゥーンとは独立に効く（入切のどちらでも同じ）。
+##
+## 既定の 100.0 は、カメラが決して到達しない 66 ワールド単位ぶんにも
+## 影マップの解像度を配ってしまう。4段のカスケードは max_distance に対する
+## 割合（0.1/0.2/0.5/1.0）で切られるので、既定では見える範囲(34)を
+## 担当するのが段3、1テクセル 0.0244 だった。40.0 まで詰めると担当が段4に
+## 移り 0.0195 と2割細かくなる（実測。影マップは 4096）。
+## 34.0 ちょうどにすると画面の縁で影が切れるので、少し余裕を残す。
+const SHADOW_MAX_DISTANCE: float = 40.0
+
+## 既定の 2.0 は**ワールド単位で 2.0**。低木の半径0.15・岩の高さ0.28 に対して
+## 7〜13倍あり、影の判定が本体より大きくずれる（ピーターパン現象＝影が
+## 物体から離れて浮く、接地部分の影が消える）。
+##
+## 必要量の下限は「1テクセルを横切る間の高低差」。遠景の1テクセル 0.0195 に
+## 対し、地形の平均傾斜23.6度（scenario_m27 の実測）で 0.0085、急斜面64度で
+## 0.040。**ただしこれは下限であって、必要量ではない。**
+##
+## アクネに要る量は面の入射角で決まり、1/(N・L) に比例して増える
+## （N・L=0.2 なら垂直入射の5倍、0.1 なら10倍）。
+##
+## **TOON_LIGHT_PITCH_DEGREES を -52° から -16° へ倒したことで、必要量が
+## 跳ね上がった。** 従来の -52° では見える範囲の地形に浅く当たる面
+## （0 < N・L < 0.35）が **0.0%** しか無く、アクネが出ようがなかった。
+## -16° では **68.2%** が浅い入射になる（実測）。_build_light() に長く
+## 「アクネが出ないか要確認」と書かれたまま問題が起きなかったのは、
+## 単に光が高かったからで、対策が効いていたからではない。
+##
+## normal_bias は受光面の傾きに応じて自動で増えるので、浅い入射にはこちらが
+## 主役になる。0.1 では全く足りず実機でアクネが出た。1.0 まで上げる。
+## 既定の 2.0 の半分なので、ピーターパン現象（影が物体から離れて浮く。
+## 低木の半径0.15・岩の高さ0.28 に対して 2.0 は7〜13倍あった）には戻らない。
+##
+## **経緯**: 0.05 で縞が出たためアクネと判断して 0.3 へ上げたが消えず、
+## 調べると地形メッシュの格子（1マス0.798＝画面上11〜31px）だった。
+## そちらは法線の平滑化で解決し（NORMAL_SMOOTHING_ITERATIONS）、
+## バイアスは 0.1 へ下げ戻したが、今度は本物のアクネが残っていた。
+## **見分け方**: アクネは光の当たり方に依存して浅い角度の面にだけ出る。
+## 格子縞は光の向きと無関係に一様に出る。
+const SHADOW_NORMAL_BIAS: float = 1.0
+
+## 深度方向へずらす量。normal_bias と違い面の傾きに追従しないので、
+## 補助として効かせる。エンジン既定は 0.1 で、これまで明示していなかった。
+## 上げすぎると影の開始位置が物体から離れる（ピーターパン側の症状）ので、
+## 主役は normal_bias に持たせ、こちらは控えめに留める。
+const SHADOW_BIAS: float = 0.2
+
+## --- トゥーン時の光 ---
+## DIFFUSE_TOON は N・L の減衰を消すため、素の光のままだと地形が飛ぶ。
+## 実機のスクショで地形が砂色に白飛びし、遠景が霞んでいたのがこれ
+## （地形の albedo は最大でも輝度0.38 なのに画面では0.6〜0.7 あった。
+## 0.38 × (方向光1.1 + 環境光0.6) ≒ 0.65 と一致する）。
+## さらに悪いことに、これは GLOW_HDR_THRESHOLD(1.0) を地形が超えることを
+## 意味する。グロウは**都市の街明かりのために**閾値を超えさせてある仕掛け
+## （CITY_EMISSION_ENERGY のコメント参照）なので、地形まで超えると
+## 街明かり専用のブルームが画面全体に乗る。FOG_DENSITY を下げて解決した
+## 「地形が一面の淡い灰色になる」問題が別経路で戻る。
+##
+## 地形の最大 albedo(0.38) に (方向光 + 環境光) を掛けても閾値1.0 を
+## 超えないことを条件に決める: 0.38 × (0.75 + 0.45) = 0.46 で、
+## 都市の発光（0.66〜0.76 × 3.0）とは2桁違う余裕がある。
+const TOON_LIGHT_ENERGY: float = 0.75
+const TOON_AMBIENT_LIGHT_ENERGY: float = 0.45
+
+## トゥーン時の方向光の仰角。**明るさの補正より、こちらが本題。**
+##
+## 現在の -52° では、カメラで見える範囲の地形頂点5713個のうち
+## **影側（N・L ≤ 0）が0.0%** で、半数が N・L ≥ 0.756 に集まっている（実測）。
+## DIFFUSE_TOON は N・L ≒ 0 付近で段を切るので、地形はまるごと明るい側の
+## 一段に入り、**段の境界が地形の上に存在しない**。明るさをどれだけ補正しても
+## 段は出ず、得られるのは減衰が消えたぶんの明るさだけになる。
+##
+## 仰角を下げて N・L の分布を境界側へ寄せる（実測した影側の割合）:
+##   -52°(現在) 0.0% / -40° 0.6% / -30° 3.0% / -22° 7.5% / -16° 12.9% / -12° 18.2%
+## TERRAIN_BAND_JITTER のときと同じ基準で見る — あちらは
+## 「低地9.1%・高所4.4%しか出ず帯がほぼ見えなかった」ので、1割前後は要る。
+## -8°以下は影が地表の1/4を覆い、夕暮れではなく夜になる。
+const TOON_LIGHT_PITCH_DEGREES: float = -16.0
+
+## 輪郭線の色。地形（輝度0.16〜0.38）の上に乗る対象の縁に出るので、
+## それより十分暗くないと輪郭として読めない。巨人（0.05）と同程度に置く。
+## 都市の柱は発光をやめた（_make_city_part 参照）ので、街明かりの滲みと
+## 輪郭線が喧嘩する心配は無くなった。今も光るのは現在地リングだけ。
+const OUTLINE_COLOR := Color(0.03, 0.03, 0.05)
+
+## 輪郭線の太さ（3D 空間の絶対量）。**画面上の px ではない**ので、
+## カメラ距離（MIN 12 〜 MAX 34）で見かけの太さが約2.8倍変わる。
+## ビューポート高720・FOV 75°（Camera3D の既定。map_panel は fov を
+## 設定していない）での 1単位あたりの px は 39.1 / 21.3 / 13.8。
+##
+## 既定距離(22)での画面上の大きさは 都市の柱32px・木24px に対し、
+## 岩6px・低木5px しかない。当初は「4〜6px の物に読める太さを足すと輪郭では
+## なく黒い塊になる」という理由で木と都市だけに入れていたが、結果として
+## **草木の中で木だけが黒枠を持つ不揃い**になった（実機で確認）。
+## 地面に散らばる草木は一群として見えるものなので、素材ごとに描き方が
+## 変わっている方が目につく。低木・岩も木と同じ扱いに揃える。
+##
+## 塊になるのを避けるため、草木側は都市より細くしてある。既定距離で
+## 都市が約1.1px、草木が約0.85px。ここは実機で見て詰める値で、
+## 太くするほど小さい草木から先に潰れていく。
+##
+## **太さは距離で暴れる。** grow_amount は3D空間の絶対量なので、
+## カメラ距離（MIN 12 〜 MAX 34）で見かけの太さが約2.8倍変わる
+## （1単位あたり 39.1 / 21.3 / 13.8 px）。手前の木の黒枠が太く、奥の木では
+## ほぼ消えるのはこれが原因。画面上で一定にしたいなら vertex() で射影後の
+## スケールを補正するシェーダーが要る。
+const OUTLINE_WIDTH_CITY: float = 0.05
+const OUTLINE_WIDTH_VEGETATION: float = 0.04
+## 輪郭線を付けない対象（地形・街道・荷車）に使う。地形と街道は一枚板／
+## CULL_DISABLED で裏面押し出しがそもそも成立しない。荷車は画面上4pxで、
+## 草木と違って「群れ」を作らないため単体で黒い塊になるだけ。
+const OUTLINE_WIDTH_NONE: float = 0.0
+
+## トゥーンの対象マテリアルに付ける目印。値は輪郭線の太さ。
+## この meta を持つマテリアルだけを set_toon() が塗り替えるので、
+## unshaded の巨人・現在地リングは目印を付けないことで対象外になる。
+const TOON_OUTLINE_META: StringName = &"toon_outline_width"
+## バンド陰影を掛けてよいか。false のマテリアルは輪郭線だけを受け取る。
+const TOON_BAND_META: StringName = &"toon_band"
+
+var _toon_enabled: bool = TOON_ENABLED_BY_DEFAULT
+
 var _terrain: MeshInstance3D
 var _cities: Dictionary = {}
 var _routes: MeshInstance3D
@@ -606,6 +774,12 @@ var positions: Dictionary = {}
 ## 循環する。水平配置はばね緩和だけで決まり高さに依存しないので、
 ## _relax_positions() の結果をそのまま覚えておけば循環しない。
 var _flat_positions: Dictionary = {}
+
+## トゥーンの入切で光と環境光を差し替えるために覚えておく。
+## マテリアルと違って木構造から引き直す形にしないのは、
+## どちらもシーンに1つしかなく、探す意味が無いため。
+var _sun: DirectionalLight3D
+var _environment: Environment
 
 
 ## 都市の形の種を差し替える。_init() が既に街を組んでいるので、種が変われば
@@ -686,6 +860,14 @@ func _build_environment() -> void:
 	environment.fog_light_color = SKY_HORIZON_COLOR
 	environment.fog_density = FOG_DENSITY
 
+	# トーンマップは既定の LINEAR のまま。**FILMIC を試したが白飛びは
+	# 直らず、副作用の方が大きかった**（実機で確認）。1.0 超えの圧縮より
+	# 1.0 未満の中間調を持ち上げる効きが勝り、地形が砂色に明るくなって
+	# 空も持ち上がり、暗い交易地図という雰囲気が薄れた。地形の色が全て
+	# 輝度0.38以下＝1.0 未満に収まっているこの地図では、トーンマップの
+	# カーブは白飛びの対策にならず全体の明度を動かすだけになる。
+	# **白飛びは発光側（CITY_EMISSION_ENERGY）で直すこと。**
+
 	# 都市の柱・現在地リングは自己発光しているので、グロウで街明かりのように滲む。
 	# glow_hdr_threshold はエンジン既定値(1.0)に頼らず明示する。既定が変わると
 	# CITY_EMISSION_ENERGY との関係が黙って崩れるため。
@@ -698,6 +880,8 @@ func _build_environment() -> void:
 	world_environment.name = "Environment"
 	world_environment.environment = environment
 	add_child(world_environment)
+	_environment = environment
+	_apply_toon_lighting()
 
 
 ## 王国都市の水平面(X-Z)配置を、GameData.ROYAL_ROAD_EDGES に沿った決定的な
@@ -988,6 +1172,9 @@ func _build_terrain() -> void:
 	material.vertex_color_use_as_albedo = true
 	material.roughness = 0.95
 	material.metallic = 0.0
+	# 一枚板なので裏面押し出しでは外周にしか線が出ない（稜線には出ない）。
+	# バンド陰影だけ掛ける。
+	_tag_toon_material(material, OUTLINE_WIDTH_NONE)
 	mesh.surface_set_material(0, material)
 
 	_terrain = MeshInstance3D.new()
@@ -1131,7 +1318,55 @@ func _recalculate_normals(arrays: Array) -> void:
 
 	for j: int in normals.size():
 		normals[j] = normals[j].normalized() if normals[j].length() > 0.0 else Vector3.UP
-	arrays[Mesh.ARRAY_NORMAL] = normals
+
+	arrays[Mesh.ARRAY_NORMAL] = _smooth_normals(normals, indices)
+
+
+## 頂点法線を、辺でつながる隣の頂点へ広げて均す（ラプラシアン平滑化）。
+##
+## **頂点は動かさない。** 動かすと height_at() の連続値と描画メッシュが
+## ズレて、草木が地面から浮く・埋まる（TERRAIN_MAX_QUAD_SIZE のコメント参照）。
+## 変えるのは陰影の付き方だけ。
+##
+## 入れた理由は、地形の格子（1マス0.798＝画面上11〜31px）が縞として
+## 見えていたため。面の外積を合算しただけの法線は1マスごとに向きが変わり、
+## トゥーン（DIFFUSE_TOON）が N・L を段に切ると、その差が段の境界として
+## 格子に沿って可視化される。**滑らかな減衰なら見えなかった法線差が、
+## 段にした途端に見えるようになる。**
+##
+## 反復回数で強さが決まる。増やすほど縞は消えるが、fBm 3オクターブで
+## 作った起伏の骨格（稜線と谷）の陰影まで均されて平板になる。
+func _smooth_normals(normals: PackedVector3Array,
+		indices: PackedInt32Array) -> PackedVector3Array:
+	if NORMAL_SMOOTHING_ITERATIONS <= 0:
+		return normals
+
+	# 辺でつながる頂点を1度だけ集める（反復のたびに引き直すと無駄）。
+	var neighbors: Array[PackedInt32Array] = []
+	neighbors.resize(normals.size())
+	for n: int in normals.size():
+		neighbors[n] = PackedInt32Array()
+
+	var i: int = 0
+	while i + 2 < indices.size():
+		for pair: Array in [[0, 1], [1, 2], [2, 0]]:
+			var a: int = indices[i + pair[0]]
+			var b: int = indices[i + pair[1]]
+			neighbors[a].append(b)
+			neighbors[b].append(a)
+		i += 3
+
+	var current: PackedVector3Array = normals
+	for _pass: int in NORMAL_SMOOTHING_ITERATIONS:
+		var smoothed := PackedVector3Array()
+		smoothed.resize(current.size())
+		for v: int in current.size():
+			var sum: Vector3 = current[v]
+			for n: int in neighbors[v]:
+				sum += current[n]
+			smoothed[v] = sum.normalized() if sum.length() > 0.0 else current[v]
+		current = smoothed
+	return current
 
 
 func _build_cities() -> void:
@@ -1497,6 +1732,11 @@ func _make_city_part(mesh: Mesh, color: Color) -> MeshInstance3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.85
+	# 輪郭線に加えてバンド陰影も掛ける（band=true）。トゥーン側では当初
+	# band=false にしていた（発光 × DIFFUSE_TOON で白く潰れたため）が、
+	# その前提だった発光をこの関数から外したので、白飛びの原因ごと無くなった。
+	# 発光しない普通の陰影面になった今は、段にすると屋根の向きが読みやすい。
+	_tag_toon_material(material, OUTLINE_WIDTH_CITY)
 	mesh.surface_set_material(0, material)
 
 	var part := MeshInstance3D.new()
@@ -1820,7 +2060,8 @@ func _make_tree_trunk_mesh() -> ArrayMesh:
 	trunk.bottom_radius = 0.08
 	trunk.height = 0.5
 	trunk.radial_segments = 6
-	_append_primitive_surface(mesh, trunk, Vector3(0.0, 0.25, 0.0), VEGETATION_TRUNK_COLOR)
+	_append_primitive_surface(mesh, trunk, Vector3(0.0, 0.25, 0.0), VEGETATION_TRUNK_COLOR,
+		OUTLINE_WIDTH_VEGETATION)
 
 	return mesh
 
@@ -1834,7 +2075,8 @@ func _make_tree_foliage_mesh() -> ArrayMesh:
 	foliage.bottom_radius = 0.32
 	foliage.height = 0.65
 	foliage.radial_segments = 8
-	_append_primitive_surface(mesh, foliage, Vector3(0.0, 0.75, 0.0), VEGETATION_FOLIAGE_COLOR)
+	_append_primitive_surface(mesh, foliage, Vector3(0.0, 0.75, 0.0), VEGETATION_FOLIAGE_COLOR,
+		OUTLINE_WIDTH_VEGETATION)
 
 	return mesh
 
@@ -1894,6 +2136,7 @@ func _make_bush_mesh() -> ArrayMesh:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = VEGETATION_FOLIAGE_COLOR
 	material.roughness = 0.9
+	_tag_toon_material(material, OUTLINE_WIDTH_VEGETATION)
 	mesh.surface_set_material(0, material)
 
 	return mesh
@@ -1906,14 +2149,20 @@ func _make_rock_mesh() -> ArrayMesh:
 
 	var rock := PrismMesh.new()
 	rock.size = Vector3(0.4, 0.28, 0.32)
-	_append_primitive_surface(mesh, rock, Vector3(0.0, 0.14, 0.0), VEGETATION_ROCK_COLOR)
+	_append_primitive_surface(mesh, rock, Vector3(0.0, 0.14, 0.0), VEGETATION_ROCK_COLOR,
+		OUTLINE_WIDTH_VEGETATION)
 
 	return mesh
 
 
 ## source の形状を position だけずらして target の新しいサーフェスとして
 ## 追加する。単色のパーツなので頂点カラーではなく専用マテリアルで塗る。
-func _append_primitive_surface(target: ArrayMesh, source: PrimitiveMesh, offset: Vector3, color: Color) -> void:
+##
+## outline_width は既定で「輪郭線なし」。この関数を使う対象のうち草木
+## （幹・葉・岩）は OUTLINE_WIDTH_VEGETATION を明示的に渡し、荷車だけが
+## 既定のまま線を持たない（OUTLINE_WIDTH_NONE のコメント参照）。
+func _append_primitive_surface(target: ArrayMesh, source: PrimitiveMesh, offset: Vector3, color: Color,
+		outline_width: float = OUTLINE_WIDTH_NONE) -> void:
 	var arrays: Array = source.get_mesh_arrays()
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	for i: int in vertices.size():
@@ -1924,6 +2173,7 @@ func _append_primitive_surface(target: ArrayMesh, source: PrimitiveMesh, offset:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.9
+	_tag_toon_material(material, outline_width)
 	target.surface_set_material(target.get_surface_count() - 1, material)
 
 
@@ -2016,6 +2266,9 @@ func _build_routes() -> void:
 	# 三角形の巻き順を厳密に合わせなくても両面とも描画されるようにする
 	# （このファイルで一度踏んだ「外積の順序」の落とし穴を避けるため）。
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# CULL_DISABLED では裏面押し出しが成立しない（裏面も表として描かれるので
+	# 影法師が全面を覆う）。バンド陰影だけ掛ける。
+	_tag_toon_material(material, OUTLINE_WIDTH_NONE)
 	mesh.surface_set_material(0, material)
 
 	_routes = MeshInstance3D.new()
@@ -2079,6 +2332,10 @@ func _build_selection_ring() -> void:
 	_selection_ring = MeshInstance3D.new()
 	_selection_ring.name = "SelectionRing"
 	_selection_ring.mesh = ImmediateMesh.new()
+	# 影を落とさない。自己発光する輪（unshaded + emission）なので、地面に
+	# 楕円の影が落ちると「光っているのに影がある」という矛盾した見た目に
+	# なる。現在地を示す UI であって、世界の中の物体ではない。
+	_selection_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_selection_ring)
 
 
@@ -2327,16 +2584,128 @@ func convoy_node_count() -> int:
 	return _convoy_nodes.size()
 
 
+# --- トゥーン（試作） ---
+
+## トゥーンの対象として登録し、今の状態をその場で適用する。
+## マテリアルを作った直後に呼ぶこと。生成時に適用しておくことで、
+## set_toon() の後に作られるマテリアル（荷車は実行中に増える）も
+## 追加の走査なしに正しい見た目で出てくる。
+## band が false なら輪郭線だけを掛け、バンド陰影（diffuse_mode）は触らない。
+## 発光で光らせているマテリアル用 — shaded なまま DIFFUSE_TOON を掛けると
+## 減衰が消えて albedo 側も最大で光り、発光に上乗せされて白く潰れるため。
+func _tag_toon_material(material: StandardMaterial3D, outline_width: float,
+		band: bool = true) -> void:
+	material.set_meta(TOON_OUTLINE_META, outline_width)
+	material.set_meta(TOON_BAND_META, band)
+	_apply_toon_to(material)
+
+
+## 光と環境光へ今の _toon_enabled を反映する。_build_light() /
+## _build_environment() のどちらが先でも動くよう、両方から呼んで
+## 揃っている側だけを触る（片方が null の段階でも落ちない）。
+func _apply_toon_lighting() -> void:
+	if is_instance_valid(_sun):
+		_sun.light_energy = TOON_LIGHT_ENERGY if _toon_enabled else SUN_LIGHT_ENERGY
+		var pitch: float = (TOON_LIGHT_PITCH_DEGREES if _toon_enabled
+			else SUN_PITCH_DEGREES)
+		_sun.rotation_degrees = Vector3(pitch, SUN_YAW_DEGREES, 0.0)
+	if _environment != null:
+		_environment.ambient_light_energy = (TOON_AMBIENT_LIGHT_ENERGY
+			if _toon_enabled else AMBIENT_LIGHT_ENERGY)
+
+
+## 1つのマテリアルへ今の _toon_enabled を反映する。
+## 無効時に戻す値は StandardMaterial3D の既定（DIFFUSE_BURLEY=0 /
+## SPECULAR_SCHLICK_GGX=0）なので、切り戻すと現状の絵に完全に一致する。
+func _apply_toon_to(material: StandardMaterial3D) -> void:
+	if material.get_meta(TOON_BAND_META, true):
+		if _toon_enabled:
+			material.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+			material.specular_mode = BaseMaterial3D.SPECULAR_TOON
+		else:
+			material.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
+			material.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+
+	var width: float = material.get_meta(TOON_OUTLINE_META, OUTLINE_WIDTH_NONE)
+	if _toon_enabled and width > 0.0:
+		material.next_pass = _make_outline_material(width)
+	else:
+		# next_pass を消すのが「輪郭線なし」。無効時に残すと、バンド陰影だけ
+		# 切ったつもりで線が残る。
+		material.next_pass = null
+
+
+## 裏面押し出し（inverted hull）の輪郭線用マテリアル。表面を裏返して
+## （CULL_FRONT）法線方向へ grow_amount ぶん膨らませ、元のメッシュより
+## 一回り大きい影法師を後ろに描く。はみ出した縁だけが見えて輪郭線になる。
+func _make_outline_material(width: float) -> StandardMaterial3D:
+	var outline := StandardMaterial3D.new()
+	outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	outline.albedo_color = OUTLINE_COLOR
+	outline.cull_mode = BaseMaterial3D.CULL_FRONT
+	outline.grow = true
+	outline.grow_amount = width
+	return outline
+
+
+## トゥーンの入切。同じカメラ位置のまま見比べるためのもので、
+## 地図を組み直さずマテリアルだけ塗り替える。
+func set_toon(enabled: bool) -> void:
+	if _toon_enabled == enabled:
+		return
+	_toon_enabled = enabled
+	for material: StandardMaterial3D in _collect_toon_materials(self):
+		_apply_toon_to(material)
+	_apply_toon_lighting()
+
+
+func toggle_toon() -> void:
+	set_toon(not _toon_enabled)
+
+
+func is_toon_enabled() -> bool:
+	return _toon_enabled
+
+
+## 目印の付いたマテリアルを木構造から集める。登録簿を持たずに毎回引き直すのは、
+## 荷車が実行中に生成・破棄されるため（登録簿だと解放済みの荷車のマテリアルが
+## 溜まり続ける）。数は数十なので切り替えのたびに走査して困る量ではない。
+func _collect_toon_materials(node: Node) -> Array[StandardMaterial3D]:
+	var found: Array[StandardMaterial3D] = []
+
+	# MultiMeshInstance3D（草木）はマテリアルが multimesh.mesh 側にある。
+	var mesh: Mesh = null
+	var mesh_instance := node as MeshInstance3D
+	if mesh_instance != null:
+		mesh = mesh_instance.mesh
+	var multi_instance := node as MultiMeshInstance3D
+	if multi_instance != null and multi_instance.multimesh != null:
+		mesh = multi_instance.multimesh.mesh
+
+	if mesh != null:
+		for i: int in mesh.get_surface_count():
+			var material := mesh.surface_get_material(i) as StandardMaterial3D
+			if material != null and material.has_meta(TOON_OUTLINE_META):
+				found.append(material)
+
+	for child: Node in node.get_children():
+		found.append_array(_collect_toon_materials(child))
+	return found
+
+
 func _build_light() -> void:
 	var light := DirectionalLight3D.new()
 	light.name = "Sun"
 	# 斜め上から当てて起伏に陰影を付ける。
-	light.rotation_degrees = Vector3(-52.0, -38.0, 0.0)
-	light.light_energy = 1.1
-	# シーンが小さい（都市10×パーツ数個＋地形1枚）ため負荷は軽いはずだが、
-	# シャドウアクネ等が出ないかは実機のGUIでしか判断できない（要確認）。
+	light.rotation_degrees = Vector3(SUN_PITCH_DEGREES, SUN_YAW_DEGREES, 0.0)
+	light.light_energy = SUN_LIGHT_ENERGY
 	light.shadow_enabled = true
+	light.directional_shadow_max_distance = SHADOW_MAX_DISTANCE
+	light.shadow_normal_bias = SHADOW_NORMAL_BIAS
+	light.shadow_bias = SHADOW_BIAS
 	add_child(light)
+	_sun = light
+	_apply_toon_lighting()
 
 
 ## 現在地を示す。都市の色を状態に合わせて塗り替える（構造物の全パーツぶん）。
