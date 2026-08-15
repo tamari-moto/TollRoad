@@ -67,7 +67,10 @@ const GLOW_BLOOM: float = 0.04
 ## グローがHDRとして扱う輝度の下限。既定は1.0だが、明示しないとエンジンの
 ## 既定値変更で CITY_EMISSION_ENERGY との関係が黙って崩れるため定数化する。
 const GLOW_HDR_THRESHOLD: float = 1.0
-## 都市パーツの発光エネルギー。旧値0.35では発光色（PIN_FRAME等、輝度0.66〜0.76）
+## 現在地リングの発光エネルギー。かつては都市の柱もこの値で光らせていたが、
+## 街並みを7〜8軒に増やしたら白飛びして形が読めなくなったため、建物側の発光は
+## やめた（_make_city_part() 参照）。今の使い手はリングだけ。
+## 旧値0.35では発光色（PIN_FRAME等、輝度0.66〜0.76）
 ## を掛けても最大0.3程度にしかならず、GLOW_HDR_THRESHOLD を一度も超えられず
 ## グローが実際には出ていなかった（実機で確認）。輝度×この値が閾値を確実に
 ## 超えるよう引き上げる。閾値側を下げる手もあるが、空・フォグの色（輝度0.27
@@ -309,6 +312,106 @@ const CITY_SPIRE_MAX: int = 2
 ## 中心都市の尖塔本数。密集させて、他と違う特別な場所だと分かるようにする。
 const CAERLEON_SPIRE_COUNT: int = 4
 
+## --- 街並みの個性 ---
+## 都市の構造物は「土台＋特産ごとの街並み」で組む。特産（GameData.CITIES の
+## specialty）が建物の語彙を決め、街道の接続数が規模を決め、seed と city_id の
+## ハッシュが細部を揺らす。地図を見ただけで何の町か読めるようにするのが狙い。
+##
+## **高さの予算は CITY_HEIGHT を超えないこと**（現在地リングがめり込む。
+## scenario_m17.gd の「柱より上に架かる」検査がこの前提を押さえている）。
+## 建物はすべて土台の上に載せ、最高点を CITY_HEIGHT 以下に収める。
+
+## 特産 -> 街並みの語彙。ここに無い特産（レイヴンスパイアの空文字を含む）は
+## DEFAULT を使う。都市を足しても、その特産の行が既にあれば書き足しは要らない。
+##
+## roof: 屋根の形。"cone"=円錐（尖った塔）、"box"=切妻に見立てた角箱、
+##       "prism"=三角柱（山小屋）、"none"=平屋根。
+## count: 建物の基準の軒数（規模で増減する）。
+## slim: 建物の細さ（CITY_RADIUS に対する比）。小さいほど針のように細い。
+## tall: 建物の高さの偏り（1.0 で予算いっぱい、小さいほど低く平たい）。
+const CITY_STYLES: Dictionary = {
+	"ore":    {"roof": "cone",  "count": 3, "slim": 0.30, "tall": 0.72}, ## 鉱山町: ずんぐりした坑口とズリ山
+	"wood":   {"roof": "prism", "count": 4, "slim": 0.26, "tall": 0.58}, ## 林業町: 切妻の小屋が数軒
+	"stone":  {"roof": "box",   "count": 3, "slim": 0.38, "tall": 0.80}, ## 石の町: 角張った城壁と方塔
+	"fiber":  {"roof": "none",  "count": 5, "slim": 0.18, "tall": 0.62}, ## 織の町: 細い柱と干し枠が並ぶ
+	"hide":   {"roof": "prism", "count": 4, "slim": 0.22, "tall": 0.50}, ## 皮の町: 低く広がる天幕
+	"coal":   {"roof": "cone",  "count": 4, "slim": 0.24, "tall": 0.66}, ## 炭の町: 炭焼き窯が並ぶ
+	"wool":   {"roof": "prism", "count": 5, "slim": 0.20, "tall": 0.46}, ## 牧の町: 低い小屋が散らばる
+	"quartz": {"roof": "cone",  "count": 3, "slim": 0.16, "tall": 1.00}, ## 魔導町: 細い尖塔が高く伸びる
+	"clay":   {"roof": "cone",  "count": 4, "slim": 0.34, "tall": 0.54}, ## 窯の町: 太く低い登り窯
+	"DEFAULT": {"roof": "box",  "count": 4, "slim": 0.28, "tall": 0.86},
+}
+
+## 街道の接続数（GameData.road_neighbors()）から軒数に足す量。交差点は
+## 大きな町、行き止まりは小さな村に見せる。接続数はこの範囲で頭打ちにする
+## （ironhollow の5本がそのまま効くと密集しすぎるため）。
+const CITY_DEGREE_BONUS_MAX: int = 3
+## 規模で建物が増えても半径は増やさない（ピンの当たり判定と噛み合わなくなる）。
+## 代わりに軒数がこの数を超えたぶんは外周にもう一列作る。
+const CITY_RING_CAPACITY: int = 5
+## 揺らぎの幅。高さにこの割合まで個体差を付ける（0.18 なら ±18%）。
+const CITY_JITTER_RATIO: float = 0.18
+
+## --- 区画（土台） ---
+## 土台は1枚ではなく、複数の区画を水平にずらして重ねる。「いくつかの集落が
+## 寄り集まってできた町」に見せるため。段には積まない（高さの予算は
+## CITY_HEIGHT しかなく、積むと建物のぶんが無くなる）。
+##
+## 区画の数は街道の接続数から決める（軒数と同じ理由: 交差点は大きな町、
+## 行き止まりは小さな村）。1区画は必ず中心に置き、残りを外周へずらす。
+const CITY_WARD_MIN: int = 1
+const CITY_WARD_MAX: int = 3
+## 副区画の中心からのずれ（CITY_RADIUS に対する比）。大きくすると町が
+## 散らばる。ピンの当たり判定（map_panel の CITY_PICK_RADIUS）から
+## はみ出さない範囲に収めること。
+const CITY_WARD_OFFSET: float = 0.45
+## 副区画の大きさ（主区画に対する比）。主区画より小さくして主従を付ける。
+const CITY_WARD_SCALE_MIN: float = 0.5
+const CITY_WARD_SCALE_MAX: float = 0.75
+
+## --- 門 ---
+## 街道が伸びる方向ごとに門を1つ立てる。どちらへ道が続くのかが
+## 地図上で読めるようにするため（王道に加え、黒ゾーンの道にも立てる）。
+## 門は2本の柱＋その上に渡す横木で作る。
+const CITY_GATE_POST_RADIUS: float = 0.055
+const CITY_GATE_POST_HEIGHT: float = 0.42
+## 門柱2本の間隔（左右の柱の中心間）。
+const CITY_GATE_WIDTH: float = 0.3
+## 門を置く中心からの距離。土台の縁より少し外に出し、街道の始まりに見せる。
+const CITY_GATE_DISTANCE: float = 0.92
+## 横木の太さ。柱より細くする。
+const CITY_GATE_LINTEL_THICKNESS: float = 0.045
+
+## --- 城壁 ---
+## 区画の外周を低い壁で囲う。門と同じ半径（CITY_GATE_DISTANCE）に置くことで
+## 門と壁が繋がって見え、門が孤立しない。壁は門の位置を避けて弧状に分割する
+## （門の所だけ壁が途切れ、そこから出入りするように見える）。
+##
+## 壁は門柱より低くする。同じ高さだと門が壁に埋もれて出入口に見えない。
+const CITY_WALL_HEIGHT: float = 0.2
+const CITY_WALL_THICKNESS: float = 0.07
+## 壁を構成する弧の分割数（1周ぶん）。多いほど滑らかな円になるが
+## パーツ数が増える。門の隙間もこの分割の単位で空ける。
+const CITY_WALL_SEGMENTS: int = 12
+## 門の左右この角度（ラジアン）ぶんは壁を建てない（門の出入口）。
+const CITY_WALL_GATE_CLEARANCE: float = 0.42
+
+## --- 市井の小物・沿道 ---
+## 区画の縁に沿って小物（荷車・樽・井戸）を並べ、門の外には道しるべを置く。
+## 数は街道の接続数から決める（区画・軒数と同じ理由で、規模を一貫させる）。
+const CITY_PROP_MIN: int = 1
+const CITY_PROP_MAX: int = 6
+## 小物を置く半径（CITY_RADIUS に対する比）。区画の縁（0.75前後）と
+## 城壁（0.92）の間に収め、どちらにもめり込まないようにする。
+const CITY_PROP_DISTANCE: float = 0.84
+## 小物1つの大きさ。建物より十分小さくして、主役を食わないようにする。
+const CITY_PROP_SIZE: float = 0.075
+## 沿道の道しるべ。門の外側へこの距離（CITY_RADIUS 比）に置く。
+## 草木の除外半径（VEGETATION_CITY_CLEARANCE）より内側に収めること。
+const CITY_WAYPOST_DISTANCE: float = 1.25
+const CITY_WAYPOST_HEIGHT: float = 0.16
+const CITY_WAYPOST_RADIUS: float = 0.028
+
 ## --- 草木 ---
 ## 候補地を走査する格子の間隔。狭いほど密になる。
 const VEGETATION_GRID_STEP: float = 1.4
@@ -483,6 +586,15 @@ var _convoy_motion: Dictionary = {}
 var _convoy_bob_time: float = 0.0
 var _noise: FastNoiseLite
 
+## 都市の形を振り分ける種。局ごとに街並みを組み替えるため、map_panel が
+## GameSession.rng_seed() を _build() より前に入れる（set_city_shape_seed()）。
+##
+## 既定値を持たせてあるのは、seed を渡さない経路（--script のハーネスや
+## 単体で MapView3D.new() する検査）でも形が確定するようにするため。
+## ここで真の乱数を使わないのは従来どおりの理由による: 同じ seed と city_id
+## なら毎回同じ町並みになり、save/load でも見た目が変わらない。
+var _city_shape_seed: int = 20260802
+
 ## city_id -> Vector3。map_panel がボタンを重ねるのに使う。
 var positions: Dictionary = {}
 
@@ -494,6 +606,26 @@ var positions: Dictionary = {}
 ## 循環する。水平配置はばね緩和だけで決まり高さに依存しないので、
 ## _relax_positions() の結果をそのまま覚えておけば循環しない。
 var _flat_positions: Dictionary = {}
+
+
+## 都市の形の種を差し替える。_init() が既に街を組んでいるので、種が変われば
+## 構造物だけを組み直す（地形・草木・街道はこの種に依存しないので触らない）。
+## 同じ値で呼ばれたときに何もしないのは、bind() が来るたびに作り直さないため。
+func set_city_shape_seed(value: int) -> void:
+	if value == _city_shape_seed:
+		return
+	_city_shape_seed = value
+	if _cities.is_empty():
+		return
+	for city_id: String in _cities:
+		var container: Node3D = _cities[city_id]
+		for child: Node in container.get_children():
+			child.queue_free()
+		for part: MeshInstance3D in _city_structure_parts(city_id):
+			container.add_child(part)
+	# 現在地の色付けは構造物を差し替えると失われるので、引き直す。
+	if _ring_city != "":
+		set_current_city(_ring_city)
 
 
 func _init() -> void:
@@ -1014,59 +1146,357 @@ func _build_cities() -> void:
 			container.add_child(part)
 
 
-## 都市ごとの構造物（土台＋尖塔）を組み立てる。真の乱数は使わず、city_id の
-## ハッシュから決定的にばらつきを付ける（同じ都市は毎回同じ見た目になる。
-## --script 検査と save/load の再現性を壊さないため）。
+## 都市ごとの構造物（土台＋街並み）を組み立てる。真の乱数は使わず、
+## seed と city_id のハッシュから決定的にばらつきを付ける（同じ局の同じ都市は
+## 毎回同じ見た目になる。--script 検査と save/load の再現性を壊さないため）。
+##
+## 形は4つで決まる:
+##   語彙 = 特産（CITY_STYLES）… 何の町かが読める
+##   規模 = 街道の接続数        … 交差点は大きく、行き止まりは小さく
+##   区画 = 街道の接続数        … いくつかの集落が寄り集まった形になる
+##   門   = 街道の向き          … どちらへ道が続くのかが読める
+##   細部 = seed + city_id      … 局ごとに組み替わる
 func _city_structure_parts(city_id: String) -> Array[MeshInstance3D]:
 	var color: Color = _city_color(city_id)
 	var is_hub: bool = city_id == GameData.CAERLEON
 	var parts: Array[MeshInstance3D] = []
+	var style: Dictionary = _city_style(city_id)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _city_shape_rng_seed(city_id)
 
-	# 土台。中心都市は少しだけ太くする。
+	# 区画（土台）。1枚目は必ず中心に置き、2枚目以降を外周へずらす。
+	# 建物はこの上に載るので、区画の高さは全て揃える（段差を付けると
+	# 建物の足元が浮く）。
 	var base_height: float = CITY_HEIGHT * CITY_BASE_HEIGHT_RATIO
-	var base_mesh := CylinderMesh.new()
-	base_mesh.top_radius = CITY_RADIUS * (0.85 if is_hub else 0.75)
-	base_mesh.bottom_radius = CITY_RADIUS * (1.3 if is_hub else 1.0)
-	base_mesh.height = base_height
-	base_mesh.radial_segments = 6
-	var base: MeshInstance3D = _make_city_part(base_mesh, color)
-	base.position = Vector3(0.0, base_height * 0.5, 0.0)
-	parts.append(base)
+	var ward_count: int = _city_ward_count(city_id)
+	for w: int in ward_count:
+		var is_main: bool = w == 0
+		var scale: float = 1.0 if is_main \
+			else rng.randf_range(CITY_WARD_SCALE_MIN, CITY_WARD_SCALE_MAX)
+		var ward_mesh := CylinderMesh.new()
+		ward_mesh.top_radius = CITY_RADIUS * (0.85 if is_hub else 0.75) * scale
+		ward_mesh.bottom_radius = CITY_RADIUS * (1.3 if is_hub else 1.0) * scale
+		ward_mesh.height = base_height
+		ward_mesh.radial_segments = 6
+		var ward: MeshInstance3D = _make_city_part(ward_mesh, color)
+		var ward_offset := Vector2.ZERO
+		if not is_main:
+			# 副区画は主区画の周りに散らす。等間隔から少しずらして
+			# 機械的な並びに見えないようにする。
+			var ward_angle: float = TAU * float(w - 1) / float(maxi(ward_count - 1, 1)) \
+				+ rng.randf_range(-0.4, 0.4)
+			ward_offset = Vector2(cos(ward_angle), sin(ward_angle)) * CITY_RADIUS * CITY_WARD_OFFSET
+		ward.position = Vector3(ward_offset.x, base_height * 0.5, ward_offset.y)
+		parts.append(ward)
 
-	# 尖塔。中心都市は本数を増やして密集させる（高さの予算は他都市と共通。
-	# CITY_HEIGHT を超えると現在地リングにめり込むため、本数を増やしても
-	# 個々の高さはほぼ揃えたままにする）。
-	var spire_count: int = CAERLEON_SPIRE_COUNT if is_hub \
-		else CITY_SPIRE_MIN + int(city_id.hash() % (CITY_SPIRE_MAX - CITY_SPIRE_MIN + 1))
-	var spire_height: float = (CITY_HEIGHT - base_height) * CITY_SPIRE_HEIGHT_RATIO
-	var cluster_radius: float = CITY_RADIUS * 0.4
+	# 建物の高さの予算。土台を除いた残りを CITY_STYLES の tall で使う。
+	# 中心都市だけは従来どおり密集した尖塔にする（特別な場所だと分かるように）。
+	var budget: float = (CITY_HEIGHT - base_height) * CITY_SPIRE_HEIGHT_RATIO
+	var count: int = CAERLEON_SPIRE_COUNT if is_hub else _city_building_count(city_id, style)
 
-	for i: int in spire_count:
-		var spire_mesh := CylinderMesh.new()
-		spire_mesh.top_radius = CITY_RADIUS * 0.12
-		spire_mesh.bottom_radius = CITY_RADIUS * 0.3
-		spire_mesh.height = spire_height
-		spire_mesh.radial_segments = 6
-		var spire: MeshInstance3D = _make_city_part(spire_mesh, color)
-		# 複数本あるときは土台の中心周りに均等配置する（決定的、乱数不使用）。
-		var angle: float = TAU * float(i) / float(spire_count)
-		var offset: Vector2 = Vector2.ZERO if spire_count == 1 \
-			else Vector2(cos(angle), sin(angle)) * cluster_radius
-		spire.position = Vector3(offset.x, base_height + spire_height * 0.5, offset.y)
-		parts.append(spire)
+	for i: int in count:
+		# 高さは style の偏りを基準に、±CITY_JITTER_RATIO だけ揺らす。
+		# 揺らしても予算を超えないよう、最後に必ず clamp する。
+		var jitter: float = 1.0 + rng.randf_range(-CITY_JITTER_RATIO, CITY_JITTER_RATIO)
+		var height: float = clampf(budget * float(style["tall"]) * jitter, budget * 0.25, budget)
+		var radius: float = CITY_RADIUS * float(style["slim"])
+		var roof: String = "cone" if is_hub else String(style["roof"])
+
+		var building: MeshInstance3D = _make_city_part(_city_building_mesh(roof, radius, height), color)
+		var offset: Vector2 = _city_building_offset(i, count, rng)
+		building.position = Vector3(offset.x, base_height + height * 0.5, offset.y)
+		# 角のある屋根（箱・三角柱）は向きが効くので、軒ごとに回して揃わせない。
+		if roof != "cone":
+			building.rotation.y = rng.randf_range(0.0, TAU)
+		parts.append(building)
+
+	# 門。街道が伸びる方向ごとに1つ立てる。
+	var gate_directions: Array[Vector2] = _city_gate_directions(city_id)
+	for direction: Vector2 in gate_directions:
+		parts.append_array(_city_gate_parts(direction, base_height, color))
+
+	# 城壁。門と門の間を弧で埋める（門の所だけ開ける）。
+	parts.append_array(_city_wall_parts(gate_directions, color))
+
+	# 市井の小物と、門の外の道しるべ。
+	parts.append_array(_city_prop_parts(city_id, gate_directions, base_height, color, rng))
 
 	return parts
 
 
-## パーツ1つぶんの MeshInstance3D を作る。マテリアルは自己発光つき
-## （暗い地形の中でも都市が目立つように。グロウで街明かりのように滲む）。
+## 城壁。門と同じ半径に弧を並べ、門の前後 CITY_WALL_GATE_CLEARANCE ぶんは
+## 空ける（そこが出入口に見える）。街道が1本も無い都市では輪が閉じる。
+##
+## 弧の1枚は細い箱で近似する。円弧そのものを作らないのは、パーツ数と
+## 引き換えに得るほどの見た目の差が無いため（実測で12分割あれば
+## この縮尺では円に見える）。
+func _city_wall_parts(gate_directions: Array[Vector2], color: Color) -> Array[MeshInstance3D]:
+	var parts: Array[MeshInstance3D] = []
+	var radius: float = CITY_RADIUS * CITY_GATE_DISTANCE
+	var step: float = TAU / float(CITY_WALL_SEGMENTS)
+	# 弧1枚の長さ。隣どうしがわずかに重なるよう少し長めに取り、
+	# 継ぎ目が割れて見えないようにする。
+	var span: float = radius * step * 1.15
+
+	for i: int in CITY_WALL_SEGMENTS:
+		var angle: float = step * (float(i) + 0.5)
+		var at := Vector2(cos(angle), sin(angle))
+		# 門の正面に当たる弧は建てない。
+		var blocked: bool = false
+		for direction: Vector2 in gate_directions:
+			if absf(at.angle_to(direction)) < CITY_WALL_GATE_CLEARANCE:
+				blocked = true
+				break
+		if blocked:
+			continue
+
+		var wall_mesh := BoxMesh.new()
+		wall_mesh.size = Vector3(CITY_WALL_THICKNESS, CITY_WALL_HEIGHT, span)
+		var wall: MeshInstance3D = _make_city_part(wall_mesh, color)
+		var pos: Vector2 = at * radius
+		wall.position = Vector3(pos.x, CITY_WALL_HEIGHT * 0.5, pos.y)
+		# 箱の長辺（Z）を円の接線へ向ける。
+		wall.rotation.y = -angle
+		parts.append(wall)
+
+	return parts
+
+
+## 市井の小物（区画の縁に沿う荷車・樽・井戸）と、門の外の道しるべ。
+## 数は街道の接続数から決め、CITY_PROP_MIN〜MAX に収める。
+func _city_prop_parts(city_id: String, gate_directions: Array[Vector2],
+		base_height: float, color: Color, rng: RandomNumberGenerator) -> Array[MeshInstance3D]:
+	var parts: Array[MeshInstance3D] = []
+	var count: int = _city_prop_count(city_id)
+	var radius: float = CITY_RADIUS * CITY_PROP_DISTANCE
+
+	for i: int in count:
+		# 区画の縁に沿って等間隔に置く（配置は揃える。ユーザー指定）。
+		# 角度だけわずかに揺らし、完全な整列に見えないようにする。
+		var angle: float = TAU * float(i) / float(count) + rng.randf_range(-0.12, 0.12)
+		var at: Vector2 = Vector2(cos(angle), sin(angle)) * radius
+		# 小物は3種を順番に使う。1都市に同じ物ばかり並ばないようにする。
+		var prop_mesh: Mesh = _city_prop_mesh(i % 3, rng)
+		var prop: MeshInstance3D = _make_city_part(prop_mesh, color)
+		var prop_height: float = CITY_PROP_SIZE
+		if prop_mesh is CylinderMesh:
+			prop_height = (prop_mesh as CylinderMesh).height
+		elif prop_mesh is BoxMesh:
+			prop_height = (prop_mesh as BoxMesh).size.y
+		# 小物は地面に置く（区画の上ではない）。区画の縁の外側に並ぶため。
+		prop.position = Vector3(at.x, prop_height * 0.5, at.y)
+		prop.rotation.y = rng.randf_range(0.0, TAU)
+		parts.append(prop)
+
+	# 沿道の道しるべ。門の外側、街道が続く方向に1本ずつ立てる。
+	for direction: Vector2 in gate_directions:
+		var post_mesh := CylinderMesh.new()
+		post_mesh.top_radius = CITY_WAYPOST_RADIUS
+		post_mesh.bottom_radius = CITY_WAYPOST_RADIUS
+		post_mesh.height = CITY_WAYPOST_HEIGHT
+		post_mesh.radial_segments = 4
+		var post: MeshInstance3D = _make_city_part(post_mesh, color)
+		var at2: Vector2 = direction * CITY_RADIUS * CITY_WAYPOST_DISTANCE
+		post.position = Vector3(at2.x, CITY_WAYPOST_HEIGHT * 0.5, at2.y)
+		parts.append(post)
+
+	return parts
+
+
+## 小物1つぶんのメッシュ。0=荷車（低い箱）、1=樽（寸胴の円柱）、2=井戸（六角）。
+func _city_prop_mesh(kind: int, rng: RandomNumberGenerator) -> Mesh:
+	var jitter: float = 1.0 + rng.randf_range(-CITY_JITTER_RATIO, CITY_JITTER_RATIO)
+	var size: float = CITY_PROP_SIZE * jitter
+	match kind:
+		0:
+			var cart := BoxMesh.new()
+			cart.size = Vector3(size * 2.0, size * 0.9, size * 1.2)
+			return cart
+		1:
+			var barrel := CylinderMesh.new()
+			barrel.top_radius = size * 0.5
+			barrel.bottom_radius = size * 0.5
+			barrel.height = size * 1.3
+			barrel.radial_segments = 6
+			return barrel
+		_:
+			var well := CylinderMesh.new()
+			well.top_radius = size * 0.7
+			well.bottom_radius = size * 0.7
+			well.height = size * 0.8
+			well.radial_segments = 6
+			return well
+
+
+## 小物の数。街道の接続数に連動させ、規模の一貫性を保つ。
+static func _city_prop_count(city_id: String) -> int:
+	var degree: int = GameData.road_neighbors(city_id).size()
+	if city_id == GameData.CAERLEON:
+		degree = GameData.BLACK_ZONE_GATES.size()
+	return clampi(degree * 2, CITY_PROP_MIN, CITY_PROP_MAX)
+
+
+## 区画（土台）の数。街道の接続数から決め、CITY_WARD_MIN〜MAX に収める。
+## 交差点ほど区画が多く、行き止まりは1区画だけになる。
+static func _city_ward_count(city_id: String) -> int:
+	var degree: int = GameData.road_neighbors(city_id).size()
+	if city_id == GameData.CAERLEON:
+		degree = GameData.BLACK_ZONE_GATES.size()
+	return clampi(degree - 1, CITY_WARD_MIN, CITY_WARD_MAX)
+
+
+## その都市から街道が伸びる方向（水平面の単位ベクトル）。
+## 王道の隣接に加え、黒ゾーンの道（ゲート都市 <-> 中心都市）も含める
+## （height_at() が道を平らに均すときと同じ組み合わせ。地形が均されている
+## 方向に門が立っていないと、道が無い所に門があるように見える）。
+##
+## _flat_positions が空（_build() より前）なら方向を決めようがないので
+## 何も返さない。門が出ないだけで、他の構造物には影響しない。
+func _city_gate_directions(city_id: String) -> Array[Vector2]:
+	var directions: Array[Vector2] = []
+	if not _flat_positions.has(city_id):
+		return directions
+	var origin: Vector2 = _flat_positions[city_id]
+
+	var targets: Array[String] = GameData.road_neighbors(city_id)
+	# 黒ゾーンの道。ゲート都市からは中心都市へ、中心都市からは各ゲートへ。
+	if city_id == GameData.CAERLEON:
+		targets.append_array(GameData.BLACK_ZONE_GATES)
+	elif GameData.BLACK_ZONE_GATES.has(city_id):
+		targets.append(GameData.CAERLEON)
+
+	for target: String in targets:
+		if not _flat_positions.has(target):
+			continue
+		var delta: Vector2 = _flat_positions[target] - origin
+		if delta.length() < 0.001:
+			continue
+		directions.append(delta.normalized())
+	return directions
+
+
+## 門1つぶんのパーツ（柱2本＋横木）。direction の方へ向けて土台の外縁に立てる。
+## 柱の高さは建物の予算とは別に取るが、土台の高さと合わせても CITY_HEIGHT を
+## 超えないようにしてある（超えると現在地リングにめり込む）。
+func _city_gate_parts(direction: Vector2, base_height: float, color: Color) -> Array[MeshInstance3D]:
+	var parts: Array[MeshInstance3D] = []
+	# 門の中心と、道に対して直交する向き（柱を左右に振り分ける軸）。
+	var center: Vector2 = direction * CITY_RADIUS * CITY_GATE_DISTANCE
+	var side := Vector2(-direction.y, direction.x) * CITY_GATE_WIDTH * 0.5
+
+	for sign_value: float in [-1.0, 1.0]:
+		var post_mesh := CylinderMesh.new()
+		post_mesh.top_radius = CITY_GATE_POST_RADIUS
+		post_mesh.bottom_radius = CITY_GATE_POST_RADIUS
+		post_mesh.height = CITY_GATE_POST_HEIGHT
+		post_mesh.radial_segments = 5
+		var post: MeshInstance3D = _make_city_part(post_mesh, color)
+		var at: Vector2 = center + side * sign_value
+		post.position = Vector3(at.x, CITY_GATE_POST_HEIGHT * 0.5, at.y)
+		parts.append(post)
+
+	# 横木。2本の柱の上に渡す。柱の間隔ぶんの長さを持たせ、道の向きへ回す。
+	var lintel_mesh := BoxMesh.new()
+	lintel_mesh.size = Vector3(
+		CITY_GATE_WIDTH + CITY_GATE_POST_RADIUS * 2.0,
+		CITY_GATE_LINTEL_THICKNESS,
+		CITY_GATE_LINTEL_THICKNESS)
+	var lintel: MeshInstance3D = _make_city_part(lintel_mesh, color)
+	lintel.position = Vector3(center.x, CITY_GATE_POST_HEIGHT, center.y)
+	# BoxMesh の長辺は X。柱を並べた軸（side）へ向ける。
+	lintel.rotation.y = atan2(-direction.y, direction.x) + PI * 0.5
+	parts.append(lintel)
+
+	return parts
+
+
+## その都市の街並みの語彙。特産が CITY_STYLES に無ければ DEFAULT。
+static func _city_style(city_id: String) -> Dictionary:
+	var specialty: String = String(GameData.CITIES[city_id]["specialty"])
+	return CITY_STYLES.get(specialty, CITY_STYLES["DEFAULT"])
+
+
+## 建物の軒数。style の基準に街道の接続数を足す（交差点ほど大きな町）。
+static func _city_building_count(city_id: String, style: Dictionary) -> int:
+	var degree: int = GameData.road_neighbors(city_id).size()
+	return int(style["count"]) + mini(degree, CITY_DEGREE_BONUS_MAX)
+
+
+## 建物1軒ぶんのメッシュ。屋根の形が街の語彙になる。
+## 半径・高さは呼び出し側が予算内に収めてから渡すこと。
+func _city_building_mesh(roof: String, radius: float, height: float) -> Mesh:
+	match roof:
+		"cone":
+			# 円錐（尖った塔・窯）。上を絞ると尖って見える。
+			var cone := CylinderMesh.new()
+			cone.top_radius = radius * 0.12
+			cone.bottom_radius = radius
+			cone.height = height
+			cone.radial_segments = 6
+			return cone
+		"prism":
+			# 三角柱（切妻の小屋）。寝かせて使うと山形の屋根に見える。
+			var prism := PrismMesh.new()
+			prism.size = Vector3(radius * 2.0, height, radius * 1.6)
+			return prism
+		"box":
+			# 角箱（城壁・方塔）。角張った町に見せる。
+			var box := BoxMesh.new()
+			box.size = Vector3(radius * 1.8, height, radius * 1.8)
+			return box
+		_:
+			# 平屋根の柱（干し枠・細い柱が並ぶ町）。
+			var pillar := CylinderMesh.new()
+			pillar.top_radius = radius
+			pillar.bottom_radius = radius
+			pillar.height = height
+			pillar.radial_segments = 6
+			return pillar
+
+
+## 建物の水平位置。土台の中心周りに円環状に並べ、CITY_RING_CAPACITY を
+## 超えたぶんは内側にもう一列作る（半径を広げるとピンの当たり判定と
+## 噛み合わなくなるため、外へは広げない）。
+func _city_building_offset(index: int, count: int, rng: RandomNumberGenerator) -> Vector2:
+	if count == 1:
+		return Vector2.ZERO
+	var outer: int = mini(count, CITY_RING_CAPACITY)
+	var ring_radius: float = CITY_RADIUS * 0.42
+	var slot: int = index
+	if index >= outer:
+		# 内側の列。中心寄りに詰める。
+		slot = index - outer
+		ring_radius = CITY_RADIUS * 0.18
+	var per_ring: int = outer if index < outer else maxi(count - outer, 1)
+	var angle: float = TAU * float(slot) / float(per_ring)
+	# 角度をわずかにずらし、整列しすぎないようにする。
+	angle += rng.randf_range(-0.25, 0.25)
+	return Vector2(cos(angle), sin(angle)) * ring_radius
+
+
+## 都市ごとの決定的な種。局（_city_shape_seed）と city_id を混ぜる。
+## hash() をそのまま足すと隣接 seed で似た系列になりやすいので、
+## 大きな奇数を掛けてから混ぜる。
+func _city_shape_rng_seed(city_id: String) -> int:
+	return _city_shape_seed * 1000003 + int(city_id.hash())
+
+
+## パーツ1つぶんの MeshInstance3D を作る。
+##
+## **建物は光らせない。** 以前は都市パーツも自己発光させ、グローで街明かりの
+## ように滲ませていた。街並みを1〜2本の尖塔から7〜8軒に増やしたところ、
+## 発光体の数が数倍になって白く飛び、せっかくの屋根の形が読めなくなった
+## （実機で確認）。光源をやめてライトの陰影で見せる方が、形の違いが出る。
+##
+## 発光をやめたぶん暗い地形に埋もれないよう、roughness を上げて
+## ディレクショナルライトのハイライトを拾わせる。
+## 現在地リング（_redraw_selection_ring）は従来どおり CITY_EMISSION_ENERGY で
+## 光らせたままにする — 現在地はひと目で分かる必要があり、そちらは1本しか
+## 無いので白飛びしない。
 func _make_city_part(mesh: Mesh, color: Color) -> MeshInstance3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
-	material.roughness = 0.6
-	material.emission_enabled = true
-	material.emission = color
-	material.emission_energy_multiplier = CITY_EMISSION_ENERGY
+	material.roughness = 0.85
 	mesh.surface_set_material(0, material)
 
 	var part := MeshInstance3D.new()
@@ -1923,8 +2353,9 @@ func set_current_city(city_id: String) -> void:
 			var material: StandardMaterial3D = mesh_part.mesh.surface_get_material(0)
 			if material == null:
 				continue
+			# 色だけ塗り替える。建物は発光させない（_make_city_part() 参照）ので、
+			# ここで emission を書くと現在地の町だけが光って白く飛ぶ。
 			material.albedo_color = color
-			material.emission = color
 
 	# 足元のリングを現在地へ移す。地面の高さが都市ごとに違うので引き直す。
 	if positions.has(city_id):

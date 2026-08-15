@@ -61,6 +61,10 @@ func bind(session: GameSession) -> void:
 	})
 	_session = session
 	_build()
+	# 都市の形は局ごとに組み替わる（map_view_3d.gd の CITY_STYLES 参照）。
+	# _build() が既に街を組んでいるので、種を渡すと構造物だけ組み直される。
+	if is_instance_valid(_world) and _session != null:
+		_world.set_city_shape_seed(_session.rng_seed())
 	refresh()
 
 
