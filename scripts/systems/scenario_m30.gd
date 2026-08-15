@@ -224,7 +224,44 @@ func _test_chart_geometry() -> void:
 	_check(is_finite(flat_point.x) and is_finite(flat_point.y),
 		"横ばいの系列でも座標が有限", str(flat_point))
 
+	_test_chart_hover_legend(chart, series)
 	chart.free()
+
+
+## ホバーで出る凡例: カーソルを描画領域に重ねると、選んだ日に一番近い日の
+## 品目名と価格が出て、外へ出すと消える。
+func _test_chart_hover_legend(chart: Control, series: Dictionary) -> void:
+	print("--- グラフのホバー凡例 ---")
+	chart.set_data(series, 5)
+	_check(chart.hover_day() == -1, "初期状態ではホバーしていない", str(chart.hover_day()))
+	_check(not chart.is_legend_visible(), "初期状態では凡例が非表示", "表示されている")
+
+	# 3日目（day_index 2）の点の座標に重ねると、3日目として拾われる。
+	var target: Vector2 = chart.point_for("ore", 2)
+	chart.hover_at(target)
+	_check(chart.hover_day() == 3, "点の座標に重ねるとその日が拾われる", str(chart.hover_day()))
+	_check(chart.is_legend_visible(), "ホバー中は凡例が表示される", "表示されない")
+	_check(chart.legend_text_for("ore").contains("90"),
+		"凡例に3日目のoreの価格が出る（90）", chart.legend_text_for("ore"))
+	_check(chart.legend_text_for("wood").contains("80"),
+		"凡例に3日目のwoodの価格も出る（80）", chart.legend_text_for("wood"))
+
+	# 描画領域の外（余白部分）へ出すとホバーが解除される。
+	chart.hover_at(Vector2(-10.0, -10.0))
+	_check(chart.hover_day() == -1, "描画領域の外に出るとホバーが解除される",
+		str(chart.hover_day()))
+	_check(not chart.is_legend_visible(), "領域外では凡例が消える", "消えない")
+	_check(chart.legend_text_for("ore") == "", "ホバー解除後は凡例テキストも空になる",
+		chart.legend_text_for("ore"))
+
+	# 品目を選び直す（set_data）と凡例の行も作り直される。表示から外した
+	# 品目は、同じ日をホバーし直しても凡例に出てこない。
+	chart.set_data({"ore": series["ore"]}, 5)
+	chart.hover_at(chart.point_for("ore", 2))
+	_check(chart.legend_text_for("ore") != "", "残した品目は凡例に出る",
+		chart.legend_text_for("ore"))
+	_check(chart.legend_text_for("wood") == "", "表示から外した品目は凡例からも消える",
+		chart.legend_text_for("wood"))
 
 
 ## MemoPanel から実際に品目を選ぶと、選んだ都市・品目の系列がチャートへ渡る。

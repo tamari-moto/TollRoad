@@ -11,6 +11,7 @@ extends Control
 ## 横軸には目盛り（グリッド線とラベル）を打つ。日数が伸びるたびに間隔を
 ## 「きりのいい数」に選び直す（1〜60日で目盛りが5〜8本に収まる範囲）。
 
+const GameData = preload("res://scripts/systems/game_data.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 
@@ -41,6 +42,13 @@ var _y_bottom: Label
 var _x_tick_labels: Array[Label] = []
 var _empty_label: Label
 
+## ホバー中の凡例。マウスを重ねている日数の、選択中の全品目を色つきで並べる。
+var _hover_day: int = -1
+var _tooltip: PanelContainer
+var _tooltip_title: Label
+var _tooltip_box: VBoxContainer
+var _tooltip_rows: Dictionary = {}
+
 
 func _init() -> void:
 	_configure()
@@ -54,7 +62,13 @@ func _configure() -> void:
 	if is_instance_valid(_y_top):
 		return
 	custom_minimum_size = CHART_SIZE
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# ホバーで凡例を出すために入力を受ける（既定は IGNORE だったが、単独の
+	# Control で ScrollContainer の中ではないので、他の操作とは競合しない）。
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	if not gui_input.is_connected(_on_gui_input):
+		gui_input.connect(_on_gui_input)
+	if not mouse_exited.is_connected(clear_hover):
+		mouse_exited.connect(clear_hover)
 
 	var rect: Rect2 = plot_rect()
 
@@ -78,7 +92,38 @@ func _configure() -> void:
 	_empty_label.position = Vector2(rect.position.x, rect.position.y + rect.size.y / 2.0 - 10.0)
 	add_child(_empty_label)
 
+	_build_tooltip()
 	_update_labels()
+
+
+## ホバー中に出す凡例。map_panel.gd の都市ツールチップと同じ作り
+## （PanelContainer + マウス操作を通さない mouse_filter = IGNORE）。
+func _build_tooltip() -> void:
+	_tooltip = PanelContainer.new()
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.add_theme_stylebox_override("panel", UiTheme.make_panel_style())
+	_tooltip.visible = false
+
+	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 6)
+
+	_tooltip_box = VBoxContainer.new()
+	_tooltip_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_box.add_theme_constant_override("separation", 2)
+
+	_tooltip_title = Label.new()
+	_tooltip_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_title.add_theme_color_override("font_color", UiTheme.TEXT_DIM)
+	_tooltip_title.add_theme_font_size_override("font_size", TICK_FONT_SIZE)
+	_tooltip_box.add_child(_tooltip_title)
+
+	margin.add_child(_tooltip_box)
+	_tooltip.add_child(margin)
+	add_child(_tooltip)
 
 
 func _make_label(align: HorizontalAlignment, width: float) -> Label:
@@ -110,8 +155,31 @@ func set_data(series: Dictionary, max_day: int) -> void:
 		_series[item_id] = copy
 	_max_day = maxi(max_day, 1)
 	_tick_days = _compute_tick_days(_max_day)
+	_rebuild_tooltip_rows()
 	_update_labels()
+	clear_hover()
 	queue_redraw()
+
+
+## 凡例の行を選択中の品目に合わせて作り直す。品目の入れ替え（トグル操作）で
+## 呼ぶため、ホバー中の値の更新（_update_tooltip_content()）とは別にしてある。
+func _rebuild_tooltip_rows() -> void:
+	if not is_instance_valid(_tooltip_box):
+		return
+	for item_id: String in _tooltip_rows:
+		var row: Label = _tooltip_rows[item_id]
+		if is_instance_valid(row):
+			_tooltip_box.remove_child(row)
+			row.queue_free()
+	_tooltip_rows.clear()
+
+	for item_id: String in _series:
+		var row := Label.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_theme_color_override("font_color", UiTheme.item_color(item_id))
+		row.add_theme_font_size_override("font_size", TICK_FONT_SIZE)
+		_tooltip_box.add_child(row)
+		_tooltip_rows[item_id] = row
 
 
 func item_ids() -> Array:
@@ -125,6 +193,80 @@ func max_day() -> int:
 ## 現在の横軸の目盛り（日数の一覧、昇順）。検査から目盛りの間隔を確かめるために公開する。
 func tick_days() -> Array[int]:
 	return _tick_days.duplicate()
+
+
+func _on_gui_input(event: InputEvent) -> void:
+	var motion: InputEventMouseMotion = event as InputEventMouseMotion
+	if motion != null:
+		hover_at(motion.position)
+
+
+## local_position（この Control 内のローカル座標）に最も近い日へ凡例を合わせる。
+## 描画領域の外なら凡例を消す。--script のハーネスは実際のマウスを動かせない
+## ため、検査から直接呼べるよう公開している（map_panel.gd の pick_city_at() と同じ理由）。
+func hover_at(local_position: Vector2) -> void:
+	var rect: Rect2 = plot_rect()
+	if _series.is_empty() or not rect.has_point(local_position):
+		clear_hover()
+		return
+
+	var ratio: float = clampf((local_position.x - rect.position.x) / rect.size.x, 0.0, 1.0)
+	var day: int = clampi(int(round(ratio * float(_max_day - 1))) + 1, 1, _max_day)
+	if day == _hover_day:
+		return
+	_hover_day = day
+	_update_tooltip_content()
+	_position_tooltip(local_position)
+	_tooltip.visible = true
+	queue_redraw()
+
+
+func clear_hover() -> void:
+	if _hover_day == -1:
+		return
+	_hover_day = -1
+	if is_instance_valid(_tooltip):
+		_tooltip.visible = false
+	queue_redraw()
+
+
+## 検査用。ホバー中でなければ -1。
+func hover_day() -> int:
+	return _hover_day
+
+
+## ホバー中の凡例に出ている item_id の行の文字列（"品目名: 価格"）。
+## ホバーしていない、またはその品目を表示していなければ空文字。
+func legend_text_for(item_id: String) -> String:
+	if _hover_day == -1 or not _tooltip_rows.has(item_id):
+		return ""
+	return (_tooltip_rows[item_id] as Label).text
+
+
+## 凡例が表示されているか（ホバー中か）。
+func is_legend_visible() -> bool:
+	return is_instance_valid(_tooltip) and _tooltip.visible
+
+
+func _update_tooltip_content() -> void:
+	_tooltip_title.text = "%d日目" % _hover_day
+	for item_id: String in _tooltip_rows:
+		var values: Array = _series[item_id]
+		var index: int = _hover_day - 1
+		var price: int = values[index] if index >= 0 and index < values.size() else 0
+		var name: String = GameData.ITEMS[item_id]["name"] if GameData.ITEMS.has(item_id) else item_id
+		(_tooltip_rows[item_id] as Label).text = "%s: %s" % [name, UiUtil.format_number(price)]
+
+
+## 凡例をマウスの近くへ置く。CHART_SIZE の右端・下端をはみ出さないよう寄せる。
+func _position_tooltip(local_position: Vector2) -> void:
+	var size: Vector2 = _tooltip.size
+	var pos: Vector2 = local_position + Vector2(12.0, 12.0)
+	if pos.x + size.x > CHART_SIZE.x:
+		pos.x = local_position.x - size.x - 12.0
+	if pos.y + size.y > CHART_SIZE.y:
+		pos.y = local_position.y - size.y - 12.0
+	_tooltip.position = Vector2(maxf(pos.x, 0.0), maxf(pos.y, 0.0))
 
 
 ## 目盛りの間隔を「きりのいい日数」から選ぶ。TICK_TARGET_COUNT 本に近づく
@@ -263,3 +405,13 @@ func _draw() -> void:
 		for i: int in values.size():
 			points.append(point_for(item_id, i))
 		draw_polyline(points, color, LINE_WIDTH)
+
+	if _hover_day != -1:
+		var x: float = _x_for_day(_hover_day)
+		draw_line(
+			Vector2(x, rect.position.y), Vector2(x, rect.position.y + rect.size.y),
+			UiTheme.TEXT_DIM, 1.0)
+		for item_id: String in _series:
+			var index: int = _hover_day - 1
+			if index >= 0 and index < (_series[item_id] as Array).size():
+				draw_circle(point_for(item_id, index), 4.0, UiTheme.item_color(item_id))
