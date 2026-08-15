@@ -16,10 +16,6 @@ theme_override_constants/margin_bottom = 12
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="MapTitle" type="Label" parent="Margin/Column"]
-layout_mode = 2
-text = "大陸図（破線は黒ゾーン）"
-
 [node name="CityList" type="Control" parent="Margin/Column"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 300)

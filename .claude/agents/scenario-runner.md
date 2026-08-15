@@ -33,7 +33,7 @@ find_godot() {
     [ -n "$c" ] && [ -f "$c" ] && { echo "$c"; return 0; }
   done
   # 3) よくある置き場所を探す。_console.exe を優先し、新しい版を採る
-  hit=$(find /c/Users/*/Downloads /c/Users/*/scoop/apps "/c/Program Files" \
+  hit=$(find /c/work /c/Users/*/Downloads /c/Users/*/scoop/apps "/c/Program Files" \
         "/c/Program Files (x86)" /c/ProgramData/chocolatey/lib \
         -maxdepth 4 -iname "Godot*console.exe" -type f 2>/dev/null | sort -V | tail -1)
   [ -n "$hit" ] && { echo "$hit"; return 0; }
@@ -49,7 +49,7 @@ GODOT=$(find_godot) || { echo "Godot が見つからない"; exit 1; }
 GUI（描画層）を起動するときは `_console` を**除いた**方を同様に探す:
 
 ```bash
-GODOT_GUI=$(find /c/Users/*/Downloads /c/Users/*/scoop/apps "/c/Program Files" \
+GODOT_GUI=$(find /c/work /c/Users/*/Downloads /c/Users/*/scoop/apps "/c/Program Files" \
   -maxdepth 4 -iname "Godot*.exe" -type f 2>/dev/null \
   | grep -vi "_console" | sort -V | tail -1)
 ```

@@ -7,8 +7,14 @@ TollRoad（Godot 4.7.1 / GL Compatibility）の実行・ファイル・コード
 
 バイナリは `PATH` に無い。さらに `Godot_v4.7.1-stable_win64.exe` は**拡張子が .exe のディレクトリ**で、実体はその中にある。必ずフルパスで呼ぶこと。
 
+**置き場所は固定ではない。** 以前は `~/Downloads/` にあり、今は `c:\work\` に
+ある。ここに書いたパスで見つからなければ、探してから使うこと
+（`.claude/agents/scenario-runner.md` の `find_godot()` が探索の形）。
+`--script` のハーネスはパスが違うだけで**何も実行されないまま exit 0 を返す**
+ため、パス切れは検査に通ったように見える。
+
 ```bash
-"/c/Users/Tamar/Downloads/Godot_v4.7.1-stable_win64.exe/Godot_v4.7.1-stable_win64_console.exe" \
+"/c/work/Godot_v4.7.1-stable_win64.exe/Godot_v4.7.1-stable_win64_console.exe" \
   --headless --path . --quit-after 30
 ```
 

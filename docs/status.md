@@ -69,6 +69,25 @@
 `GameData.PRODUCTION_SPECIALTY` に正規化してあるので、都市を跨いでも
 同じ物差しで形を比較できる。
 
+**大陸図の確認用シーン**（2026-08-15）。`scenes/debug/MapPreview.tscn` を
+エディタで開いて F6 で実行すると、大陸図だけが単独で立ち上がる。本編では
+大陸図が SubViewport の中に `own_world_3d = true` で作られ、さらにノードが
+実行時に `new()` で組まれるため、エディタの 3D ビューポートからは
+**原理的に見えない**（別ワールドであり、かつ `.tscn` に存在しない）。
+その確認手段として置いた。SubViewport を挟まず `MapView3D` をメインの
+世界に直接置いている。
+
+視点は FPS 操作。WASD で移動、マウスで視線、Shift でダッシュ、F で歩く／飛ぶ
+の切り替え（飛行中は Q/E で上下）、R で開始位置、F4 でトゥーン、Esc でマウスを
+放す。本編の `MapCamera`（周回カメラ）とは座標の決め方が違うため共通化せず、
+[map_preview_camera.gd](../scenes/debug/map_preview_camera.gd) を別に置いてある。
+地形追従は `terrain_mesh_height_at()` で真下の高さを引くだけで**当たり判定は
+無い**（構造物はすり抜ける）。
+
+`GameSession` を持たないので、**都市の選択・隊商・現在地の強調は出ない**。
+絵作り（フォグ・グロウ・トゥーン）を見るためのもので、状態が要るなら本編を
+起動する。`@tool` は付けていない（`_build()` が重く、エディタごと落ちうる）。
+
 ## 検証シナリオ
 
 `scripts/systems/scenario_m1.gd` 〜 `scenario_m29.gd` の29本。
