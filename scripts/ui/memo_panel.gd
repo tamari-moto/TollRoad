@@ -25,6 +25,14 @@ var _grid: GridContainer
 var _cells: Dictionary = {}
 var _city_headers: Dictionary = {}
 
+## 価格推移グラフの制御。全都市が常時記録されているため、訪問の有無を
+## 問わずどの都市でも選べる（相場メモの「?」表示とは別方針）。
+var _city_select: OptionButton
+var _item_toggles: Container
+var _chart: Control
+var _chart_cities: Array[String] = []
+var _selected_items: Dictionary = {}
+
 
 func bind(session: GameSession) -> void:
 	UiUtil.rebind(_session, session, {"day_advanced": _on_day_advanced})
@@ -34,6 +42,7 @@ func bind(session: GameSession) -> void:
 
 
 func _build() -> void:
+	_build_chart_controls()
 	if not _cells.is_empty():
 		return
 	_grid = UiUtil.find_node(self, "MemoGrid")
@@ -72,6 +81,69 @@ func _build() -> void:
 		_cells[item_id] = row
 
 
+## 都市選択と品目トグルを組み立てる。全都市を常時記録しているので、
+## 相場メモの表と違い訪問の有無は問わない（未訪問でも選べる）。
+func _build_chart_controls() -> void:
+	if _city_select != null:
+		return
+	_city_select = UiUtil.find_node(self, "CitySelect")
+	_item_toggles = UiUtil.find_node(self, "ItemToggles")
+	_chart = UiUtil.find_node(self, "PriceChart")
+	if _city_select == null or _item_toggles == null or _chart == null:
+		_city_select = null
+		return
+
+	_chart_cities = GameData.royal_city_ids()
+	_chart_cities.append(GameData.CAERLEON)
+	for city_id: String in _chart_cities:
+		_city_select.add_item(GameData.CITIES[city_id]["name"])
+	# 既定は現在地。全都市が常時記録されているので選び直しても構わない。
+	var initial_index: int = _chart_cities.find(_session.current_city) if _session != null else 0
+	_city_select.selected = maxi(initial_index, 0)
+	if not _city_select.item_selected.is_connected(_on_chart_option_changed):
+		_city_select.item_selected.connect(_on_chart_option_changed)
+
+	for item_id: String in GameData.ITEMS:
+		var toggle := CheckButton.new()
+		toggle.text = GameData.ITEMS[item_id]["name"]
+		var color: Color = UiTheme.item_color(item_id)
+		# 既定の Button テーマは ON（pressed）やフォーカス時に別の文字色を出す
+		# （実測で白くなる）。グラフの線と同じ色で見分けられるようにしたいので、
+		# 状態ごとの上書きを全て同じ色で埋めて固定する。
+		for state: String in ["font_color", "font_hover_color", "font_pressed_color",
+				"font_hover_pressed_color", "font_focus_color"]:
+			toggle.add_theme_color_override(state, color)
+		toggle.toggled.connect(_on_item_toggled.bind(item_id))
+		_item_toggles.add_child(toggle)
+		_selected_items[item_id] = false
+
+
+func _on_chart_option_changed(_index: int) -> void:
+	_refresh_chart()
+
+
+func _on_item_toggled(pressed: bool, item_id: String) -> void:
+	_selected_items[item_id] = pressed
+	_refresh_chart()
+
+
+## 選ばれている都市 id。何も選ばれていなければ現在地に倣う。
+func _selected_chart_city() -> String:
+	if _city_select == null or _city_select.selected < 0:
+		return _session.current_city if _session != null else ""
+	return _chart_cities[_city_select.selected]
+
+
+func _refresh_chart() -> void:
+	if _session == null or _chart == null:
+		return
+	var series: Dictionary = {}
+	for item_id: String in _selected_items:
+		if _selected_items[item_id]:
+			series[item_id] = _session.price_history.series(_selected_chart_city(), item_id)
+	_chart.set_data(series, _session.day)
+
+
 ## 表の幅を抑えるため、都市名を先頭3文字に短縮して表示する。
 ## 都市数・都市名を変えてもそのまま追従する（固定の略称表は持たない）。
 static func _short_city_name(city_id: String) -> String:
@@ -94,6 +166,8 @@ func refresh() -> void:
 
 	for item_id: String in _cells:
 		_refresh_row(item_id)
+
+	_refresh_chart()
 
 
 func _refresh_row(item_id: String) -> void:

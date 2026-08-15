@@ -9,6 +9,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const PriceTable = preload("res://scripts/systems/price_table.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
 const Logistics = preload("res://scripts/systems/logistics.gd")
+const PriceHistory = preload("res://scripts/systems/price_history.gd")
 
 ## 日誌の行の種別。UI が音と色を選ぶのに使う。
 ##
@@ -72,6 +73,10 @@ var log_entries: Array[String] = []
 
 var prices: PriceTable
 
+## 全都市×全品目の日次価格の記録（市場の価格推移グラフ用）。訪問の有無を
+## 問わず毎日記録する点で memo（相場メモ）とは別の記録。
+var price_history: PriceHistory
+
 ## 都市ごとの在庫と需要。買える上限・売れる上限を決め、価格にも効く。
 var market: MarketTable
 
@@ -92,6 +97,8 @@ func _init(rng_seed: int = 0) -> void:
 	# 物流は市場の在庫を動かすだけで価格には触らない（価格を作る場所は
 	# PriceTable の1箇所に保つ）。RNG は参照で渡し、シードで再現できるようにする。
 	logistics = Logistics.new(_rng)
+	price_history = PriceHistory.new()
+	price_history.record(prices)
 	_record_memo()
 
 
@@ -837,6 +844,7 @@ func _advance_day() -> void:
 	# 移すと同じシードでも以降の価格系列が変わる（architecture.md 参照）。
 	_run_logistics()
 	prices.reroll()
+	price_history.record(prices)
 	_record_memo()
 	market_changed.emit()
 	_run_workers()
@@ -912,6 +920,7 @@ func to_dict() -> Dictionary:
 		"memo": memo.duplicate(true),
 		"log_entries": log_entries.duplicate(),
 		"prices": prices.prices.duplicate(true),
+		"price_history": price_history.to_dict(),
 		"market": market.to_dict(),
 		"logistics": logistics.to_dict(),
 		"rng": {"seed": str(_rng.seed), "state": str(_rng.state)},
@@ -988,6 +997,13 @@ func from_dict(data: Dictionary) -> void:
 	else:
 		# 相場が無ければ引き直す。get_price() が落ちる状態にはしない。
 		prices.reroll()
+
+	# 相場を戻した後で履歴を戻す。day と系列長の照合に当日の day を使うため。
+	if data.has("price_history"):
+		price_history.from_dict(data["price_history"], day, prices)
+	else:
+		price_history.reset()
+		price_history.record(prices)
 
 
 ## item_id -> 個数。未知の品目は捨てる（品目を消した後の古いセーブ対策）。
