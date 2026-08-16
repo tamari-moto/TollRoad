@@ -102,11 +102,19 @@ static func consumption_of(city_id: String, item_id: String) -> int:
 ## 導くと 0 になり、隊商が運び込んでも一切積めなくなるため、消費量を
 ## 基準にした別の上限を与える（IMPORT_CAP_DAYS 日ぶん＝数日で捌ける量）。
 ## レア品目だけは誰も扱わないので 0 のまま（探索でしか手に入らない）。
+##
+## **特産資源だけは例外。** 特産（city_for_specialty が非空）は本拠地から
+## 王道距離2を超えると自前生産が無くなる（PRODUCTION_SPECIALTY_FAR）だけで
+## なく、輸入枠も与えない＝0のまま。特産品を「産地周辺でしか買えない」
+## ものにするための境界で、隊商もこの範囲へは運ばなくなる
+## （logistics.gd の _needs() が stock_cap<=0 を見て候補から外すため）。
 static func stock_cap(city_id: String, item_id: String) -> int:
 	var produced: int = production_of(city_id, item_id)
 	if produced > 0:
 		return produced * GameData.MARKET_CAP_DAYS
 	if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.RARE:
+		return 0
+	if GameData.city_for_specialty(item_id) != "":
 		return 0
 	return consumption_of(city_id, item_id) * GameData.IMPORT_CAP_DAYS
 

@@ -341,10 +341,15 @@ func _find_candidates(market: MarketTable) -> Array[Dictionary]:
 
 ## その都市がその品目を欲しがっているか。
 ## 自前で作れるもの（産地）は運ばれてこない。レアは誰も生産しないので対象外。
+##
+## stock_cap が0（特産資源で産地から遠すぎる、など）なら demand_cap の大小に
+## 関わらず運ばない。受け入れ側の棚が無い都市へ送ると、到着時に
+## receive_stock() が容量0で切り捨て、産地の在庫だけ無駄に減って荷が消える
+## （幽霊隊商になる）ため。
 func _needs(market: MarketTable, city_id: String, item_id: String) -> bool:
 	if MarketTable.production_of(city_id, item_id) > 0:
 		return false
-	if market.demand_cap(city_id, item_id) <= 0 and market.stock_cap(city_id, item_id) <= 0:
+	if market.stock_cap(city_id, item_id) <= 0:
 		return false
 	return market.stock_ratio(city_id, item_id) < ARRIVAL_STOCK_CEILING
 

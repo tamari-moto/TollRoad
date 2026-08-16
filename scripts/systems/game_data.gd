@@ -149,12 +149,13 @@ const PRODUCTION_OTHER_EQUIPMENT: int = 0
 
 ## 特産資源は本拠地からの王道ホップ距離で段階的に減る（road_distance() 参照）。
 ## 「その街でしか採れないが、近隣の街でも少しは採れる」という産地の実感を
-## 出すための段階。距離2を超える都市（黒ゾーンのレイヴンスパイア含む）は
-## ごく僅かな取引量だけ残す。都市を足しても表を書き足す必要は無い
-## （specialty と ROYAL_ROAD_EDGES から自動で決まる）。
+## 出すための段階。距離2を超える都市（黒ゾーンのレイヴンスパイア含む）では
+## 自前生産を持たせず（トリクル生産を廃止）、隊商の輸入だけに委ねる。
+## 都市を足しても表を書き足す必要は無い（specialty と ROYAL_ROAD_EDGES から
+## 自動で決まる）。
 const PRODUCTION_SPECIALTY_NEAR_1: int = 16 ## 隣接都市（distance 1）
 const PRODUCTION_SPECIALTY_NEAR_2: int = 4  ## 2ホップ先（distance 2）
-const PRODUCTION_SPECIALTY_FAR: int = 1     ## それ以外
+const PRODUCTION_SPECIALTY_FAR: int = 0     ## それ以外（自前生産なし）
 
 ## 1日あたりの消費量（＝需要の回復量）。生産と逆向きで、自前で作れるものは
 ## 欲しがらない。レイヴンスパイアは装備の集積地なので装備を厚く買い取る。
@@ -168,9 +169,10 @@ const CONSUMPTION_CAERLEON_OTHER: int = 6
 ## 貯まっている」が強くなる。上限 = 1日あたりの量 × この日数。
 const MARKET_CAP_DAYS: int = 4
 
-## 輸入品の初期在庫（上限に対する割合）。満杯にしないのは、初日から
-## 不足を作って隊商を走らせるため（market_table.gd の reset() 参照）。
-const IMPORT_INITIAL_RATIO: float = 0.5
+## 輸入品の初期在庫（上限に対する割合）。0 にして完全な品切れから
+## 始めるのは、初日から不足を作って隊商を走らせるため
+## （market_table.gd の reset() 参照）。
+const IMPORT_INITIAL_RATIO: float = 0.0
 
 ## 生産しない都市が1日に食い潰す在庫の割合（消費量に対する比）。
 ## 1.0 だと棚が空く速さに隊商の補充が追いつかず常時品切れになり、

@@ -239,13 +239,12 @@ func _test_multi_leg_from_hub() -> void:
 		var s: GameSession = GameSession.new(seed_value)
 		if s.current_city != GameData.CAERLEON:
 			s.move_to(GameData.CAERLEON)
-		# レイヴンスパイアは特産を持たないため、資源の在庫は本拠地からの距離で
-		# 決まる FAR ティア（ごく僅か）しかない。10個は仕入れられないため、
-		# 在庫上限（PRODUCTION_SPECIALTY_FAR * MARKET_CAP_DAYS = 4）に収まる
-		# 少量に絞る。積荷が空になるかどうかを見る検査なので量そのものは問わない。
-		s.buy("ore", 2)
-		if s.cargo_count("ore") != 2:
-			continue
+		# レイヴンスパイアは特産を持たず、資源は本拠地からの距離が2を超える
+		# （＝FARティア）ため、特産資源は産地周辺以外では市場に並ばない
+		# （stock_cap が常に0。market_table.gd 参照）。市場を介さず積荷を
+		# 直接積んで前提を作る。積荷が空になるかどうかを見る検査なので、
+		# 積み方や量そのものは問わない。
+		s.cargo["ore"] = 2
 		silver_at_departure = s.silver
 		day_before = s.day
 		s.move_to(destination)
