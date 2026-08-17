@@ -36,6 +36,13 @@ extends RefCounted
 
 const GameData = preload("res://scripts/systems/game_data.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
+const LogisticsTuning = preload("res://scripts/systems/logistics_tuning.gd")
+
+## 以下の const は**既定値**であり、実行中に読むのは `tuning` を通した値。
+## デバッグ画面（logistics_debug_panel.gd）から一時的に上書きできるように
+## してあるが、上書きが無ければ必ずこの値になる。**const 自体は
+## 20〜30回の通しプレイで決めた実測値なので書き換えないこと**
+## （docs/rules/balance.md）。仕組みは logistics_tuning.gd 参照。
 
 ## 1日に新しく仕立てる隊商の最大数。地図に出る荷車の増え方を決める。
 ## 供給の総量はこれではなく交易路（_supply_routes）が持つので、ここは
@@ -96,6 +103,16 @@ var convoys: Array[Dictionary] = []
 ## （配列の添字は到着で詰められるので識別子にできない）。
 var _next_id: int = 1
 
+## 上の const を実行中だけ上書きする層（logistics_tuning.gd）。
+## 上書きが無ければ const の値をそのまま返すので、既定の挙動は変わらない。
+var tuning: LogisticsTuning
+
+## 直近の advance_day() で到着した隊商と、その日に送り出した隊商。
+## 統計（logistics_stats.gd）が「その日に何本着いて何本出たか」を読む。
+## advance_day() のたびに丸ごと入れ替わるので、次の日を送る前に読むこと。
+var _last_arrived: Array[Dictionary] = []
+var _last_departed: Array[Dictionary] = []
+
 var _rng: RandomNumberGenerator
 
 
@@ -103,6 +120,25 @@ var _rng: RandomNumberGenerator
 ## シードを固定したときに物流まで含めて再現できるようにするため。
 func _init(rng: RandomNumberGenerator) -> void:
 	_rng = rng
+	tuning = LogisticsTuning.new(default_tuning())
+
+
+## 上書き層へ渡す既定値。**const と上書き層をつなぐ唯一の場所。**
+##
+## 既定値を logistics_tuning.gd 側に書くと同じ数値が2箇所に増え、片方だけ
+## 直したときに黙ってズレる。const を持つこちらが名前と値の対応を作る。
+static func default_tuning() -> Dictionary:
+	return {
+		LogisticsTuning.MAX_DEPARTURES_PER_DAY: float(MAX_DEPARTURES_PER_DAY),
+		LogisticsTuning.MAX_ACTIVE_CONVOYS: float(MAX_ACTIVE_CONVOYS),
+		LogisticsTuning.CONVOY_LOAD_MIN: float(CONVOY_LOAD_MIN),
+		LogisticsTuning.CONVOY_LOAD_MAX: float(CONVOY_LOAD_MAX),
+		LogisticsTuning.SUPPLY_RATE: SUPPLY_RATE,
+		LogisticsTuning.SUPPLY_CEILING: SUPPLY_CEILING,
+		LogisticsTuning.DEPARTURE_STOCK_FLOOR: DEPARTURE_STOCK_FLOOR,
+		LogisticsTuning.ARRIVAL_STOCK_CEILING: ARRIVAL_STOCK_CEILING,
+		LogisticsTuning.DAYS_PER_HOP: float(DAYS_PER_HOP),
+	}
 
 
 # --- 参照 ---
@@ -242,8 +278,20 @@ func advance_day(market: MarketTable) -> Array[Dictionary]:
 	# 隊商の着荷を先に乗せてから流すので、隊商が着いた都市はその分だけ
 	# 交易路の補充が要らなくなる（二重に積まない）。
 	_supply_routes(market)
-	_dispatch(market)
+	_last_departed = _dispatch(market)
+	_last_arrived = arrived
 	return arrived
+
+
+## 直近の1日で到着した隊商（advance_day() の戻り値と同じ中身）。
+## 戻り値を取り損ねた側（統計）が後から読めるように残してある。
+func last_arrived() -> Array[Dictionary]:
+	return _last_arrived
+
+
+## 直近の1日で送り出した隊商。
+func last_departed() -> Array[Dictionary]:
+	return _last_departed
 
 
 ## 産地から消費地への定常の補充。地図には出ない。
@@ -267,11 +315,12 @@ func _supply_routes(market: MarketTable) -> void:
 			var capacity: int = market.stock_cap(city_id, item_id)
 			if capacity <= 0:
 				continue
-			var ceiling: int = int(float(capacity) * SUPPLY_CEILING)
+			var ceiling: int = int(float(capacity) * tuning.value_of(LogisticsTuning.SUPPLY_CEILING))
 			if market.stock_of(city_id, item_id) >= ceiling:
 				continue
 			var amount: int = maxi(1, int(round(
-				float(MarketTable.consumption_of(city_id, item_id)) * SUPPLY_RATE)))
+				float(MarketTable.consumption_of(city_id, item_id))
+					* tuning.value_of(LogisticsTuning.SUPPLY_RATE))))
 			var room: int = ceiling - market.stock_of(city_id, item_id)
 			market.receive_stock(city_id, item_id, mini(amount, room))
 
@@ -298,23 +347,28 @@ func _advance_convoys(market: MarketTable) -> Array[Dictionary]:
 ## MAX_DEPARTURES_PER_DAY 本まで送り出す。候補の並びは決定的（都市・品目とも
 ## GameData の宣言順）で、そこから RNG で選ぶ。順序に乱数が混ざると、
 ## 同じシードでも展開が変わる。
-func _dispatch(market: MarketTable) -> void:
-	if convoys.size() >= MAX_ACTIVE_CONVOYS:
-		return
+## 戻り値はその日に送り出した隊商（統計が本数を読む）。
+func _dispatch(market: MarketTable) -> Array[Dictionary]:
+	var launched: Array[Dictionary] = []
+	if convoys.size() >= tuning.int_of(LogisticsTuning.MAX_ACTIVE_CONVOYS):
+		return launched
 
 	var candidates: Array[Dictionary] = _find_candidates(market)
 	if candidates.is_empty():
-		return
+		return launched
 
-	var departures: int = mini(MAX_DEPARTURES_PER_DAY,
-		MAX_ACTIVE_CONVOYS - convoys.size())
+	var departures: int = mini(tuning.int_of(LogisticsTuning.MAX_DEPARTURES_PER_DAY),
+		tuning.int_of(LogisticsTuning.MAX_ACTIVE_CONVOYS) - convoys.size())
 	for i: int in departures:
 		if candidates.is_empty():
-			return
+			return launched
 		var pick: int = _rng.randi_range(0, candidates.size() - 1)
 		var candidate: Dictionary = candidates[pick]
 		candidates.remove_at(pick)
-		_launch(market, candidate)
+		var convoy: Dictionary = _launch(market, candidate)
+		if not convoy.is_empty():
+			launched.append(convoy)
+	return launched
 
 
 ## 成立する「産地 → 不足している都市」の組を全て挙げる。
@@ -351,14 +405,16 @@ func _needs(market: MarketTable, city_id: String, item_id: String) -> bool:
 		return false
 	if market.stock_cap(city_id, item_id) <= 0:
 		return false
-	return market.stock_ratio(city_id, item_id) < ARRIVAL_STOCK_CEILING
+	return market.stock_ratio(city_id, item_id) \
+		< tuning.value_of(LogisticsTuning.ARRIVAL_STOCK_CEILING)
 
 
 ## その都市がその品目を送り出せるか。産地であり、かつ自分の在庫に余裕がある。
 func _can_supply(market: MarketTable, city_id: String, item_id: String) -> bool:
 	if MarketTable.production_of(city_id, item_id) <= 0:
 		return false
-	return market.stock_ratio(city_id, item_id) >= DEPARTURE_STOCK_FLOOR
+	return market.stock_ratio(city_id, item_id) \
+		>= tuning.value_of(LogisticsTuning.DEPARTURE_STOCK_FLOOR)
 
 
 ## その品目を積んだ隊商が、その都市へ既に向かっているか。
@@ -370,32 +426,41 @@ func _is_inbound(to_city: String, item_id: String) -> bool:
 
 
 ## 隊商を1本仕立て、産地の在庫を減らして走らせる。
-func _launch(market: MarketTable, candidate: Dictionary) -> void:
+## 送り出せなければ空の辞書を返す（経路が無い・積む在庫が無い）。
+func _launch(market: MarketTable, candidate: Dictionary) -> Dictionary:
 	var from_city: String = candidate["from"]
 	var to_city: String = candidate["to"]
 	var item_id: String = candidate["item"]
 
 	var path: Array[String] = route_between(from_city, to_city)
 	if path.size() < 2:
-		return
+		return {}
 
 	# 積める分だけ積む。産地の在庫を DEPARTURE_STOCK_FLOOR より下へは
 	# 削らない（産地へ来たプレイヤーが買えなくなるのを避ける）。
-	var floor_stock: int = int(float(market.stock_cap(from_city, item_id)) * DEPARTURE_STOCK_FLOOR)
+	var floor_stock: int = int(float(market.stock_cap(from_city, item_id))
+		* tuning.value_of(LogisticsTuning.DEPARTURE_STOCK_FLOOR))
 	var spare: int = maxi(0, market.stock_of(from_city, item_id) - floor_stock)
-	var wanted: int = _rng.randi_range(CONVOY_LOAD_MIN, CONVOY_LOAD_MAX)
+	# 上書き層から下限＞上限で入りうる（logistics_tuning.gd は組み合わせを
+	# 弾かず警告するだけ）。randi_range() は逆順を渡すとエラーになるので、
+	# ここで上限側へ寄せて潰す。
+	var load_max: int = tuning.int_of(LogisticsTuning.CONVOY_LOAD_MAX)
+	var load_min: int = mini(tuning.int_of(LogisticsTuning.CONVOY_LOAD_MIN), load_max)
+	var wanted: int = _rng.randi_range(load_min, load_max)
 	var load: int = mini(wanted, spare)
 	if load <= 0:
-		return
+		return {}
 
 	market.consume_stock(from_city, item_id, load)
-	convoys.append(_make_convoy(from_city, to_city, item_id, load, path))
+	var convoy: Dictionary = _make_convoy(from_city, to_city, item_id, load, path)
+	convoys.append(convoy)
+	return convoy
 
 
 ## 隊商1本ぶんの辞書を組む。日数は経路のホップ数で決まる。
 func _make_convoy(from_city: String, to_city: String, item_id: String,
 		count: int, path: Array[String]) -> Dictionary:
-	var days: int = maxi(1, (path.size() - 1) * DAYS_PER_HOP)
+	var days: int = maxi(1, (path.size() - 1) * tuning.int_of(LogisticsTuning.DAYS_PER_HOP))
 	var convoy: Dictionary = {
 		"id": _next_id,
 		"from": from_city,
@@ -430,6 +495,11 @@ func to_dict() -> Dictionary:
 ## JSON.parse_string() は数値を float で返すため、必ず int() を通すこと。
 func from_dict(data: Dictionary) -> void:
 	convoys.clear()
+	# 「直近の1日」は復元したセーブには存在しない（何日目から続けるにせよ、
+	# その日の出発・到着はまだ起きていない）。前のプレイの分が残ると
+	# 統計の初日だけ嘘の本数が乗る。
+	_last_arrived.clear()
+	_last_departed.clear()
 	_next_id = maxi(1, int(data.get("next_id", 1)))
 
 	var source: Variant = data.get("convoys", [])
@@ -459,7 +529,7 @@ func _restore_one(entry: Variant) -> Dictionary:
 	if path.size() < 2:
 		return {}
 
-	var total: int = maxi(1, (path.size() - 1) * DAYS_PER_HOP)
+	var total: int = maxi(1, (path.size() - 1) * tuning.int_of(LogisticsTuning.DAYS_PER_HOP))
 	var left: int = clampi(int(entry.get("days_left", total)), 1, total)
 	var count: int = maxi(0, int(entry.get("count", 0)))
 	if count <= 0:

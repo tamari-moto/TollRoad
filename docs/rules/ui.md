@@ -131,6 +131,18 @@ Tween で動かす。`clip_contents = true` なので畳まれている間は中
 キー操作は `[input]` に定義する。`_input` ではなく `_unhandled_input` で
 処理し、フォーカス中のコントロールからキーを奪わないようにしている。
 
+**デバッグ画面はサイドパネルの外**にある。F3 が市場データ
+（[debug_panel.gd](../../scripts/ui/debug_panel.gd)）、F5 が運送
+（[logistics_debug_panel.gd](../../scripts/ui/logistics_debug_panel.gd)）で、
+どちらも `%SidePanel` のタブとは独立したオーバーレイ。`main.gd` の
+`_unhandled_input()` から `toggle_visible()` を呼ぶだけで、タブストリップの
+開閉ロジックには一切触れない。`_panels` には乗るので `bind()` / `refresh()` は
+他のパネルと同じに来る。F4 はトゥーンの切り替えで埋まっているため空いていない。
+
+デバッグ画面が `SubViewport` を持つ場合、`render_target_update_mode` を
+`UPDATE_ALWAYS` にしないこと。パネルは普段閉じており、見えない 3D を毎フレーム
+描き続けることになる（本編の大陸図と二重に描く）。`UPDATE_WHEN_VISIBLE` を使う。
+
 ## 大陸図（3D）
 
 **大陸図は 3D**（[map_view_3d.gd](../../scripts/ui/map_view_3d.gd)）。`SubViewport` に

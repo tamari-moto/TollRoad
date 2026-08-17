@@ -57,6 +57,28 @@
 消費地は放っておくと在庫が減る（`IMPORT_DRAIN_RATE`）ので、産地の方が
 潤沢で安いという関係は保たれている。詳細は logistics.gd の冒頭コメント。
 
+**運送デバッグ画面**（2026-08-17）。**F5** で開閉するオーバーレイ
+（[logistics_debug_panel.gd](../scripts/ui/logistics_debug_panel.gd)）。
+物流は動いている所が画面にほとんど出ない（交易路は地図に出ず、隊商も数本しか
+描かれない）ため、値を見ずに壊れ方を判断できなかった。4つのビューを持つ:
+
+| ビュー | 中身 |
+|---|---|
+| 推移 | 走行中・出発・到着の本数と品切れ率の折れ線 |
+| 在庫 | 選んだ品目の、棚のある全都市の在庫の折れ線（産地は緑） |
+| 流量 | 直近N日に品目ごとに隊商で着いた個数の横棒（交易路は含まない） |
+| 立体 | 都市＝在庫の高さの棒、街道＝混み具合の太さ、隊商＝街道上の点 |
+
+右半分は常に**調整欄**で、logistics.gd の const 9項目を実行中だけ上書きできる
+（[logistics_tuning.gd](../scripts/systems/logistics_tuning.gd)）。既定値は const の
+ままで、上書きを消せば必ず戻る。`SUPPLY_CEILING ≥ ARRIVAL_STOCK_CEILING`
+（荷車が消える）や `DAYS_PER_HOP = 1`（荷車が都市の真上にしか出ない）のように
+logistics.gd が「そうすると壊れる」と書いている組み合わせは、その場で警告が出る。
+
+記録（[logistics_stats.gd](../scripts/systems/logistics_stats.gd)）はこのパネルが
+持ち、**セーブにも RNG にも触らない**。立体ビューの都市配置は大陸図と同じ
+`MapView3D.relax_positions()` を使う（配置を別に持つと地理が食い違う）。
+
 都市は10（王国都市9＋レイヴンスパイア）。
 
 **価格推移グラフ**（2026-08-15）。相場メモに折れ線グラフを追加。横軸が経過日数、
@@ -100,7 +122,7 @@
 
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m30.gd` の30本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m31.gd` の31本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。
