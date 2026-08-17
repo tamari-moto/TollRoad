@@ -61,6 +61,7 @@ func _init() -> void:
 	_test_shortage_counts_only_import_pairs()
 	_test_delivered_totals_match_arrivals()
 	_test_window_hosts_the_panel()
+	_test_window_sits_beside_main()
 	_test_panel_builds_every_view()
 	_test_stock_chart_skips_shelfless_cities()
 	_test_world_covers_every_travelable_edge()
@@ -750,3 +751,44 @@ func _test_world_bar_height_follows_stock() -> void:
 	_check(is_zero_approx(base), "棒の底面が地面（Y=0）にある", "%.4f" % base)
 
 	world.free()
+
+
+## 開いたときに本編の窓の隣へ置かれること。
+##
+## **ここは実際に落ちた所。** `get_window()` は Window 自身を返すため、
+## 自分の位置に POSITION_OFFSET を足す形になっていた。さらに
+## OPEN_ON_START=true だと show_window() を通らないぶん配置そのものが走らず、
+## 窓は (0,0)（モニタの左上）に取り残されていた。本編が原点の近くにあると
+## 真上に重なり、別ウィンドウにした意味が消える。
+##
+## 検査には親の窓が要る（本編の位置を引く先）。root へ入れると native の窓を
+## 開きにいくので、ホストの Window をツリー外で組んでそこへ吊る。
+func _test_window_sits_beside_main() -> void:
+	print("--- ウィンドウ: 本編の隣へ置かれる ---")
+
+	var host := Window.new()
+	host.position = Vector2i(400, 300)
+
+	var window := LogisticsDebugWindow.new()
+	host.add_child(window)
+	window.show_window()
+
+	var expected: Vector2i = host.position + LogisticsDebugWindow.POSITION_OFFSET
+	_check(window.position == expected,
+		"本編の窓の右下へずらして置かれる",
+		"実際 %s / 期待 %s" % [window.position, expected])
+	# 自分を見ていると (0,0) のまま、あるいは自分＋offset になる。
+	_check(window.position != Vector2i.ZERO,
+		"画面の左上に取り残されない", str(window.position))
+
+	# 一度置いたら動かさない。見ている途中で窓が飛ぶと、どこを見ていたか
+	# 分からなくなる。
+	var moved := Vector2i(50, 60)
+	window.position = moved
+	window.hide_window()
+	window.show_window()
+	_check(window.position == moved,
+		"二度目に開いても位置を動かさない（見ていた所を保つ）",
+		str(window.position))
+
+	host.free()

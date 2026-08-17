@@ -47,6 +47,12 @@ const POSITION_OFFSET := Vector2i(96, 64)
 
 var _panel: LogisticsDebugPanel
 
+## 一度でも本編の隣へ置いたか。位置は最初の一度だけ決める——見ている途中で
+## 窓が飛ぶと、どこを見ていたか分からなくなる。
+## 「position が (0,0) かどうか」では代用できない。(0,0) は「まだ置いていない」
+## と「本当に左上にある」の区別がつかず、後者だと毎回動かしてしまう。
+var _placed: bool = false
+
 
 func _init() -> void:
 	_configure()
@@ -54,6 +60,11 @@ func _init() -> void:
 
 func _ready() -> void:
 	_configure()
+	# 起動時から開いている場合、show_window() を通らないぶん配置も走らない。
+	# _configure() はツリーへ入る前に呼ばれうるので、本編の位置が引けるのは
+	# ここが最初になる。
+	if visible:
+		_place_beside_main()
 
 
 ## ノードの構築。二重に呼ばれても安全。--script のハーネスでは _ready() が
@@ -64,6 +75,14 @@ func _configure() -> void:
 
 	title = "TollRoad — 運送デバッグ"
 	# 本編のウィンドウの中に埋め込まず、OS のウィンドウとして出す。
+	#
+	# **先に隠してから代入すること。** Window は visible=true で生まれるため、
+	# 何も触らないうちから「表示中」と見なされ、setter が
+	# 「Can't change "force_native" while a window is displayed」を出して
+	# **代入を捨てる**（4.7.1 で実測）。エラーはログに出るだけで例外にならず、
+	# 埋め込み＝オーバーレイに戻る。この commit が消したかった状態そのもの。
+	# 実際の visible は下の OPEN_ON_START で決めるので、ここでは false に倒す。
+	visible = false
 	force_native = true
 	# transient にしない。true にすると本編に追従して最前面に張り付き、
 	# 別モニタへ出して置きっぱなしにするという使い方ができなくなる。
@@ -136,14 +155,30 @@ func panel() -> LogisticsDebugPanel:
 ## なるうえ、中央に出すと本編にちょうど重なる。位置を一度でも動かした後は
 ## 動かさない——見ている途中で窓が飛ぶのは、どこを見ていたか分からなくなる。
 func _place_beside_main() -> void:
-	if not is_inside_tree():
+	if _placed:
 		return
-	if position != Vector2i.ZERO:
-		return
-	var main: Window = get_window()
+	var main: Window = _main_window()
 	if main == null:
 		return
 	position = main.position + POSITION_OFFSET
+	_placed = true
+
+
+## 本編のウィンドウ。親を上へ辿って最初に見つかる Window を返す。
+##
+## **`get_window()` は使えない。** Window 自身の `get_window()` は自分を返すため、
+## 自分の位置に POSITION_OFFSET を足す形になる（＝本編の隣ではなく置き去り）。
+## 親から `get_window()` を呼ぶ手もあるが、そちらはツリー外だと使えず、
+## 検査がホストの窓をツリー外で組む形を取れなくなる。親を直接辿れば
+## 本編でも検査でも同じ経路になる。
+func _main_window() -> Window:
+	var node: Node = get_parent()
+	while node != null:
+		var window := node as Window
+		if window != null and window != self:
+			return window
+		node = node.get_parent()
+	return null
 
 
 ## キー操作。**この窓に焦点がある間、本編のウィンドウは入力を受け取らない。**
