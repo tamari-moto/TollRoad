@@ -18,6 +18,8 @@ game_data.gd — 定数のみ。何にも依存しない葉
     ├── logistics.gd — 都市間の物流。産地の在庫を消費地へ渡す
     ↑ preload           _rng は GameSession から参照で受け取る
     │                   在庫を動かすだけで価格には触らない
+    │                   ├── logistics_tuning.gd — const を実行中だけ上書きする層
+    │                   └── logistics_stats.gd  — 日ごとの記録（デバッグ画面が持つ）
     ├── price_table.gd — 全都市×全品目の価格表
     ↑ preload             _rng は GameSession から参照で受け取る
     │                     在庫の掛け率を MarketTable から借りる
@@ -29,7 +31,7 @@ game_data.gd — 定数のみ。何にも依存しない葉
             ├── save_manager.gd — ファイル入出力と版の整合
             ├── game_state.gd — 唯一の autoload。session と保存の入口
             ├── scenes/main/main.gd — 調停役
-            └── scripts/ui/*.gd (20ファイル) — bind(session) / refresh() 規約
+            └── scripts/ui/*.gd (29ファイル) — bind(session) / refresh() 規約
 ```
 
 上の層は下を知っているが、下は上を知らない。`GameSession` は UI を一切参照せず、
@@ -43,7 +45,9 @@ game_data.gd — 定数のみ。何にも依存しない葉
 |---|---|---|
 | `game_data.gd` | 全ての静的定義（品目9・都市6・ランク・島・騎乗・各種係数）と static ヘルパ4つ | 状態。インスタンス化されない |
 | `market_table.gd` | `stock[city][item]` / `demand[city][item]`、日次の補充、在庫の薄さに応じた**価格の掛け率** | 乱数（生産量は決定的）。価格そのもの（掛けるのは PriceTable の仕事）。**都市間の移動**（運ぶのは Logistics の仕事） |
-| `logistics.gd` | 走行中の隊商と、産地→消費地の定常の交易路。経路探索（王道＋黒ゾーン） | 価格。描画（荷車の見た目は map_view_3d.gd）。在庫の上限（`receive_stock()` が MarketTable 側で頭打ちになる） |
+| `logistics.gd` | 走行中の隊商と、産地→消費地の定常の交易路。経路探索（王道＋黒ゾーン）。挙動を決める const の**既定値** | 価格。描画（荷車の見た目は map_view_3d.gd）。在庫の上限（`receive_stock()` が MarketTable 側で頭打ちになる） |
+| `logistics_tuning.gd` | 上の const を実行中だけ上書きする層と、調整に要る範囲・表示名・壊れる組み合わせの警告 | **既定値**（`Logistics.default_tuning()` が const から渡す。2箇所に持つと黙ってズレる）。セーブ（デバッグ用で永続しない） |
+| `logistics_stats.gd` | 日ごとの走行本数・出発・到着・品切れ組数・搬入量・在庫のスナップショット | 記録の所有（デバッグ画面が1つ持つ。`GameSession` は知らない）。セーブ。RNG |
 | `price_table.gd` | `prices[city][item]`（その日の建値）と `reroll()`、在庫を反映した `buy_price()` / `sell_price()` | 乱数源（`_rng` は借り物）。日付の概念。在庫の増減 |
 | `game_session.gd` | 可変状態（下記）とプレイヤーの全行動。ルールの中枢。`to_dict()` / `from_dict()` | UI への参照。autoload への依存。**保存の形式**（JSON かどうかを知らない） |
 | `save_manager.gd` | `user://` への読み書き、版の判定、範囲の丸め | 状態の意味（写し取りは GameSession の担当） |

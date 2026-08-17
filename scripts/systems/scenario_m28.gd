@@ -2,18 +2,24 @@ extends "res://scripts/systems/scenario_base.gd"
 ## 物流（logistics.gd）と、地図に出る荷車の検証。
 ##
 ## この機能の約束は「**在庫が自然に増えるのは生産地だけ**で、それ以外の
-## 都市の品物は産地から運ばれてくる」こと。壊れ方が2通りあり、どちらも
+## 都市の品物は産地から隊商が運んでくる」こと。壊れ方が2通りあり、どちらも
 ## 画面を見ただけでは気づきにくいので、両側から挟む。
 ##
-##   1. 運ばれてこない側。隊商も交易路も止まると消費地は品切れへ向かうが、
+##   1. 運ばれてこない側。隊商が止まると消費地は品切れへ向かうが、
 ##      market_table.gd の advance_day() が黙って全都市に補充を戻した場合
 ##      （PRODUCTION_OTHER_* を 0 以外に戻す等）、品切れは起きないので
 ##      「動いている」検査では素通りする。**非生産地が自力で在庫を増やして
 ##      いないこと**を直接見る必要がある。
 ##
-##   2. 運ばれすぎる側。交易路の補充が厚すぎると消費地でも産地並みに
-##      買えるようになり、「産地まで足を運ぶ」という遊びの中心が消える。
+##   2. 運ばれすぎる側。供給が厚すぎると消費地でも産地並みに買えるように
+##      なり、「産地まで足を運ぶ」という遊びの中心が消える。
 ##      産地と消費地の在庫の開きで歯止めをかける。
+##
+## **一時的な品切れは許す**（2026-08-17、交易路の廃止に伴う）。隊商が唯一の
+## 供給路になったため、着くまでの数日で棚が尽きる組は出る。それは物流が
+## 実際に効いていることの現れなので、「1件も品切れが無い」では検査しない
+## （そう書くと品物が湧く実装へ戻す圧力になる）。見るのは慢性化——
+## 全期間を通して一度も在庫を持てない組が無いこと——と、割合の上限。
 ##
 ## 荷車（map_view_3d.gd）は見た目なので最終的な判断は GUI に委ねるが、
 ## 街道の上に乗っているか・台数が隊商と一致するかは幾何として確かめられる。
@@ -25,6 +31,7 @@ const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
 const Logistics = preload("res://scripts/systems/logistics.gd")
+const LogisticsTuning = preload("res://scripts/systems/logistics_tuning.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 
@@ -176,20 +183,51 @@ func _test_imports_arrive_from_producers() -> void:
 		"空にしても数日で運ばれてくる",
 		"%d 個" % s.market.stock_of(target_city, target_item))
 
-	# 60日を通しても、どこかが永久に品切れのままにならないこと。
+	# 品切れが**慢性化**しないこと。
+	#
+	# 交易路を廃止したので、一時的な品切れは起きる（隊商が着くまで4日前後
+	# かかり、その間に棚が尽きる組はある）。それは物流が実際に効いている
+	# ことの現れであって不具合ではない——なので「1件も品切れが無い」では
+	# 検査しない（そう書くと、品物が湧く実装へ戻す圧力になる）。
+	#
+	# 見るのは「同じ組がずっと空のままではない」こと。RUN_DAYS を通して
+	# **一度も在庫を持てなかった**組があれば、そこへは隊商が構造的に
+	# 到達できていない（経路が無い・産地が送り出せない）。
 	var long_run: GameSession = GameSession.new(28002)
+	var ever_stocked: Dictionary = {}
 	for day: int in RUN_DAYS:
 		long_run.rest()
+		for city_id: String in GameData.CITIES:
+			for item_id: String in GameData.ITEMS:
+				if long_run.market.stock_of(city_id, item_id) > 0:
+					ever_stocked["%s|%s" % [city_id, item_id]] = true
 
-	var starved: int = 0
-	for city_id: String in GameData.CITIES:
-		for item_id: String in GameData.ITEMS:
-			if MarketTable.stock_cap(city_id, item_id) <= 0:
+	var never_stocked: int = 0
+	var pairs: int = 0
+	for city_id2: String in GameData.CITIES:
+		for item_id2: String in GameData.ITEMS:
+			if MarketTable.stock_cap(city_id2, item_id2) <= 0:
 				continue
-			if long_run.market.stock_of(city_id, item_id) <= 0:
+			pairs += 1
+			if not ever_stocked.has("%s|%s" % [city_id2, item_id2]):
+				never_stocked += 1
+	_check(never_stocked == 0,
+		"%d日を通して一度も在庫を持てない組が無い" % RUN_DAYS,
+		"%d / %d 組が全期間ゼロ" % [never_stocked, pairs])
+
+	# とはいえ、常時ほとんどが空では市場として成立しない。最終日の品切れが
+	# 全体の一部に収まっていること（品切れを許すぶん、上限で挟む）。
+	var starved: int = 0
+	for city_id3: String in GameData.CITIES:
+		for item_id3: String in GameData.ITEMS:
+			if MarketTable.stock_cap(city_id3, item_id3) <= 0:
+				continue
+			if long_run.market.stock_of(city_id3, item_id3) <= 0:
 				starved += 1
-	_check(starved == 0, "%d日後もどこも品切れになっていない" % RUN_DAYS,
-		"%d 件が在庫ゼロ" % starved)
+	_check(float(starved) / float(pairs) < 0.25,
+		"%d日後の品切れが全体の25%%未満に収まる" % RUN_DAYS,
+		"%d / %d 組（%.0f%%）" % [starved, pairs,
+			float(starved) / float(pairs) * 100.0])
 
 
 ## 産地の方が明確に潤沢で安いこと。
@@ -405,36 +443,90 @@ func _test_balance_guardrails() -> void:
 	print("--- 物流の歯止め ---")
 
 	# 隊商が地図を埋め尽くさないこと（絵として読めなくなる）。
-	_check(Logistics.MAX_ACTIVE_CONVOYS <= 20,
-		"同時に走る隊商は20本以内", str(Logistics.MAX_ACTIVE_CONVOYS))
+	# 交易路の廃止で供給を隊商が全部担うようになり、必要な本数が増えた
+	# （旧 20本以内 → 交易路の無い今は 30本前後が定常状態）。積載を上げて
+	# 本数を抑える方針にしてあるので、ここが跳ね上がったら積載の側を疑う。
+	_check(Logistics.MAX_ACTIVE_CONVOYS <= 50,
+		"同時に走る隊商は50本以内", str(Logistics.MAX_ACTIVE_CONVOYS))
 	_check(Logistics.MAX_DEPARTURES_PER_DAY >= 1,
 		"毎日1本以上は出発しうる", str(Logistics.MAX_DEPARTURES_PER_DAY))
 
-	# 交易路の補充が上限に張り付くと、在庫という概念が効かなくなる。
-	_check(Logistics.SUPPLY_CEILING < 1.0,
-		"交易路だけでは在庫が満杯にならない", str(Logistics.SUPPLY_CEILING))
-	# 逆に薄すぎると消費地が常時品切れになる。
-	_check(Logistics.SUPPLY_CEILING >= 0.5,
-		"交易路の補充が薄すぎない", str(Logistics.SUPPLY_CEILING))
+	# 到着の上限が 1.0 未満であること。1.0 だと満杯の都市へも送り出し、
+	# 到着時に stock_cap で切り捨てられて荷が消える（質量保存が破れる）。
+	_check(Logistics.ARRIVAL_STOCK_CEILING < 1.0,
+		"満杯の都市へは送り出さない（到着した荷が消えない）",
+		str(Logistics.ARRIVAL_STOCK_CEILING))
 
-	# 隊商が出る余地（＝地図に荷車が出る余地）が残っていること。
-	# 交易路の上限が隊商の判定より高いと、隊商は一度も出ない。
-	_check(Logistics.ARRIVAL_STOCK_CEILING > Logistics.SUPPLY_CEILING,
-		"隊商が出る余地が残っている",
-		"隊商 %.2f / 交易路 %.2f" % [
-			Logistics.ARRIVAL_STOCK_CEILING, Logistics.SUPPLY_CEILING])
-
-	# 産地を空にするまで搾り取らないこと。
+	# 産地を空にするまで搾り取らないこと。質量保存を入れて実際に効く線に
+	# なった（以前は交易路が産地を減らさなかったのでめったに効かなかった）。
 	_check(Logistics.DEPARTURE_STOCK_FLOOR > 0.0,
 		"産地の在庫を空にしてまでは送り出さない",
+		str(Logistics.DEPARTURE_STOCK_FLOOR))
+	_check(Logistics.DEPARTURE_STOCK_FLOOR < 1.0,
+		"産地の下限が高すぎて送り出せなくならない",
 		str(Logistics.DEPARTURE_STOCK_FLOOR))
 
 	# 輸入品が減り続けるだけ／増え続けるだけにならないこと。
 	_check(GameData.IMPORT_DRAIN_RATE > 0.0 and GameData.IMPORT_DRAIN_RATE <= 1.0,
 		"輸入品の消費は0より大きく消費量以下", str(GameData.IMPORT_DRAIN_RATE))
-	_check(Logistics.SUPPLY_RATE > GameData.IMPORT_DRAIN_RATE,
-		"補充は消費を上回る（買われた分が戻る）",
-		"補充 %.2f / 消費 %.2f" % [Logistics.SUPPLY_RATE, GameData.IMPORT_DRAIN_RATE])
+
+	# **品目ごとに、生産が消費を賄えること。**
+	#
+	# 交易路が品物を湧かせていた頃は、生産より消費が多くても差が埋まって
+	# しまい、成立しない配分のまま気づけなかった（実測: 装備は生産9個/日に
+	# 対し消費31個/日で、どんな物流でも埋められない赤字だった）。
+	# 質量保存を入れた今、ここが赤字の品目は必ず慢性的な品切れになる。
+	#
+	# 合計ではなく**品目ごと**に見ること。資源が大幅に余っているので、
+	# 合計だと装備の赤字が埋もれて素通りする。
+	var deficit: int = 0
+	var worst: String = ""
+	for item_id: String in GameData.ITEMS:
+		if GameData.ITEMS[item_id]["kind"] == GameData.ItemKind.RARE:
+			continue
+		var produced: int = 0
+		var consumed: int = 0
+		for city_id: String in GameData.CITIES:
+			produced += MarketTable.production_of(city_id, item_id)
+			if MarketTable.production_of(city_id, item_id) > 0:
+				continue
+			if MarketTable.stock_cap(city_id, item_id) <= 0:
+				continue
+			consumed += MarketTable._import_drain_of(city_id, item_id)
+		if produced < consumed:
+			deficit += 1
+			if worst == "":
+				worst = "%s（生産 %d/日 < 消費 %d/日）" % [item_id, produced, consumed]
+	_check(deficit == 0,
+		"どの品目も生産が消費を賄える（物流で埋められない赤字が無い）",
+		"%d 品目が赤字%s" % [deficit, ": %s" % worst if worst != "" else ""])
+
+	# 交易路を廃止したので、供給の総量は「積載 × 出発本数」だけで決まる。
+	# 世界の消費（実測 248個/日）を下回ると消費地は品切れへ向かう。
+	var average_load: float = float(Logistics.CONVOY_LOAD_MIN
+		+ Logistics.CONVOY_LOAD_MAX) / 2.0
+	var throughput: float = average_load * float(Logistics.MAX_DEPARTURES_PER_DAY)
+	_check(throughput >= float(LogisticsTuning.WORLD_DAILY_DRAIN),
+		"隊商だけで世界の消費を賄える供給量がある",
+		"供給 %.0f個/日 / 消費 %d個/日" % [
+			throughput, LogisticsTuning.WORLD_DAILY_DRAIN])
+
+	# 実際に必要な量を運べるだけの同時走行の枠があること。
+	#
+	# 「出発本数 × 拘束日数」で見ないこと。MAX_DEPARTURES_PER_DAY は
+	# 買い占めからの回復用に余裕を持たせた上限で、定常状態では行き先が
+	# 尽きて（_needs() が満杯の都市を候補から外す）そこまで出ない。
+	# その式で挟むと、余裕を持たせるほど枠を増やせと言われる（実際に
+	# そうなった）。見るべきは**消費を賄えるか**なので、リトルの法則を
+	# 必要量の側から解く: 枠 ≧ 消費 ÷ 積載 × 拘束日数。
+	var hold_days: float = LogisticsTuning.AVERAGE_HOPS * float(Logistics.DAYS_PER_HOP)
+	var needed_active: float = float(LogisticsTuning.WORLD_DAILY_DRAIN) \
+		/ average_load * hold_days
+	_check(float(Logistics.MAX_ACTIVE_CONVOYS) >= needed_active,
+		"同時走行の枠が世界の消費を運ぶのに足りている",
+		"枠 %d / 要 %.0f（消費 %d ÷ 積載 %.0f × 拘束 %.1f日）" % [
+			Logistics.MAX_ACTIVE_CONVOYS, needed_active,
+			LogisticsTuning.WORLD_DAILY_DRAIN, average_load, hold_days])
 
 	# 荷車の移動が日送りより遅いと、前日の進みが残って位置がずれていく。
 	_check(MapView3D.CONVOY_TRAVEL_SECONDS <= 3.0,

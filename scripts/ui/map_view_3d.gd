@@ -772,7 +772,7 @@ var positions: Dictionary = {}
 ## positions（高さ込み）ではなくこちらを持つ必要がある。positions は
 ## height_at() を通して作られるため、height_at() がそれを参照すると
 ## 循環する。水平配置はばね緩和だけで決まり高さに依存しないので、
-## _relax_positions() の結果をそのまま覚えておけば循環しない。
+## relax_positions() の結果をそのまま覚えておけば循環しない。
 var _flat_positions: Dictionary = {}
 
 ## トゥーンの入切で光と環境光を差し替えるために覚えておく。
@@ -823,7 +823,7 @@ func _build() -> void:
 	# 高さ込みの最終座標を確定させる、という順序を守る必要がある。
 	# height_at() は街道の平地化で _flat_positions も見るので、
 	# _compute_positions() より先に代入しておくこと。
-	var flat_positions: Dictionary = _relax_positions()
+	var flat_positions: Dictionary = relax_positions()
 	_flat_positions = flat_positions
 	_compute_scale(flat_positions)
 	_compute_positions(flat_positions)
@@ -887,7 +887,15 @@ func _build_environment() -> void:
 ## 王国都市の水平面(X-Z)配置を、GameData.ROYAL_ROAD_EDGES に沿った決定的な
 ## ばね緩和で求める（Fruchterman-Reingold 型）。乱数は使わない。
 ## 中心都市（GameData.CAERLEON）は原点固定で、緩和の対象に含めない。
-func _relax_positions() -> Dictionary:
+##
+## **static なのは、地形も草木も持たないデバッグ用の 3D 図
+## （logistics_view_3d.gd）が同じ配置を使うため。** このノードを1つ作れば
+## 済む話ではあるが、_build() は地形メッシュ・草木・巨人まで組み立てるので、
+## 「都市がどこにあるか」だけが要る側には重すぎる。配置の計算はインスタンスの
+## 状態を一切見ない（const と GameData のみ）ので、切り出しても意味は変わらない。
+## 配置を2箇所に書くと大陸図とデバッグ図で地理が食い違い、
+## 「地図で見た隣接」と「デバッグ図で見た隣接」が別物になる。
+static func relax_positions() -> Dictionary:
 	var ring: Array[String] = GameData.royal_city_ids()
 	var flat: Dictionary = {}
 

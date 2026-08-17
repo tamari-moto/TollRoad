@@ -132,7 +132,14 @@ const MOD_CAERLEON_RESOURCE: float = 1.06
 ## ここを絞ると、安く仕入れて運ぶという遊びの中心が成立しなくなる
 ## （scenario_m23.gd の _test_balance_guardrails() が上限・下限で挟んでいる）。
 const PRODUCTION_SPECIALTY: int = 44
-const PRODUCTION_BONUS: int = 9
+
+## 装備の生産地は1品目につき1都市しかないので、**ここが世界のその装備の
+## 全供給**になる。消費（CONSUMPTION_EQUIPMENT の項に式がある）は
+## _import_drain_of() の下限1のせいで王国9都市ぶんの 9個/日 を必ず下回れず、
+## レイヴンスパイアのぶんが上乗せされる。9 のままだと構造的な赤字になるため
+## 16 にしてある（消費 11個/日 に対して余地5個/日）。
+## **下げるときは装備の消費と突き合わせること**（scenario_m28.gd が検査）。
+const PRODUCTION_BONUS: int = 16
 
 ## **生産地以外は自分では作らない（0）。** 以前はどの都市も全品目を毎日
 ## わずかに生産しており、木材の採れない都市にも木材がわいていた。物流
@@ -159,10 +166,30 @@ const PRODUCTION_SPECIALTY_FAR: int = 0     ## それ以外（自前生産なし
 
 ## 1日あたりの消費量（＝需要の回復量）。生産と逆向きで、自前で作れるものは
 ## 欲しがらない。レイヴンスパイアは装備の集積地なので装備を厚く買い取る。
+##
+## **装備の消費は生産量に釣り合わせてあること**（2026-08-17、交易路の廃止に
+## 伴う）。装備は1品目につき産地が1都市しかなく、生産は PRODUCTION_BONUS＝
+## 9個/日 しかない。対して消費は全都市ぶん積み上がるので、
+##
+##   王国9都市 × (CONSUMPTION_EQUIPMENT × IMPORT_DRAIN_RATE)
+##     + CONSUMPTION_CAERLEON_EQUIPMENT × IMPORT_DRAIN_RATE
+##
+## が 9個/日 を超えると、**どんな物流でも埋められない赤字**になる。
+## 交易路があった頃はその差を湧かせて隠していたため、旧来の 5 / 14 は
+## 31個/日（生産の3.4倍）という成立しない値のまま気づかれずにいた。
+##
+## **_import_drain_of() の下限1に注意。** 消費量を下げても drain は都市あたり
+## 最低1個になるため、王国9都市ぶんで 9個/日 は必ず出る。つまり
+## CONSUMPTION_EQUIPMENT をいくら下げても消費は 9個/日 を下回らず、
+## PRODUCTION_BONUS が 9 のままでは釣り合いが取れない（レイヴンスパイアの
+## ぶんが必ず上乗せされる）。生産側を少し上げて余地を作ってある。
+##
+## ここを触るときは必ず上の式で生産量と突き合わせること
+## （scenario_m28.gd の「装備の収支」が検査している）。
 const CONSUMPTION_RESOURCE: int = 8
-const CONSUMPTION_EQUIPMENT: int = 5
+const CONSUMPTION_EQUIPMENT: int = 2
 const CONSUMPTION_LOCAL_SURPLUS: int = 2
-const CONSUMPTION_CAERLEON_EQUIPMENT: int = 14
+const CONSUMPTION_CAERLEON_EQUIPMENT: int = 5
 const CONSUMPTION_CAERLEON_OTHER: int = 6
 
 ## 在庫・需要が積み上がる日数の上限。長いほど「久しぶりに寄った都市には

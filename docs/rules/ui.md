@@ -131,6 +131,35 @@ Tween で動かす。`clip_contents = true` なので畳まれている間は中
 キー操作は `[input]` に定義する。`_input` ではなく `_unhandled_input` で
 処理し、フォーカス中のコントロールからキーを奪わないようにしている。
 
+**デバッグ画面はサイドパネルの外**にある。F3 が市場データ
+（[debug_panel.gd](../../scripts/ui/debug_panel.gd)、本編の上に重なる
+オーバーレイ）、F5 が運送
+（[logistics_debug_window.gd](../../scripts/ui/logistics_debug_window.gd)、
+**OS の別ウィンドウ**）。どちらも `main.gd` の `_unhandled_input()` から
+`toggle_visible()` を呼ぶだけで、タブストリップの開閉ロジックには一切
+触れない。`_panels` には乗るので `bind()` / `refresh()` は他のパネルと同じに
+来る。F4 はトゥーンの切り替えで埋まっているため空いていない。
+
+**別ウィンドウにするなら `Window.force_native = true`**（Godot 4.3 以降）。
+これが無いと親ビューポートの `gui_embed_subwindows` に従って本編のウィンドウの
+中に埋め込まれる＝ただのオーバーレイに戻る。見た目は「窓っぽいもの」が出るので
+**目視では気づきにくい**（`scenario_m31.gd` が property を直接見ている）。
+プロジェクト設定の `embed_subwindows` を false にする手もあるが、それだと
+開始画面とリザルトの2つのダイアログまで OS のウィンドウになり本編の見た目が変わる。
+
+**別ウィンドウに焦点がある間、本編のウィンドウは入力を受け取らない。**
+閉じるキーを本編側にしか書いていないと閉じられなくなる。日を進めるキーも
+同様で、「日を進めながらグラフを見る」ができなくなる。窓の側でも受け直すこと。
+
+**中身と置き場所を別のスクリプトに分ける。** パネル自身が位置と可視状態を
+決めると、ウィンドウ側の可視状態と二重になり「開いているのに見えない」組み合わせが
+作れてしまう。パネルは中身だけを持ち、`UiUtil.fill_window()` で親いっぱいに
+広げるのはウィンドウ側の仕事。
+
+デバッグ画面が `SubViewport` を持つ場合、`render_target_update_mode` を
+`UPDATE_ALWAYS` にしないこと。パネルは普段閉じており、見えない 3D を毎フレーム
+描き続けることになる（本編の大陸図と二重に描く）。`UPDATE_WHEN_VISIBLE` を使う。
+
 ## 大陸図（3D）
 
 **大陸図は 3D**（[map_view_3d.gd](../../scripts/ui/map_view_3d.gd)）。`SubViewport` に
