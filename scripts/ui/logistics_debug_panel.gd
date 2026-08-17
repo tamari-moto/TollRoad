@@ -31,6 +31,18 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 ## 立体 … 3D 図（都市＝在庫の高さ、街道＝混み具合、隊商＝点）
 enum View { TREND, STOCK, FLOW, WORLD }
 
+## 起動した時点で開いておくか。
+##
+## true にしてある。物流の調整をしている間は毎回 F5 を押すことになり、しかも
+## 「押し忘れて数日進めてしまい、その分の記録が無い」が起こる（記録はこの
+## パネルが持つので、開くまで溜まらないのではなく **bind した時点から溜まる**
+## が、見ないまま進めた事実には変わりがない）。
+##
+## **画面のほぼ全面を覆う。** 本編の見た目を確認したいときは F5 で閉じること。
+## 配布に向けて閉じ直す場合はここを false に戻す（F3 の debug_panel.gd は
+## 従来どおり閉じた状態で始まる）。
+const OPEN_ON_START: bool = true
+
 const PANEL_SIZE: Vector2 = Vector2(1180, 760)
 ## 右側の調整欄の幅。スライダーと数値入力と「戻す」が1行に収まる幅。
 const TUNING_WIDTH: int = 360
@@ -105,7 +117,7 @@ func _configure() -> void:
 	offset_top = 0.0
 	offset_right = PANEL_SIZE.x
 	offset_bottom = PANEL_SIZE.y
-	visible = false
+	visible = OPEN_ON_START
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)

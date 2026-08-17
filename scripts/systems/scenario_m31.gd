@@ -422,6 +422,20 @@ func _test_panel_builds_every_view() -> void:
 
 	var panel := LogisticsDebugPanel.new()
 	root.add_child(panel)
+
+	# 開閉の初期状態。OPEN_ON_START を切り替えたときに、実際の visible が
+	# それに追従しているかを見る（定数だけ変えて代入を直し忘れると、値は
+	# 変わっているのに画面は前のまま——しかもエラーは出ない）。
+	_check(panel.visible == LogisticsDebugPanel.OPEN_ON_START,
+		"起動直後の開閉が OPEN_ON_START と一致する",
+		"visible=%s / OPEN_ON_START=%s"
+			% [panel.visible, LogisticsDebugPanel.OPEN_ON_START])
+
+	panel.toggle_visible()
+	_check(panel.visible != LogisticsDebugPanel.OPEN_ON_START,
+		"F5（toggle_visible）で開閉が反転する", "visible=%s" % panel.visible)
+	panel.toggle_visible()
+
 	panel.bind(session)
 
 	_check(panel.stats().day_count() >= 1,
