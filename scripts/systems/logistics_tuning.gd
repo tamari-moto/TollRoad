@@ -20,13 +20,20 @@ extends RefCounted
 ## 続きから始めたときに前回いじった値が残っていると、なぜ挙動が違うのか
 ## 画面のどこにも出ない。
 
+## 世界が1日に食い潰す総量（非生産地の drain の合計）と、隊商1本の平均ホップ数。
+## どちらも警告の式に要る「今の地図の形」で、GameData から導ける量ではあるが
+## 毎回数え直すのは重いので実測値を置いてある（2026-08-17 時点で 248個/日 /
+## 2.13ホップ）。**都市や品目を増やしたら測り直すこと**——ずれても警告の文面が
+## 少し外れるだけで、画面は動いたままになる。
+## 測り直す式は logistics.gd 冒頭のコメントにある。
+const WORLD_DAILY_DRAIN: int = 88
+const AVERAGE_HOPS: float = 2.13
+
 ## 上書きできる項目のキー。logistics.gd の const 名をスネークケースにしたもの。
 const MAX_DEPARTURES_PER_DAY: String = "max_departures_per_day"
 const MAX_ACTIVE_CONVOYS: String = "max_active_convoys"
 const CONVOY_LOAD_MIN: String = "convoy_load_min"
 const CONVOY_LOAD_MAX: String = "convoy_load_max"
-const SUPPLY_RATE: String = "supply_rate"
-const SUPPLY_CEILING: String = "supply_ceiling"
 const DEPARTURE_STOCK_FLOOR: String = "departure_stock_floor"
 const ARRIVAL_STOCK_CEILING: String = "arrival_stock_ceiling"
 const DAYS_PER_HOP: String = "days_per_hop"
@@ -51,23 +58,13 @@ const SPECS: Array[Dictionary] = [
 	},
 	{
 		"key": CONVOY_LOAD_MIN, "label": "積載（下限）", "is_int": true,
-		"min": 1.0, "max": 40.0, "step": 1.0,
+		"min": 1.0, "max": 80.0, "step": 1.0,
 		"help": "隊商1本が積む個数の下限。産地の在庫からこの数だけ引いて運ぶ。",
 	},
 	{
 		"key": CONVOY_LOAD_MAX, "label": "積載（上限）", "is_int": true,
-		"min": 1.0, "max": 40.0, "step": 1.0,
-		"help": "隊商1本が積む個数の上限。消費地の需要に対して大きすぎると一度で満たしてしまう。",
-	},
-	{
-		"key": SUPPLY_RATE, "label": "交易路の倍率", "is_int": false,
-		"min": 0.0, "max": 4.0, "step": 0.05,
-		"help": "交易路が1日に運ぶ量の、消費量に対する倍率。1.0 だと買い占めた分を取り戻せない。",
-	},
-	{
-		"key": SUPPLY_CEILING, "label": "交易路の上限", "is_int": false,
-		"min": 0.0, "max": 1.0, "step": 0.01,
-		"help": "交易路の補充が届く在庫の上限（stock_cap に対する割合）。到着上限より低く保つこと。",
+		"min": 1.0, "max": 80.0, "step": 1.0,
+		"help": "隊商1本が積む個数の上限。交易路が無いぶん、ここと出発本数の積が供給の総量そのもの。",
 	},
 	{
 		"key": DEPARTURE_STOCK_FLOOR, "label": "産地の下限", "is_int": false,
@@ -77,7 +74,7 @@ const SPECS: Array[Dictionary] = [
 	{
 		"key": ARRIVAL_STOCK_CEILING, "label": "到着の上限", "is_int": false,
 		"min": 0.0, "max": 1.0, "step": 0.01,
-		"help": "送り先の在庫がこの割合を超えていたら隊商を出さない。交易路の上限より高く保つこと。",
+		"help": "送り先の在庫がこの割合を超えていたら隊商を出さない。1.00 にすると到着時に荷が溢れて消える。",
 	},
 	{
 		"key": DAYS_PER_HOP, "label": "1区間の日数", "is_int": true,
@@ -189,10 +186,33 @@ func clear_all() -> void:
 func warnings() -> Array[String]:
 	var messages: Array[String] = []
 
-	if value_of(SUPPLY_CEILING) >= value_of(ARRIVAL_STOCK_CEILING):
+	# 供給が消費に足りているか。交易路を廃止したので、供給の総量は
+	# 「積載の平均 × 出発本数」だけで決まる。ここが消費（実測 248個/日）を
+	# 下回ると、どれだけ日を送っても消費地は品切れへ向かう。
+	var average_load: float = (value_of(CONVOY_LOAD_MIN) + value_of(CONVOY_LOAD_MAX)) / 2.0
+	var throughput: float = average_load * value_of(MAX_DEPARTURES_PER_DAY)
+	if throughput < WORLD_DAILY_DRAIN:
 		messages.append(
-			"交易路の上限（%.2f）が到着の上限（%.2f）以上。定常の補充だけで常に到着の上限を超えるため、隊商が一度も出ず地図から荷車が消える。"
-			% [value_of(SUPPLY_CEILING), value_of(ARRIVAL_STOCK_CEILING)])
+			"供給（積載の平均 %.0f × 出発 %d本 = %.0f個/日）が世界の消費 %d個/日 を下回る。消費地は品切れへ向かう。"
+			% [average_load, int_of(MAX_DEPARTURES_PER_DAY), throughput, WORLD_DAILY_DRAIN])
+
+	# 同時走行の枠が、消費を運びきるのに足りているか。
+	#
+	# 「出発本数 × 拘束日数」では見ない。出発本数は買い占めからの回復用に
+	# 余裕を持たせた上限で、定常では行き先が尽きてそこまで出ないため、
+	# その式だと余裕を持たせるほど枠を増やせと言う羽目になる。
+	# リトルの法則を必要量の側から解く: 枠 ≧ 消費 ÷ 積載 × 拘束日数。
+	var hold_days: float = AVERAGE_HOPS * value_of(DAYS_PER_HOP)
+	if average_load > 0.0:
+		var needed_active: float = float(WORLD_DAILY_DRAIN) / average_load * hold_days
+		if value_of(MAX_ACTIVE_CONVOYS) < needed_active:
+			messages.append(
+				"同時走行の上限（%d）が、消費 %d個/日 を運ぶのに要る %.0f本 に足りない。棚が痩せたまま戻らなくなる。"
+				% [int_of(MAX_ACTIVE_CONVOYS), WORLD_DAILY_DRAIN, needed_active])
+
+	if value_of(ARRIVAL_STOCK_CEILING) >= 1.0:
+		messages.append(
+			"到着の上限が 1.00。満杯の都市へも送り出すため、到着時に在庫の上限で切り捨てられ、産地から引かれた荷が消える（質量保存が破れる）。")
 
 	if int_of(DAYS_PER_HOP) <= 1:
 		messages.append(
@@ -205,16 +225,10 @@ func warnings() -> Array[String]:
 
 	if int_of(MAX_DEPARTURES_PER_DAY) <= 0 or int_of(MAX_ACTIVE_CONVOYS) <= 0:
 		messages.append(
-			"出発本数か同時走行の上限が 0。隊商は出ないが、交易路（地図に出ない補充）は流れ続けるので在庫は成立する。")
+			"出発本数か同時走行の上限が 0。交易路を廃止したので供給が完全に止まり、非生産地は全て品切れになる。")
 
 	if value_of(DEPARTURE_STOCK_FLOOR) >= 1.0:
 		messages.append(
 			"産地の下限が 1.00。在庫が上限に張り付いていないと送り出せないため、隊商はほとんど出ない。")
-
-	# 倍率 0 でも補充は止まらない（_supply_routes() が maxi(1, ...) で
-	# 下限を1に切り上げるため）。「止まる」と書くと画面の説明が実際とズレる。
-	if value_of(SUPPLY_RATE) <= 0.0:
-		messages.append(
-			"交易路の倍率が 0。補充は止まらないが 1個/日 まで落ちるため、消費に追いつかず非生産地は品切れへ向かう。")
 
 	return messages

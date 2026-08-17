@@ -191,7 +191,7 @@ func consume_demand(city_id: String, item_id: String, count: int) -> void:
 ## 隊商が運んできた分を在庫に積む（logistics.gd から呼ぶ）。
 ##
 ## 非生産地の在庫が増える経路は**これだけ**。advance_day() の補充は
-## 生産地にしか効かない（PRODUCTION_OTHER_* は 0）ので、交易路が
+## 生産地にしか効かない（PRODUCTION_OTHER_* は 0）ので、隊商が
 ## 途絶えればその都市のその品目は品切れへ向かう。
 ##
 ## 上限は生産地と同じ stock_cap() で抑える。運び込みだけ上限を外すと、
@@ -204,7 +204,7 @@ func receive_stock(city_id: String, item_id: String, count: int) -> void:
 
 
 ## その都市がその品目を産地から仕入れられるか（王国のどこかで作っているか）。
-## どこも作っていない品目（レア）は交易路に乗らない。
+## どこも作っていない品目（レア）は隊商に乗らない。
 static func has_producer(item_id: String) -> bool:
 	for city_id: String in GameData.CITIES:
 		if production_of(city_id, item_id) > 0:

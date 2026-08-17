@@ -7,23 +7,37 @@ extends RefCounted
 ## **在庫が自然に増えるのは生産地だけ**で、それ以外の都市の在庫は隊商が
 ## 運んできた分しかない（GameData.PRODUCTION_OTHER_* は 0）。
 ##
-## 物流は**2層**でできている。理由は実測に基づく:
+## **物流は隊商1層だけでできている。品物は必ずどこかの産地から運ばれる。**
 ##
-## 輸入が要る「都市×品目」の組は153あり、1日に必要な総量は563個ある。
-## これを隊商1本ずつ（平均7個）で賄うには1日80本の出発が要り、地図は
-## 荷車で埋まる。逆に本数を絵として妥当な範囲（数本）に抑えると供給は
-## 21個/日にしかならず、40日で153組中145組が品切れになった（実測）。
+## 以前はここに「交易路（_supply_routes）」という2層目があり、産地の在庫を
+## **減らさずに**消費地へ毎日補充していた。全都市の棚を成立させるにはそれが
+## 手軽だったが、品物が湧いて出るため物流のシミュレーションとして成立して
+## いなかった（消費地の在庫が産地と無関係に増え続ける）。2026-08-17 に廃止し、
+## **質量保存**——降ろした数は必ずどこかの産地から引かれている——を不変条件に
+## した。この原則は `_advance_convoys()` と `_launch()` の対で保たれている。
 ##
-## そこで、
+## 廃止にあたって実測し直した所、以前の「隊商だけでは賄えない」という判断は
+## 前提が誤っていた。交易路が押し込んでいた 600個/日 は
+## `consumption × SUPPLY_RATE` であって**実際の消費ではない**。
 ##
-## 1. **交易路（_supply_routes）** — 産地から消費地へ毎日流れる定常の
-##    補充。全都市の在庫を成立させるのはこちらの役目で、地図には出ない。
-## 2. **隊商（convoys）** — その流れを目に見える形で抜き出したもの。
-##    数を絞ってあり、街道を進む荷車として地図に描かれる。着荷は
-##    在庫にも乗る（見えている荷車が嘘でないように）。
+## そして測っている最中に、交易路が隠していた**本当の問題**が出た。装備は
+## 1品目につき産地が1都市（bonus）しかなく生産は 9個/日 だが、消費は全都市
+## ぶん積み上がって 31個/日 あった。**物流では埋めようのない赤字**で、
+## 交易路はその差を毎日湧かせていた。GameData の CONSUMPTION_EQUIPMENT を
+## 5→2、CAERLEON_EQUIPMENT を 14→5 に下げて生産と釣り合わせてある
+## （その経緯は game_data.gd の該当箇所に書いた）。
 ##
-## 「在庫が増えるのは生産地のみ」という原則はどちらの層でも守られている。
-## 消費地は自分では1個も作らず、産地から来た分しか増えない。
+## 釣り合わせた後の実測は、世界の消費 88個/日 に対し産地の生産 892個/日。
+## 輸送の回転（平均2.13ホップ × DAYS_PER_HOP=2 = 1本あたり4.27日の拘束）を
+## 織り込んでも、リトルの法則で必要な同時走行は約12本。地図に出せる数に
+## 十分収まる。
+##
+## 数字を触るときは必ず**品目ごとに**生産と消費を突き合わせること。合計で
+## 見ると資源の余剰（+820個/日）に装備の赤字が埋もれて素通りする
+## （scenario_m28.gd の「装備の収支」がこれを検査している）。
+##
+## 消費地は自分では1個も作らない。**産地から隊商が来なければ品切れる**——
+## これは不具合ではなく、物流が実際に効いていることの現れ。
 ##
 ## 地図上の見た目（荷車のメッシュ）は map_view_3d.gd が progress() を
 ## 読んで描くだけで、ここは描画を一切知らない（GameSession と同じ方針。
@@ -44,45 +58,50 @@ const LogisticsTuning = preload("res://scripts/systems/logistics_tuning.gd")
 ## 20〜30回の通しプレイで決めた実測値なので書き換えないこと**
 ## （docs/rules/balance.md）。仕組みは logistics_tuning.gd 参照。
 
-## 1日に新しく仕立てる隊商の最大数。地図に出る荷車の増え方を決める。
-## 供給の総量はこれではなく交易路（_supply_routes）が持つので、ここは
-## 「絵としてちょうどよい数」で決めてよい。
-const MAX_DEPARTURES_PER_DAY: int = 3
+## 1日に新しく仕立てる隊商の最大数。
+##
+## **供給の総量はもうこれと積載だけで決まる**（交易路が無いので、ここを
+## 絞ると本当に品物が届かなくなる）。世界が1日に食い潰す 88個 を平均積載
+## （約9個）で割ると約10本/日。買い占めた分を取り戻す余地を見て倍を取る。
+const MAX_DEPARTURES_PER_DAY: int = 20
 
 ## 同時に街道を走れる隊商の総数。地図に出る荷車の数の上限でもある
 ## （描画の重さと、画面の読みやすさの両方をここで抑える）。
-const MAX_ACTIVE_CONVOYS: int = 12
-
-## 隊商1本が積む個数。産地の在庫からこの数だけ引いて運ぶ。
-## 消費地の需要（demand_cap）に対して大きすぎると一度で満たしてしまい、
-## 隊商が来る前と後で市場が別物になる。数日ぶんの消費量に収まる大きさにする。
-const CONVOY_LOAD_MIN: int = 4
-const CONVOY_LOAD_MAX: int = 10
-
-## 交易路が1日に運ぶ量の、消費量に対する倍率。
 ##
-## 1.0 だと消費と釣り合ってちょうど回るが、プレイヤーが買い占めた分を
-## 取り戻せない（棚が薄いまま固定される）。1 より少し大きくして、
-## 買われた後も数日で戻るようにする。上げすぎると常に満杯になり、
-## 在庫という概念自体が効かなくなる。
-const SUPPLY_RATE: float = 1.35
+## 必要量から逆算すると「出発20本/日 × 拘束4.27日 ≒ 85本」だが、実際には
+## 行き先が尽きて（_needs() が満杯の都市を外す）そこまで溜まらない。
+## 地図の読みやすさを優先して 30 で頭を打つ。**下げるときは供給が落ちる**。
+const MAX_ACTIVE_CONVOYS: int = 30
 
-## 交易路の補充が届く在庫の上限（stock_cap に対する割合）。
-## 定常の流れだけで満杯にはしない。満杯まで積むと隊商の着荷が
-## 一切在庫に乗らなくなり（上限で切られる）、地図の荷車が嘘になる。
-const SUPPLY_CEILING: float = 0.82
+## 隊商1本が積む個数の下限・上限。産地の在庫からこの数だけ引いて運ぶ。
+##
+## **交易路を廃止したぶん、ここが供給の主役になった。** 積載 × 出発本数 が
+## 1日の総供給になる。
+##
+## 消費 88個/日 を平均4.27日の拘束で運ぶには、リトルの法則で
+## 「積載 × 同時走行数 ≧ 88 × 4.27 ≒ 376」が要る。同時走行を地図の
+## 読みやすさから 30本 に抑えるので、平均積載は 13個 以上が要る。
+##
+## 積載は送り先の空き（_launch()）で頭打ちになるため、上限を大きくしても
+## 溢れはしない。装備の輸入枠は 2×3=6個 と小さく実際にはそこで切られるが、
+## 資源側（消費8×3=24個）はこの上限まで積める。上限はその両方を賄う値。
+const CONVOY_LOAD_MIN: int = 8
+const CONVOY_LOAD_MAX: int = 22
 
 ## 産地の在庫がこの割合を下回っていたら送り出さない。産地自身が品切れに
 ## なるまで搾り取ると、プレイヤーが産地へ着いたときに何も買えなくなる。
-const DEPARTURE_STOCK_FLOOR: float = 0.45
+##
+## **質量保存を入れて実際に効くようになった線。** 以前は交易路が産地の在庫を
+## 減らさなかったため、産地はほぼ常に満杯でこの判定はめったに効かなかった。
+## 今は隊商が積んだ分だけ本当に減るので、ここが産地の棚を守る唯一の砦になる。
+## 上げすぎると送り出せる余地が消えて消費地が痩せる。
+const DEPARTURE_STOCK_FLOOR: float = 0.35
 
 ## 送り先の在庫がこの割合を超えていたら隊商を出さない（もう足りている）。
 ## 上限に張り付いた都市へ運び続けても捨てるだけで、荷車だけが無駄に走る。
 ##
-## 交易路の上限（SUPPLY_CEILING）より**高く**しておくこと。低くすると
-## 定常の補充だけで常にこの線を超え、隊商が一度も出ない＝地図から荷車が
-## 消える（実測でそうなった）。プレイヤーが買った直後や、消費が込み合って
-## 棚が薄くなった都市に対して隊商が出る、という関係になる。
+## 1.0 未満にしておくこと。1.0 にすると満杯の都市へも送り続け、到着時に
+## receive_stock() が上限で切り捨てて**積んだ荷が消える＝質量保存が破れる**。
 const ARRIVAL_STOCK_CEILING: float = 0.95
 
 ## 1区間（王道1ホップ）にかかる日数。
@@ -113,6 +132,16 @@ var tuning: LogisticsTuning
 var _last_arrived: Array[Dictionary] = []
 var _last_departed: Array[Dictionary] = []
 
+## 到着した荷のうち、在庫の上限で切り捨てられて消えた個数の累計。
+##
+## **0 であるべき値。** 質量保存は「積んだ数 = 降ろした数」で成り立っており、
+## receive_stock() が stock_cap で頭打ちにすると産地から引かれた荷が
+## どこにも現れずに消える。送り出す側（_launch）が送り先の空きに積載を
+## 合わせているので正しく動いていれば増えないが、**溢れているかどうかは
+## 在庫を外から見ても分からない**（減ったのか元々無かったのか区別できない）
+## ため、起きた場所で数えておく。scenario_m31 がこれを検査する。
+var spilled_total: int = 0
+
 var _rng: RandomNumberGenerator
 
 
@@ -133,8 +162,6 @@ static func default_tuning() -> Dictionary:
 		LogisticsTuning.MAX_ACTIVE_CONVOYS: float(MAX_ACTIVE_CONVOYS),
 		LogisticsTuning.CONVOY_LOAD_MIN: float(CONVOY_LOAD_MIN),
 		LogisticsTuning.CONVOY_LOAD_MAX: float(CONVOY_LOAD_MAX),
-		LogisticsTuning.SUPPLY_RATE: SUPPLY_RATE,
-		LogisticsTuning.SUPPLY_CEILING: SUPPLY_CEILING,
 		LogisticsTuning.DEPARTURE_STOCK_FLOOR: DEPARTURE_STOCK_FLOOR,
 		LogisticsTuning.ARRIVAL_STOCK_CEILING: ARRIVAL_STOCK_CEILING,
 		LogisticsTuning.DAYS_PER_HOP: float(DAYS_PER_HOP),
@@ -274,10 +301,6 @@ static func _neighbors_of(city_id: String) -> Array[String]:
 ## 戻り値は今日到着した隊商の配列（GameSession が日誌に出すのに使う）。
 func advance_day(market: MarketTable) -> Array[Dictionary]:
 	var arrived: Array[Dictionary] = _advance_convoys(market)
-	# 定常の交易路。全都市の在庫を成立させるのはこちら（冒頭のコメント参照）。
-	# 隊商の着荷を先に乗せてから流すので、隊商が着いた都市はその分だけ
-	# 交易路の補充が要らなくなる（二重に積まない）。
-	_supply_routes(market)
 	_last_departed = _dispatch(market)
 	_last_arrived = arrived
 	return arrived
@@ -294,38 +317,13 @@ func last_departed() -> Array[Dictionary]:
 	return _last_departed
 
 
-## 産地から消費地への定常の補充。地図には出ない。
-##
-## 「どの産地から来たか」は在庫には残らない（在庫は個数でしかない）ため、
-## ここでは産地を1つ選ぶ処理はせず、**その品目を作っている都市がどこかに
-## あるか**だけを見て流す。産地を選ぶのは隊商（_dispatch）の役目で、
-## そちらは地図に出るので出発地に意味がある。
-##
-## 産地の在庫は減らさない。減らすと、地図に出ない流れが産地の棚を
-## 空にしてしまい、プレイヤーが産地へ着いたときに何も買えなくなる
-## （そして理由が画面のどこにも出ない）。交易路は「王国の外から
-## 補充される背景の流れ」として扱う。
-func _supply_routes(market: MarketTable) -> void:
-	for city_id: String in GameData.CITIES:
-		for item_id: String in GameData.ITEMS:
-			if MarketTable.production_of(city_id, item_id) > 0:
-				continue
-			if not MarketTable.has_producer(item_id):
-				continue
-			var capacity: int = market.stock_cap(city_id, item_id)
-			if capacity <= 0:
-				continue
-			var ceiling: int = int(float(capacity) * tuning.value_of(LogisticsTuning.SUPPLY_CEILING))
-			if market.stock_of(city_id, item_id) >= ceiling:
-				continue
-			var amount: int = maxi(1, int(round(
-				float(MarketTable.consumption_of(city_id, item_id))
-					* tuning.value_of(LogisticsTuning.SUPPLY_RATE))))
-			var room: int = ceiling - market.stock_of(city_id, item_id)
-			market.receive_stock(city_id, item_id, mini(amount, room))
-
-
 ## 走行中の隊商を1日進め、着いたものを在庫に加えて取り除く。
+##
+## **質量保存の降ろす側。** 積む側（_launch）が産地から引いた数と、ここで
+## 降ろす数は必ず等しい。`receive_stock()` は stock_cap で頭打ちになるため、
+## 溢れると荷が消えて保存が破れる。それを避けるのは送り出す側の責務で、
+## _needs() が ARRIVAL_STOCK_CEILING で満杯の都市を候補から外し、
+## _launch() が送り先の空きに積載を合わせている。
 func _advance_convoys(market: MarketTable) -> Array[Dictionary]:
 	var arrived: Array[Dictionary] = []
 	var still_running: Array[Dictionary] = []
@@ -334,8 +332,12 @@ func _advance_convoys(market: MarketTable) -> Array[Dictionary]:
 		if convoy["days_left"] > 0:
 			still_running.append(convoy)
 			continue
-		# 着いた分だけ在庫に積む。上限（stock_cap）は MarketTable が抑える。
+		# 降ろす前後の在庫の差が、実際に棚へ乗った数。積んできた数との
+		# 差が「消えた分」になる（spilled_total のコメント参照）。
+		var before: int = market.stock_of(convoy["to"], convoy["item"])
 		market.receive_stock(convoy["to"], convoy["item"], convoy["count"])
+		var landed: int = market.stock_of(convoy["to"], convoy["item"]) - before
+		spilled_total += maxi(0, int(convoy["count"]) - landed)
 		arrived.append(convoy)
 	convoys = still_running
 	return arrived
@@ -347,6 +349,13 @@ func _advance_convoys(market: MarketTable) -> Array[Dictionary]:
 ## MAX_DEPARTURES_PER_DAY 本まで送り出す。候補の並びは決定的（都市・品目とも
 ## GameData の宣言順）で、そこから RNG で選ぶ。順序に乱数が混ざると、
 ## 同じシードでも展開が変わる。
+##
+## **選ぶ前に、棚の薄い順へ並べ替える。** 交易路が背景で全都市を埋めていた
+## 頃は、隊商がどこへ行こうと在庫は成立したので純粋な乱択でよかった。今は
+## 隊商が唯一の供給路なので、乱択だと満杯に近い都市へ枠を使い、空の都市が
+## 何日も空のまま残る。同じ薄さの候補どうしの選択には従来どおり RNG を使い、
+## 1本につき2回消費する形（行き先と積載）も変えていない
+## （architecture.md の RNG 消費順）。
 ## 戻り値はその日に送り出した隊商（統計が本数を読む）。
 func _dispatch(market: MarketTable) -> Array[Dictionary]:
 	var launched: Array[Dictionary] = []
@@ -357,18 +366,48 @@ func _dispatch(market: MarketTable) -> Array[Dictionary]:
 	if candidates.is_empty():
 		return launched
 
+	# 薄い順（stock_ratio の昇順）。同率は元の宣言順のまま残るよう
+	# 安定な比較にする（< だけを見て入れ替えない）。
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["urgency"]) < float(b["urgency"]))
+
 	var departures: int = mini(tuning.int_of(LogisticsTuning.MAX_DEPARTURES_PER_DAY),
 		tuning.int_of(LogisticsTuning.MAX_ACTIVE_CONVOYS) - convoys.size())
 	for i: int in departures:
 		if candidates.is_empty():
 			return launched
-		var pick: int = _rng.randi_range(0, candidates.size() - 1)
+		# 最も薄い組のうちから選ぶ。同じ行き先・品目の候補は産地違いで
+		# 複数並ぶので、そこは RNG に委ねる（どの産地から来るかは絵の問題）。
+		var tied: int = _count_tied_front(candidates)
+		var pick: int = _rng.randi_range(0, tied - 1)
 		var candidate: Dictionary = candidates[pick]
 		candidates.remove_at(pick)
 		var convoy: Dictionary = _launch(market, candidate)
 		if not convoy.is_empty():
 			launched.append(convoy)
+			# 送り出した組は在庫が動くので、同じ行き先・品目の残り候補
+			# （産地違い）を落とす。_is_inbound() は次の日まで効かない。
+			_drop_same_target(candidates, candidate)
 	return launched
+
+
+## 先頭と同じ薄さの候補が何件並んでいるか。最低1件。
+func _count_tied_front(candidates: Array[Dictionary]) -> int:
+	var front: float = float(candidates[0]["urgency"])
+	var count: int = 0
+	for candidate: Dictionary in candidates:
+		if not is_equal_approx(float(candidate["urgency"]), front):
+			break
+		count += 1
+	return maxi(1, count)
+
+
+## 同じ「行き先 × 品目」の候補を候補列から取り除く。
+func _drop_same_target(candidates: Array[Dictionary], sent: Dictionary) -> void:
+	for index: int in range(candidates.size() - 1, -1, -1):
+		if candidates[index]["to"] == sent["to"] \
+				and candidates[index]["item"] == sent["item"]:
+			candidates.remove_at(index)
 
 
 ## 成立する「産地 → 不足している都市」の組を全て挙げる。
@@ -384,12 +423,18 @@ func _find_candidates(market: MarketTable) -> Array[Dictionary]:
 				continue
 			if _is_inbound(to_city, item_id):
 				continue
+			# 薄さは行き先の在庫だけで決まる（産地違いの候補で同じ値になる）。
+			# _dispatch() がこれで並べ替えて、空の都市から先に埋める。
+			var urgency: float = market.stock_ratio(to_city, item_id)
 			for from_city: String in GameData.CITIES:
 				if from_city == to_city:
 					continue
 				if not _can_supply(market, from_city, item_id):
 					continue
-				candidates.append({"from": from_city, "to": to_city, "item": item_id})
+				candidates.append({
+					"from": from_city, "to": to_city, "item": item_id,
+					"urgency": urgency,
+				})
 	return candidates
 
 
@@ -447,7 +492,16 @@ func _launch(market: MarketTable, candidate: Dictionary) -> Dictionary:
 	var load_max: int = tuning.int_of(LogisticsTuning.CONVOY_LOAD_MAX)
 	var load_min: int = mini(tuning.int_of(LogisticsTuning.CONVOY_LOAD_MIN), load_max)
 	var wanted: int = _rng.randi_range(load_min, load_max)
-	var load: int = mini(wanted, spare)
+
+	# 送り先の空きを超えて積まないこと。**質量保存はここで守られる。**
+	# 超えて積むと到着時に receive_stock() が stock_cap で切り捨て、
+	# 産地から引かれた荷が到着先に乗らずに消える（積載を大きくしたぶん、
+	# 旧来の4〜10では滅多に起きなかったこの溢れが現実的な頻度で起きる）。
+	# 走行中の同一行き先・同一品目は _is_inbound() が既に弾いているので、
+	# 今の在庫だけを見れば足りる。
+	var room: int = maxi(0, market.stock_cap(to_city, item_id)
+		- market.stock_of(to_city, item_id))
+	var load: int = mini(mini(wanted, spare), room)
 	if load <= 0:
 		return {}
 

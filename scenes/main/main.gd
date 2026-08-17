@@ -67,7 +67,7 @@ var _root: Control
 ## 一切触れない。_panels には乗るので bind() / refresh() は他と同じに来る。
 var _debug_window: DebugWindow
 
-## 運送のデバッグモード（F5）。隊商と交易路の推移をグラフと 3D 図で見せ、
+## 運送のデバッグモード（F5）。隊商の推移をグラフと 3D 図で見せ、
 ## 物流の定数を実行中だけ上書きできる。**これだけは Control ではなく
 ## OS の別ウィンドウ**（理由は logistics_debug_window.gd）。_panels には
 ## 乗るので bind() / refresh() は他のパネルと同じに来る。

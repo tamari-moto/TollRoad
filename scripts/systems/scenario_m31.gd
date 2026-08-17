@@ -52,7 +52,8 @@ const EPSILON: float = 0.001
 func _init() -> void:
 	_test_defaults_match_consts()
 	_test_override_reaches_dispatch()
-	_test_override_reaches_supply_routes()
+	_test_override_reaches_convoy_load()
+	_test_mass_is_conserved()
 	_test_clear_restores_defaults()
 	_test_values_are_clamped_to_spec_range()
 	_test_warnings_catch_documented_failures()
@@ -95,8 +96,6 @@ func _test_defaults_match_consts() -> void:
 		LogisticsTuning.MAX_ACTIVE_CONVOYS: float(Logistics.MAX_ACTIVE_CONVOYS),
 		LogisticsTuning.CONVOY_LOAD_MIN: float(Logistics.CONVOY_LOAD_MIN),
 		LogisticsTuning.CONVOY_LOAD_MAX: float(Logistics.CONVOY_LOAD_MAX),
-		LogisticsTuning.SUPPLY_RATE: Logistics.SUPPLY_RATE,
-		LogisticsTuning.SUPPLY_CEILING: Logistics.SUPPLY_CEILING,
 		LogisticsTuning.DEPARTURE_STOCK_FLOOR: Logistics.DEPARTURE_STOCK_FLOOR,
 		LogisticsTuning.ARRIVAL_STOCK_CEILING: Logistics.ARRIVAL_STOCK_CEILING,
 		LogisticsTuning.DAYS_PER_HOP: float(Logistics.DAYS_PER_HOP),
@@ -138,26 +137,146 @@ func _test_override_reaches_dispatch() -> void:
 		"%d 本" % running.logistics.active_count())
 
 
-## 交易路の倍率の上書きが補充へ届くこと。
+## 積載の上書きが供給へ届くこと。
 ##
-## 倍率を上げた方が、非生産地の在庫は必ず厚くなる。隊商は RNG で行き先が
+## 交易路を廃止したので、供給の総量は「積載 × 出発本数」だけで決まる。
+## 積載を絞れば非生産地の在庫の合計は必ず減る。隊商は RNG で行き先が
 ## 変わるので1都市では揺れるが、全都市の合計なら向きは決まる。
-func _test_override_reaches_supply_routes() -> void:
-	print("--- 上書き層: 交易路の倍率が補充へ届く ---")
+func _test_override_reaches_convoy_load() -> void:
+	print("--- 上書き層: 積載が供給へ届く ---")
 
 	var thin := _make_session()
-	thin.logistics.tuning.set_override(LogisticsTuning.SUPPLY_RATE, 0.1)
+	thin.logistics.tuning.set_override(LogisticsTuning.CONVOY_LOAD_MIN, 1.0)
+	thin.logistics.tuning.set_override(LogisticsTuning.CONVOY_LOAD_MAX, 2.0)
 	_advance(thin, RUN_DAYS)
 
 	var thick := _make_session()
-	thick.logistics.tuning.set_override(LogisticsTuning.SUPPLY_RATE, 3.0)
 	_advance(thick, RUN_DAYS)
 
 	var thin_total: int = _import_stock_total(thin)
 	var thick_total: int = _import_stock_total(thick)
 	_check(thick_total > thin_total,
-		"交易路の倍率を上げると非生産地の在庫の合計が増える",
-		"倍率0.1 で %d / 倍率3.0 で %d" % [thin_total, thick_total])
+		"積載を絞ると非生産地の在庫の合計が減る",
+		"積載1〜2 で %d / 既定 で %d" % [thin_total, thick_total])
+
+
+## **品物が湧かないこと。** 交易路を廃止した理由そのものなので、ここが
+## この機能の中心の検査になる。
+##
+## 品目ごとに「全都市の在庫 + 走行中の隊商が積んでいる量」を数え、1日ぶん
+## 進めた前後で比べる。増えてよいのは生産（production_of の合計）の分だけで、
+## 減ってよいのは消費（_import_drain_of の合計）と、在庫の上限で切られた分。
+## 交易路のように「どこからともなく増える」経路があると、増分が生産量を
+## 超えるので落ちる。
+##
+## 上限での切り捨てを許すと「減る側」がざるになるため、**溢れが1件も
+## 起きていないこと**も併せて見る（_launch() が送り先の空きに積載を合わせて
+## いるので、正しく実装されていれば溢れない）。
+func _test_mass_is_conserved() -> void:
+	print("--- 質量保存: 品物が湧かない ---")
+
+	var session := _make_session()
+	# 走行中の隊商が居る状態から見る。初日は空なので、積んだまま日を
+	# またぐ経路（在庫にも市場にも無い量）を検査に含められない。
+	_advance(session, 10)
+
+	var violations: int = 0
+	var worst: String = ""
+	for day: int in RUN_DAYS:
+		# 品目ごとに、進める前後の総量を突き合わせる。
+		#
+		# 許容する増分は**実際に棚へ乗る生産量**にすること。名目の生産量
+		# （production_of の合計）で挟むと、産地が上限に張り付いている間は
+		# 捨てられるぶんが「増えてよい枠」として残り、そのぶん湧いていても
+		# 素通りする（実測: sword は名目16個/日 に対し実際に乗るのは3個/日
+		# で、13個ぶんの隙間があった。積んだ量の半分しか産地から引かない
+		# 壊し方を入れても、この検査は落ちなかった）。
+		var before: Dictionary = {}
+		var allowed: Dictionary = {}
+		for item_id: String in GameData.ITEMS:
+			before[item_id] = _world_total_of(session, item_id)
+			allowed[item_id] = _production_that_fits(session, item_id)
+
+		session.rest()
+
+		for item_id: String in GameData.ITEMS:
+			var after: int = _world_total_of(session, item_id)
+			# 実際に乗る生産を超えて増えていたら、どこかで湧いている。
+			if after > int(before[item_id]) + int(allowed[item_id]):
+				violations += 1
+				if worst == "":
+					worst = "%s: %d → %d（棚に乗る生産は %d/日）" % [
+						item_id, int(before[item_id]), after, int(allowed[item_id])]
+
+	_check(violations == 0,
+		"%d日を通して、在庫＋輸送中の合計が生産量を超えて増えない" % RUN_DAYS,
+		"%d 件で湧いた%s" % [violations, "（例 %s）" % worst if worst != "" else ""])
+
+	# 積んだ荷が到着時に上限で切り捨てられていないこと。**「増えない」だけ
+	# では保存の半分しか見ていない**（消える側は総量が減るので上の検査は
+	# 通ってしまう）。Logistics が起きた場所で数えた値を読む。
+	_check(session.logistics.spilled_total == 0,
+		"到着した荷が在庫の上限で切り捨てられない（積んだ分は必ず降りる）",
+		"%d 個が消えた" % session.logistics.spilled_total)
+
+	# 検査が本当に効いているかの裏取り。生産のある品目が実際に動いて
+	# いなければ、上の2つは「何も起きていない」だけで通ってしまう。
+	var moved: int = 0
+	for item_id: String in GameData.ITEMS:
+		if _daily_production_of(item_id) > 0:
+			moved += 1
+	_check(moved > 0, "生産のある品目が存在する（検査の前提）", "%d 品目" % moved)
+	_check(session.logistics.active_count() > 0,
+		"検査の終わりに隊商が走っている（輸送中の量を数えている）",
+		"%d 本" % session.logistics.active_count())
+
+
+## 世界にあるその品目の総量（全都市の在庫 + 走行中の隊商の積荷）。
+func _world_total_of(session: GameSession, item_id: String) -> int:
+	var total: int = 0
+	for city_id: String in GameData.CITIES:
+		total += session.market.stock_of(city_id, item_id)
+	for index: int in session.logistics.active_count():
+		if session.logistics.item_of(index) == item_id:
+			total += session.logistics.count_of(index)
+	return total
+
+
+## その品目が1日に世界全体で何個生産されるか（名目）。
+func _daily_production_of(item_id: String) -> int:
+	var total: int = 0
+	for city_id: String in GameData.CITIES:
+		total += MarketTable.production_of(city_id, item_id)
+	return total
+
+
+## そのうち、**実際に棚へ乗る**ぶん。産地が在庫の上限に張り付いていると
+## 生産は切り捨てられるので、名目より小さくなる（多くの日はこちらが 0 に近い）。
+## 質量保存の許容増分はこちらで測る。
+func _production_that_fits(session: GameSession, item_id: String) -> int:
+	var total: int = 0
+	for city_id: String in GameData.CITIES:
+		var produced: int = MarketTable.production_of(city_id, item_id)
+		if produced <= 0:
+			continue
+		var room: int = MarketTable.stock_cap(city_id, item_id) \
+			- session.market.stock_of(city_id, item_id)
+		total += clampi(room, 0, produced)
+	return total
+
+
+## 品切れしている「都市×品目」の組の数（輸入が要る組だけ）。
+func _shortage_count(session: GameSession) -> int:
+	var count: int = 0
+	for city_id: String in GameData.CITIES:
+		for item_id: String in GameData.ITEMS:
+			if MarketTable.production_of(city_id, item_id) > 0:
+				continue
+			if MarketTable.stock_cap(city_id, item_id) <= 0:
+				continue
+			if session.market.stock_of(city_id, item_id) <= 0:
+				count += 1
+	return count
 
 
 ## 輸入で賄う「都市×品目」の在庫の合計。
@@ -193,15 +312,15 @@ func _test_clear_restores_defaults() -> void:
 		"1項目を消すと const の値へ戻る",
 		"%d" % tuning.int_of(LogisticsTuning.DAYS_PER_HOP))
 
-	tuning.set_override(LogisticsTuning.SUPPLY_RATE, 2.0)
+	tuning.set_override(LogisticsTuning.CONVOY_LOAD_MAX, 2.0)
 	tuning.set_override(LogisticsTuning.MAX_ACTIVE_CONVOYS, 30.0)
 	tuning.clear_all()
 	_check(not tuning.has_overrides(), "全部消すと上書きが無くなる",
 		"上書き %d 件" % tuning.overridden_keys().size())
-	_check(is_equal_approx(tuning.value_of(LogisticsTuning.SUPPLY_RATE),
-			Logistics.SUPPLY_RATE),
+	_check(is_equal_approx(tuning.value_of(LogisticsTuning.CONVOY_LOAD_MAX),
+			float(Logistics.CONVOY_LOAD_MAX)),
 		"全部消した後も const の値へ戻る",
-		"%f" % tuning.value_of(LogisticsTuning.SUPPLY_RATE))
+		"%f" % tuning.value_of(LogisticsTuning.CONVOY_LOAD_MAX))
 
 
 ## SPECS の範囲外を渡しても範囲へ丸まること（弾かずに丸める仕様）。
@@ -238,23 +357,33 @@ func _test_warnings_catch_documented_failures() -> void:
 		"既定値では警告が出ない",
 		"%d 件: %s" % [clean.warnings().size(), "／".join(clean.warnings())])
 
-	# 交易路の上限 >= 到着の上限。定常の補充だけで常に到着の上限を超え、
-	# 隊商が一度も出なくなる（logistics.gd の ARRIVAL_STOCK_CEILING 参照）。
-	var ceilings := LogisticsTuning.new(Logistics.default_tuning())
-	ceilings.set_override(LogisticsTuning.SUPPLY_CEILING, 0.99)
-	ceilings.set_override(LogisticsTuning.ARRIVAL_STOCK_CEILING, 0.5)
-	_check(not ceilings.warnings().is_empty(),
-		"交易路の上限が到着の上限以上だと警告する", "警告なし")
+	# 供給が消費に足りない組み合わせ。交易路が無いので、積載を絞ると
+	# そのまま非生産地が痩せる（旧来はここを絞っても交易路が埋めていた）。
+	var starved := LogisticsTuning.new(Logistics.default_tuning())
+	starved.set_override(LogisticsTuning.CONVOY_LOAD_MIN, 1.0)
+	starved.set_override(LogisticsTuning.CONVOY_LOAD_MAX, 2.0)
+	_check(not starved.warnings().is_empty(),
+		"供給が世界の消費を下回ると警告する", "警告なし")
 
-	# 実際にその状態にすると隊商が消えること。警告の文面が正しいかどうかは
+	# 実際にその状態にすると品切れが増えること。警告の文面が正しいかどうかは
 	# 文字列を見ても分からないので、書いてある通りになるかを回して確かめる。
-	var vanished := _make_session()
-	vanished.logistics.tuning.set_override(LogisticsTuning.SUPPLY_CEILING, 0.99)
-	vanished.logistics.tuning.set_override(LogisticsTuning.ARRIVAL_STOCK_CEILING, 0.5)
-	_advance(vanished, RUN_DAYS)
-	_check(vanished.logistics.active_count() == 0,
-		"警告どおり、その組み合わせでは隊商が走らない",
-		"%d 本" % vanished.logistics.active_count())
+	var thin := _make_session()
+	thin.logistics.tuning.set_override(LogisticsTuning.CONVOY_LOAD_MIN, 1.0)
+	thin.logistics.tuning.set_override(LogisticsTuning.CONVOY_LOAD_MAX, 2.0)
+	_advance(thin, RUN_DAYS)
+
+	var healthy := _make_session()
+	_advance(healthy, RUN_DAYS)
+	_check(_shortage_count(thin) > _shortage_count(healthy),
+		"警告どおり、供給が足りないと品切れが増える",
+		"薄い %d 組 / 既定 %d 組"
+			% [_shortage_count(thin), _shortage_count(healthy)])
+
+	# 到着の上限 1.00 は荷が溢れて消える（質量保存が破れる）。
+	var spilling := LogisticsTuning.new(Logistics.default_tuning())
+	spilling.set_override(LogisticsTuning.ARRIVAL_STOCK_CEILING, 1.0)
+	_check(not spilling.warnings().is_empty(),
+		"到着の上限が 1.00 だと警告する", "警告なし")
 
 	var one_hop := LogisticsTuning.new(Logistics.default_tuning())
 	one_hop.set_override(LogisticsTuning.DAYS_PER_HOP, 1.0)
@@ -543,8 +672,8 @@ func _test_panel_builds_every_view() -> void:
 	_check(panel.warning_text() == "",
 		"健全な値では警告が出ない", panel.warning_text())
 
-	panel.set_tuning(LogisticsTuning.SUPPLY_CEILING, 0.99)
-	panel.set_tuning(LogisticsTuning.ARRIVAL_STOCK_CEILING, 0.50)
+	panel.set_tuning(LogisticsTuning.CONVOY_LOAD_MIN, 1.0)
+	panel.set_tuning(LogisticsTuning.CONVOY_LOAD_MAX, 2.0)
 	_check(panel.warning_text() != "",
 		"壊れる組み合わせにすると警告が出る", "空のまま")
 

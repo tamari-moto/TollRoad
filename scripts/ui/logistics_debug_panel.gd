@@ -520,15 +520,14 @@ func _city_tint(city_id: String, item_id: String) -> Color:
 
 ## 直近 N 日に品目ごとに運ばれた個数（隊商で着いた分）。
 ##
-## 交易路（地図に出ない定常の補充）はここに含まれない。含めると総量の
-## ほとんどが交易路になり、隊商がどの品目に偏っているかという肝心の
-## 差が見えなくなる。
+## 交易路を廃止した今、隊商が唯一の供給路なので**これが搬入の総量そのもの**。
+## 以前はここに出ない定常の補充が別にあり、この棒は全体の一部でしかなかった。
 func _build_flow_chart() -> void:
 	var days: int = flow_days()
 	var label: String = "記録の全期間"
 	if days < LogisticsStats.MAX_DAYS:
 		label = "直近 %d 日" % days
-	_picker_label.text = "集計: %s（隊商で着いた個数。交易路は含まない）" % label
+	_picker_label.text = "集計: %s（隊商で着いた個数＝搬入の全量）" % label
 
 	var totals: Dictionary = _stats.delivered_totals(days)
 	var bars: Array[Dictionary] = []
