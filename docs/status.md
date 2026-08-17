@@ -57,6 +57,21 @@
 消費地は放っておくと在庫が減る（`IMPORT_DRAIN_RATE`）ので、産地の方が
 潤沢で安いという関係は保たれている。詳細は logistics.gd の冒頭コメント。
 
+**市場デバッグ画面も別ウィンドウにした**（2026-08-17）。F3 の一覧
+（[debug_panel.gd](../scripts/ui/debug_panel.gd)）を、下の運送デバッグ画面と
+同じく **OS の別ウィンドウ**へ移した（[debug_window.gd](../scripts/ui/debug_window.gd)）。
+理由も同じで、パネルが 1080x720 あり既定のビューポート（1280x720）をほぼ覆うため、
+在庫を見ながら地図や市場画面を確かめられなかった。
+
+**F5 と違って起動時は閉じている**（`OPEN_ON_START = false`）。F5 は記録が
+「開いた瞬間から先しか無い」と困るので開けたままにするが、F3 は押した時点の
+在庫を見るだけで遡るものが無い。初期位置も F5 とずらしてある
+（`POSITION_OFFSET`）——同じだと両方開いたときに完全に重なる。
+
+パネル自体は単体（オーバーレイ）でも使える形を保っている。「×」は
+`close_requested_from_panel` を出し、**繋がれていなければ従来どおり自分を隠す**。
+窓に入れたときだけ窓ごと閉じる（パネルだけ隠すと空の窓が残るため）。
+
 **運送デバッグ画面**（2026-08-17）。**OS の別ウィンドウ**として出る
 （[logistics_debug_window.gd](../scripts/ui/logistics_debug_window.gd) が置き場所と
 開閉、[logistics_debug_panel.gd](../scripts/ui/logistics_debug_panel.gd) が中身）。
@@ -137,7 +152,7 @@ logistics.gd が「そうすると壊れる」と書いている組み合わせ�
 
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m31.gd` の31本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m32.gd` の32本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。

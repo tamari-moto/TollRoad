@@ -8,6 +8,14 @@ extends PanelContainer
 ## 動的に生成する都合上、手書き .tscn の当たり判定の罠（CLAUDE.md参照）を
 ## 踏む理由が無いため。
 
+## 「×」が押されたことを外へ知らせる。
+##
+## 別ウィンドウ（debug_window.gd）に入れて使うとき、パネルだけを隠すと
+## **中身が消えた空の窓が残る**。窓の側でこれを受けて窓ごと閉じる。
+## パネル単体（オーバーレイ）で使う場合は誰も繋がず、下の toggle_visible()
+## がこれまでどおり自分を隠す。
+signal close_requested_from_panel
+
 const GameData = preload("res://scripts/systems/game_data.gd")
 const GameSession = preload("res://scripts/systems/game_session.gd")
 const MarketTable = preload("res://scripts/systems/market_table.gd")
@@ -166,7 +174,7 @@ func _configure() -> void:
 	_connect_once(_by_item_button.pressed, show_by_item_view)
 	_connect_once(_by_city_button.pressed, show_by_city_view)
 	_connect_once(_status_button.pressed, show_status_view)
-	_connect_once(_close_button.pressed, toggle_visible)
+	_connect_once(_close_button.pressed, _on_close_pressed)
 	_connect_once(_prev_button.pressed, _on_prev_pressed)
 	_connect_once(_next_button.pressed, _on_next_pressed)
 
@@ -174,6 +182,18 @@ func _configure() -> void:
 func _connect_once(sig: Signal, handler: Callable) -> void:
 	if not sig.is_connected(handler):
 		sig.connect(handler)
+
+
+## 「×」。窓に入っているなら窓ごと閉じ、単体なら自分を隠す。
+##
+## 窓に入っているのに自分だけ隠すと、中身の無い窓が残って閉じ方が
+## 分からなくなる。繋がれているかどうかで振る舞いを決めるので、
+## パネル単体の使い方（オーバーレイ）はこれまでどおり動く。
+func _on_close_pressed() -> void:
+	if close_requested_from_panel.get_connections().is_empty():
+		toggle_visible()
+		return
+	close_requested_from_panel.emit()
 
 
 func _add_column_header(parent: HBoxContainer, text: String, width: int) -> void:
@@ -200,6 +220,22 @@ func refresh() -> void:
 	if _session == null:
 		return
 	_build_rows()
+
+
+## 今つながっているセッション（未 bind なら null）。
+## ウィンドウ側が Space で日を進めるのに使う。
+func session() -> GameSession:
+	return _session
+
+
+## 「×」を押したのと同じことをする。**検査のための入口。**
+##
+## ボタンの pressed を検査から直接叩くとノードの構築順に依存するうえ、
+## 「窓に入っているかで振る舞いが変わる」というここの肝が
+## _on_close_pressed() の中に隠れてしまう。外から見える約束として公開する。
+func press_close() -> void:
+	_configure()
+	_on_close_pressed()
 
 
 func toggle_visible() -> void:
