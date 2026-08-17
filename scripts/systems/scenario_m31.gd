@@ -35,6 +35,7 @@ const LogisticsStats = preload("res://scripts/systems/logistics_stats.gd")
 const LogisticsChart = preload("res://scripts/ui/logistics_chart.gd")
 const LogisticsView3D = preload("res://scripts/ui/logistics_view_3d.gd")
 const LogisticsDebugPanel = preload("res://scripts/ui/logistics_debug_panel.gd")
+const LogisticsDebugWindow = preload("res://scripts/ui/logistics_debug_window.gd")
 
 ## 検査で回す日数。隊商が出発して到着するまでを十分含む長さにする
 ## （scenario_m28.gd と同じ理由・同じ長さ）。
@@ -59,6 +60,7 @@ func _init() -> void:
 	_test_stats_records_one_entry_per_day()
 	_test_shortage_counts_only_import_pairs()
 	_test_delivered_totals_match_arrivals()
+	_test_window_hosts_the_panel()
 	_test_panel_builds_every_view()
 	_test_stock_chart_skips_shelfless_cities()
 	_test_world_covers_every_travelable_edge()
@@ -411,6 +413,86 @@ func _test_delivered_totals_match_arrivals() -> void:
 		"集計 %d / 実際 %d" % [last_day_sum, actual_last])
 
 
+# --- ウィンドウ ---
+
+## 別ウィンドウが中身を抱え、開閉と bind を素通しすること。
+##
+## **root へ入れない。** Window はツリーに入った時点で実体を作りにいくので、
+## ヘッドレスの検査で native のウィンドウを開こうとすることになる。ここで
+## 見たいのは「どう組まれているか」だけなので、ツリー外のまま確かめる
+## （docs/rules/ui.md の「Window 系はツリー外だとエラーになる」の裏返しで、
+## ツリーに入れないぶんには property の確認はできる）。
+func _test_window_hosts_the_panel() -> void:
+	print("--- ウィンドウ: 別ウィンドウとして組まれる ---")
+
+	var window := LogisticsDebugWindow.new()
+
+	# ここが false だと、親ビューポートの gui_embed_subwindows に従って
+	# 本編のウィンドウの中に埋め込まれる＝オーバーレイに戻る。
+	# 見た目では「窓っぽいもの」が出るので、目視では気づきにくい。
+	_check(window.force_native, "OS の別ウィンドウとして出す設定になっている",
+		"force_native=%s" % window.force_native)
+	_check(not window.exclusive,
+		"排他ではない（本編が入力を受け取り続ける）",
+		"exclusive=%s" % window.exclusive)
+	_check(not window.transient,
+		"追従しない（別モニタへ出して置いておける）",
+		"transient=%s" % window.transient)
+
+	_check(window.panel() != null, "中身のパネルを抱えている", "null")
+	_check(window.size == LogisticsDebugWindow.DEFAULT_SIZE,
+		"開いたときの大きさが既定と一致する", str(window.size))
+	# 調整欄が横スクロールに隠れない幅を下限にしてある。下限がグラフ＋調整欄
+	# より狭いと、縮めた瞬間に何のための窓か分からなくなる。
+	_check(window.min_size.x >= int(LogisticsDebugPanel.CHART_WIDTH)
+			+ LogisticsDebugPanel.TUNING_WIDTH,
+		"縮められる下限が、グラフ幅＋調整欄の幅を下回らない",
+		"下限 %d / グラフ %d + 調整 %d" % [window.min_size.x,
+			int(LogisticsDebugPanel.CHART_WIDTH), LogisticsDebugPanel.TUNING_WIDTH])
+
+	# 開閉の初期状態。OPEN_ON_START を切り替えたときに実際の visible が
+	# 追従しているかを見る（定数だけ変えて代入を直し忘れると、値は変わって
+	# いるのに窓は前のまま——しかもエラーは出ない）。
+	_check(window.visible == LogisticsDebugWindow.OPEN_ON_START,
+		"起動直後の開閉が OPEN_ON_START と一致する",
+		"visible=%s / OPEN_ON_START=%s"
+			% [window.visible, LogisticsDebugWindow.OPEN_ON_START])
+
+	window.toggle_visible()
+	_check(window.visible != LogisticsDebugWindow.OPEN_ON_START,
+		"F5（toggle_visible）で開閉が反転する", "visible=%s" % window.visible)
+	window.toggle_visible()
+	_check(window.visible == LogisticsDebugWindow.OPEN_ON_START,
+		"もう一度で戻る", "visible=%s" % window.visible)
+
+	# タイトルバーの×は close_requested を出すだけ。ここで解放してしまうと
+	# 次に F5 を押したときに解放済みのノードを触ることになる。
+	window.hide_window()
+	_check(not window.visible and is_instance_valid(window.panel()),
+		"閉じても中身は残る（×で解放しない）",
+		"visible=%s / panel=%s" % [window.visible, window.panel()])
+
+	# bind と refresh の素通し。窓が受けてパネルへ渡していないと、
+	# main.gd の _panels 経由の更新が全く効かない（画面は最初の状態のまま）。
+	var session := _make_session()
+	_advance(session, 3)
+	window.bind(session)
+	_check(window.panel().session() == session,
+		"bind() が中身のパネルへ届く", "届いていない")
+	_check(window.panel().stats().day_count() >= 1,
+		"閉じている間も記録される（開くまで空にならない）",
+		"%d 日" % window.panel().stats().day_count())
+
+	var before: int = window.panel().stats().day_count()
+	session.rest()
+	window.refresh()
+	_check(window.panel().stats().day_count() == before + 1,
+		"refresh() が中身のパネルへ届く",
+		"%d → %d 日" % [before, window.panel().stats().day_count()])
+
+	window.free()
+
+
 # --- パネル ---
 
 ## 4つのビューがすべて組み立てられること。
@@ -422,20 +504,6 @@ func _test_panel_builds_every_view() -> void:
 
 	var panel := LogisticsDebugPanel.new()
 	root.add_child(panel)
-
-	# 開閉の初期状態。OPEN_ON_START を切り替えたときに、実際の visible が
-	# それに追従しているかを見る（定数だけ変えて代入を直し忘れると、値は
-	# 変わっているのに画面は前のまま——しかもエラーは出ない）。
-	_check(panel.visible == LogisticsDebugPanel.OPEN_ON_START,
-		"起動直後の開閉が OPEN_ON_START と一致する",
-		"visible=%s / OPEN_ON_START=%s"
-			% [panel.visible, LogisticsDebugPanel.OPEN_ON_START])
-
-	panel.toggle_visible()
-	_check(panel.visible != LogisticsDebugPanel.OPEN_ON_START,
-		"F5（toggle_visible）で開閉が反転する", "visible=%s" % panel.visible)
-	panel.toggle_visible()
-
 	panel.bind(session)
 
 	_check(panel.stats().day_count() >= 1,

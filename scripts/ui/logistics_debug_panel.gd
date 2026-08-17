@@ -2,10 +2,15 @@ extends PanelContainer
 ## デバッグモード: 物流（logistics.gd）の状態を、グラフと 3D 図で見る。
 ## 併せて、物流の定数を実行中だけ上書きして効き方を確かめられる。
 ##
-## F5 で開閉する常時利用可能なオーバーレイ。市場データの F3（debug_panel.gd）
-## とは別の画面にしてある。物流は「日ごとの推移」「街道の上のどこ」という
-## 時間と空間の軸を持ち、F3 の「今の在庫・需要の一覧」とは見る単位が違う。
-## 同じ画面に混ぜると、どちらの目的で開いたのか操作のたびに迷う。
+## **これは中身だけを持つ。** 置き場所（別ウィンドウ）と開閉は
+## [logistics_debug_window.gd](logistics_debug_window.gd) が持つ。分けてあるのは、
+## パネル自身が位置と可視状態を決めると、ウィンドウ側の可視状態と二重になり
+## 「開いているのに見えない」組み合わせが作れてしまうため。
+##
+## 市場データの F3（debug_panel.gd）とは別の画面にしてある。物流は
+## 「日ごとの推移」「街道の上のどこ」という時間と空間の軸を持ち、
+## F3 の「今の在庫・需要の一覧」とは見る単位が違う。同じ画面に混ぜると、
+## どちらの目的で開いたのか操作のたびに迷う。
 ##
 ## ノードはすべてコードで組み立てる（.tscn は作らない）。調整スライダーは
 ## logistics_tuning.gd の SPECS から生えるので、項目を足したら勝手に増える
@@ -31,19 +36,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 ## 立体 … 3D 図（都市＝在庫の高さ、街道＝混み具合、隊商＝点）
 enum View { TREND, STOCK, FLOW, WORLD }
 
-## 起動した時点で開いておくか。
-##
-## true にしてある。物流の調整をしている間は毎回 F5 を押すことになり、しかも
-## 「押し忘れて数日進めてしまい、その分の記録が無い」が起こる（記録はこの
-## パネルが持つので、開くまで溜まらないのではなく **bind した時点から溜まる**
-## が、見ないまま進めた事実には変わりがない）。
-##
-## **画面のほぼ全面を覆う。** 本編の見た目を確認したいときは F5 で閉じること。
-## 配布に向けて閉じ直す場合はここを false に戻す（F3 の debug_panel.gd は
-## 従来どおり閉じた状態で始まる）。
-const OPEN_ON_START: bool = true
-
-const PANEL_SIZE: Vector2 = Vector2(1180, 760)
 ## 右側の調整欄の幅。スライダーと数値入力と「戻す」が1行に収まる幅。
 const TUNING_WIDTH: int = 360
 const CHART_WIDTH: float = 700.0
@@ -68,7 +60,6 @@ var _item_index: int = 0
 var _flow_days_index: int = 1
 
 var _view_buttons: Dictionary = {}
-var _close_button: Button
 var _picker_row: HBoxContainer
 var _prev_button: Button
 var _next_button: Button
@@ -106,18 +97,8 @@ func _configure() -> void:
 	_item_ids.assign(GameData.ITEMS.keys())
 
 	UiTheme.apply_panel_style(self)
-	custom_minimum_size = PANEL_SIZE
-	# F3 のパネルと重ならないよう、少し下げた位置に出す。両方開いたときに
-	# 上下に並ぶ方が、どちらを見ているか分かりやすい。
-	anchor_left = 0.02
-	anchor_top = 0.03
-	anchor_right = 0.02
-	anchor_bottom = 0.03
-	offset_left = 0.0
-	offset_top = 0.0
-	offset_right = PANEL_SIZE.x
-	offset_bottom = PANEL_SIZE.y
-	visible = OPEN_ON_START
+	# 位置・大きさ・可視状態はここでは決めない。ウィンドウ側が
+	# UiUtil.fill_window() で親いっぱいに広げる（冒頭のコメント参照）。
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -151,8 +132,10 @@ func _build_header() -> HBoxContainer:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 8)
 
+	# 閉じるボタンは置かない。ウィンドウのタイトルバーが×を持っており、
+	# 2つあると「どちらがウィンドウごと閉じるのか」が見た目で判らない。
 	var title := Label.new()
-	title.text = "デバッグ: 運送（F5で閉じる）"
+	title.text = "運送（Space で1日進む・F5 で閉じる）"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_color_override("font_color", UiTheme.TEXT)
 	header.add_child(title)
@@ -161,12 +144,6 @@ func _build_header() -> HBoxContainer:
 	_add_view_button(header, View.STOCK, "在庫", "選んだ品目の、全都市の在庫の推移")
 	_add_view_button(header, View.FLOW, "流量", "直近N日に品目ごとに運ばれた個数")
 	_add_view_button(header, View.WORLD, "立体", "都市＝在庫の高さ、街道＝混み具合、隊商＝点")
-
-	_close_button = Button.new()
-	_close_button.text = "×"
-	_close_button.tooltip_text = "閉じる（F5）"
-	_connect_once(_close_button.pressed, toggle_visible)
-	header.add_child(_close_button)
 	return header
 
 
@@ -364,12 +341,6 @@ func refresh() -> void:
 	_refresh_summary()
 
 
-func toggle_visible() -> void:
-	visible = not visible
-	if visible:
-		refresh()
-
-
 func show_view(view: int) -> void:
 	_configure()
 	_view = view
@@ -378,6 +349,12 @@ func show_view(view: int) -> void:
 
 func current_view() -> int:
 	return _view
+
+
+## 今つながっているセッション（未 bind なら null）。
+## ウィンドウ側が Space で日を進めるのに使う。
+func session() -> GameSession:
+	return _session
 
 
 ## 在庫ビューで見る品目を指定する。

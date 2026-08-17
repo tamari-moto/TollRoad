@@ -31,7 +31,7 @@ game_data.gd — 定数のみ。何にも依存しない葉
             ├── save_manager.gd — ファイル入出力と版の整合
             ├── game_state.gd — 唯一の autoload。session と保存の入口
             ├── scenes/main/main.gd — 調停役
-            └── scripts/ui/*.gd (20ファイル) — bind(session) / refresh() 規約
+            └── scripts/ui/*.gd (29ファイル) — bind(session) / refresh() 規約
 ```
 
 上の層は下を知っているが、下は上を知らない。`GameSession` は UI を一切参照せず、

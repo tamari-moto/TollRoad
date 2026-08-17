@@ -25,7 +25,7 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const DebugPanel = preload("res://scripts/ui/debug_panel.gd")
-const LogisticsDebugPanel = preload("res://scripts/ui/logistics_debug_panel.gd")
+const LogisticsDebugWindow = preload("res://scripts/ui/logistics_debug_window.gd")
 
 ## 航海日誌に表示する最大件数。古いものから捨てる。
 const LOG_DISPLAY_LIMIT: int = 200
@@ -67,9 +67,10 @@ var _root: Control
 var _debug_panel: DebugPanel
 
 ## 運送のデバッグモード（F5）。隊商と交易路の推移をグラフと 3D 図で見せ、
-## 物流の定数を実行中だけ上書きできる。F3 と同じくオーバーレイで、
-## 市場データ（F3）とは別画面にしてある（理由は logistics_debug_panel.gd）。
-var _logistics_debug_panel: LogisticsDebugPanel
+## 物流の定数を実行中だけ上書きできる。**これだけは Control ではなく
+## OS の別ウィンドウ**（理由は logistics_debug_window.gd）。_panels には
+## 乗るので bind() / refresh() は他のパネルと同じに来る。
+var _logistics_debug_window: LogisticsDebugWindow
 
 var _session: GameSession
 
@@ -115,10 +116,12 @@ func _configure() -> void:
 		_root.add_child(_debug_panel)
 		_panels.append(_debug_panel)
 
-	if _logistics_debug_panel == null and _root != null:
-		_logistics_debug_panel = LogisticsDebugPanel.new()
-		_root.add_child(_logistics_debug_panel)
-		_panels.append(_logistics_debug_panel)
+	# 別ウィンドウなので _root（画面の Control 階層）ではなくここへ吊る。
+	# Control の下に置くとレイアウトの一員として扱われ、意味が読み違えられる。
+	if _logistics_debug_window == null:
+		_logistics_debug_window = LogisticsDebugWindow.new()
+		add_child(_logistics_debug_window)
+		_panels.append(_logistics_debug_window)
 
 	_connect_once(_rest_button.pressed, _on_rest_pressed)
 	_connect_once(_result_button.pressed, _show_result)
@@ -453,7 +456,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event.is_action("tr_logistics_debug_toggle"):
-		_logistics_debug_panel.toggle_visible()
+		_logistics_debug_window.toggle_visible()
 		get_viewport().set_input_as_handled()
 		return
 
