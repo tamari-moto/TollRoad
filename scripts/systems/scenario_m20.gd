@@ -50,15 +50,15 @@ func _test_chance_formula() -> void:
 		"同種の装備は頭打ち数までしか加算されない", str(s.explore_chance()))
 
 	# 種類を跨ぐとボーナスが伸びるが、合計は上限でクランプされる。
-	# 装備の種類数 × 頭打ち数 × 重量3 がロバの積載(40)を超えうるため、
-	# 先に積載の大きい騎乗へ乗り換えておく。
+	# ここで見たいのは explore_chance() のクランプ式そのものであり、市場から
+	# 買い集める経済的な妥当性ではない（装備の生産地は都市ごとに1種類しかなく、
+	# IMPORT_INITIAL_RATIO=0.0 の下では初日に全種類を1都市でまとめ買いできない）。
+	# そのため cargo を直接積んで前提を作る。
 	var s2: GameSession = GameSession.new(20002)
 	s2.silver = 999999
 	s2.buy_mount("mammoth")
 	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
-		s2.buy(item_id, GameData.EXPLORE_EQUIP_UNIT_CAP)
-		_check(s2.cargo_count(item_id) == GameData.EXPLORE_EQUIP_UNIT_CAP,
-			"検査の前提: %s を頭打ち数だけ買えた" % item_id, str(s2.cargo_count(item_id)))
+		s2.cargo[item_id] = GameData.EXPLORE_EQUIP_UNIT_CAP
 	var uncapped_bonus: float = GameData.EXPLORE_COMBAT_ITEMS.size() * GameData.EXPLORE_EQUIP_UNIT_CAP * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
 	_check(uncapped_bonus > GameData.EXPLORE_EQUIP_BONUS_CAP,
 		"検査の前提: クランプ無しなら上限を超える", str(uncapped_bonus))
