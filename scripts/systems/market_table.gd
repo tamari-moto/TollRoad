@@ -170,22 +170,73 @@ func glut_multiplier(city_id: String, item_id: String) -> float:
 
 
 # --- 取引による増減 ---
+#
+# **在庫と需要は1つの帳簿の裏表として動かす。** 以前は買いが在庫だけ、
+# 売りが需要だけを減らす片側の操作だったが、それだと売った品が街から
+# 消えていた——プレイヤーが50個売った直後の棚が空のままで、自分が
+# 売った品を買い戻せない。街に物が出入りしている感触が出ない。
+#
+# 今は取引の両側が両方の帳簿を動かす:
+#
+# | 操作 | 在庫 | 需要 |
+# |---|---|---|
+# | 買う | −n（棚から出る） | +n（街から出ていったぶん、また欲しがる） |
+# | 売る | +n（棚に並ぶ） | −n（買い取り枠を使う） |
+#
+# 増える側は必ず上限（stock_cap / demand_cap）で頭打ちにする。外すと
+# 売り込みで棚が無限に積み上がり、隊商の補充判定（logistics の _needs()）
+# から見て永久に満杯の都市が生まれる。
+#
+# **取引は player_bought() / player_sold() を通すこと。** 片側だけを動かす
+# consume_stock() / consume_demand() も残してあるが、そちらは隊商の積み込み
+# のように「一方の帳簿しか動かない」場合のためのもの。
+#
+# **往復での稼ぎは成立しない。** 同じ都市で買ってすぐ売り返すと、買値 >
+# 売値の建値差に加えて売却税（SELL_TAX_RATE）が引かれ、さらに在庫が
+# 戻って買値が下がり需要が減って売値も下がる。掛け率が両側から閉じる。
 
-## プレイヤーが買った分だけ在庫を減らす。
-## 同時に、その品目がこの都市へ「戻ってきた」ぶん需要も減らす扱いはしない
-## （買いと売りは別々の帳簿として動かす。片方の操作が両方を動かすと、
-## プレイヤーから見て何がどう減ったのか追えなくなる）。
+## プレイヤーが買った分を市場へ反映する（在庫 −n、需要 +n）。
+##
+## 需要が戻るのは、買われた品がその街から**出ていった**ため。棚から
+## 消えたぶん、街はまたそれを欲しがる。
+func player_bought(city_id: String, item_id: String, count: int) -> void:
+	consume_stock(city_id, item_id, count)
+	restore_demand(city_id, item_id, count)
+
+
+## プレイヤーが売った分を市場へ反映する（需要 −n、在庫 +n）。
+##
+## 在庫が増えるのは、売られた品がその街の棚に**並ぶ**ため。次に来た者
+## （プレイヤー自身を含む）はそれを買える。
+func player_sold(city_id: String, item_id: String, count: int) -> void:
+	consume_demand(city_id, item_id, count)
+	receive_stock(city_id, item_id, count)
+
+
+## 在庫を減らす。**片側だけの操作**で、需要には触らない。
+##
+## 隊商が産地から積む場合（logistics.gd）にも使う。荷車が積んだ品は
+## その街が消費したわけではないので、需要を戻してはいけない。取引で
+## 減らすときは player_bought() を通すこと。
 func consume_stock(city_id: String, item_id: String, count: int) -> void:
 	if count <= 0 or not stock.has(city_id):
 		return
 	stock[city_id][item_id] = maxi(0, stock_of(city_id, item_id) - count)
 
 
-## プレイヤーが売った分だけ需要を減らす。
+## 需要を減らす（片側だけ。在庫には触らない）。
 func consume_demand(city_id: String, item_id: String, count: int) -> void:
 	if count <= 0 or not demand.has(city_id):
 		return
 	demand[city_id][item_id] = maxi(0, demand_of(city_id, item_id) - count)
+
+
+## 需要を戻す（上限 demand_cap で頭打ち）。
+func restore_demand(city_id: String, item_id: String, count: int) -> void:
+	if count <= 0 or not demand.has(city_id):
+		return
+	demand[city_id][item_id] = mini(
+		demand_of(city_id, item_id) + count, demand_cap(city_id, item_id))
 
 
 ## 隊商が運んできた分を在庫に積む（logistics.gd から呼ぶ）。

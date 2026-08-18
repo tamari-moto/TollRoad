@@ -182,6 +182,10 @@ func rank() -> String:
 # 市場は無限ではない。買えるのは現在地の在庫まで、売れるのは需要までで、
 # どちらも毎日その都市の生産量・消費量ぶんだけ補充される（market_table.gd）。
 # 在庫が薄いと買値が上がり、需要が尽きかけていると売値が下がる。
+#
+# **売買は在庫と需要の両方を動かす。** 買えば在庫が減って需要が戻り、
+# 売れば需要が減って在庫が増える（market_table.gd の player_bought /
+# player_sold）。売った品はその街の棚に並ぶので、買い戻すこともできる。
 
 ## 現在地でこの品目の在庫が何個あるか（＝買える上限の素）。
 func stock_count(item_id: String) -> int:
@@ -232,7 +236,7 @@ func buy(item_id: String, count: int) -> bool:
 	var total: int = price * count
 	silver -= total
 	cargo[item_id] = cargo_count(item_id) + count
-	market.consume_stock(current_city, item_id, count)
+	market.player_bought(current_city, item_id, count)
 	_log("%s で %s を %d 個購入（単価 %d、計 %d、在庫の残り %d）" % [
 		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
 		count, price, total, stock_count(item_id)], LogKind.TRADE)
@@ -259,7 +263,7 @@ func sell(item_id: String, count: int) -> bool:
 	var net: int = gross - tax
 	silver += net
 	_reduce_cargo(item_id, count)
-	market.consume_demand(current_city, item_id, count)
+	market.player_sold(current_city, item_id, count)
 	_log("%s で %s を %d 個売却（単価 %d、総額 %d、税 %d、手取り %d、需要の残り %d）" % [
 		GameData.CITIES[current_city]["name"], GameData.ITEMS[item_id]["name"],
 		count, price, gross, tax, net, demand_count(item_id)], LogKind.TRADE)
