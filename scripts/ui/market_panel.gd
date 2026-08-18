@@ -3,7 +3,8 @@ extends PanelContainer
 ##
 ## 各行は「品目名 / 価格 / 基準比 / 在庫と需要 / 所持数 / 買うボタン / 売るボタン」
 ## で構成する。
-## 数量は指定しない。ボタンを押すたびに1個だけ取引する（連打で数量を調整する）。
+## 数量は指定しない。ボタンを押すたびに1個だけ取引し、押しっぱなしにすると
+## 連続して取引し続ける（長押しの間だけ加速する。下の HOLD_* を参照）。
 ##
 ## 価格の欄は建値ではなく**実際に取引される単価**を出す（買値／売値）。
 ## 在庫が薄いと買値が上がり、需要が尽きかけていると売値が下がるため、
@@ -34,6 +35,22 @@ const HEADER_FONT_SIZE: int = 13
 const ROW_ICON_SIZE: int = 20
 const TRADE_BUTTON_MIN_SIZE: Vector2 = Vector2(52, 40)
 
+## 長押しで取引を繰り返す際の刻み。
+##
+## 押した瞬間に1個取引し、そこから HOLD_DELAY だけ待ってから連射を始める。
+## この待ちが無いと「1個だけ買う」つもりが2個買う事故になる（クリックは
+## 押して離すまでに必ず時間があるため）。
+##
+## 連射の間隔は HOLD_INTERVAL_MAX から始めて、押している間 HOLD_ACCEL の割合で
+## 詰まり、HOLD_INTERVAL_MIN で頭打ちになる。最初を遅くするのは、数個だけ
+## 欲しいときに行き過ぎないため。上限を設けるのは、1フレーム1個より速く
+## 回しても押している側が止め時を判断できないため。
+const HOLD_DELAY: float = 0.4
+const HOLD_INTERVAL_MAX: float = 0.25
+const HOLD_INTERVAL_MIN: float = 0.05
+## 1回取引するごとに間隔へ掛ける率。0.25秒から0.05秒まで約9回で詰まる。
+const HOLD_ACCEL: float = 0.82
+
 ## 価格の欄は買値と売値を並べるため、他より小さくする。
 const PRICE_FONT_SIZE: int = 14
 ## 在庫と需要の欄は2つの数字を上下に並べるため、さらに小さくする。
@@ -55,6 +72,14 @@ var _held_tweens: Dictionary = {}
 var _grid: GridContainer
 var _title: Label
 var _fx: FxLayer
+
+## 長押し中の対象と刻み。押していない間は _hold_item が空文字。
+var _hold_item: String = ""
+var _hold_is_buy: bool = false
+## 次の1個までの残り時間。押した直後は HOLD_DELAY が入る。
+var _hold_remaining: float = 0.0
+## 現在の連射間隔。取引が成立するたび HOLD_ACCEL を掛けて詰める。
+var _hold_interval: float = HOLD_INTERVAL_MAX
 
 
 func bind(session: GameSession) -> void:
@@ -178,7 +203,11 @@ func _build_row(item_id: String) -> Dictionary:
 	buy_button.text = "買う"
 	buy_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
 	buy_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
+	# pressed は「押して離した」時に1個。button_down/up は長押しの連射を
+	# 受け持つ。連射は2個目以降だけを出すので、1個目と二重にならない。
 	buy_button.pressed.connect(_on_buy_pressed.bind(item_id))
+	buy_button.button_down.connect(_on_trade_button_down.bind(item_id, true))
+	buy_button.button_up.connect(_on_trade_button_up)
 	_grid.add_child(buy_button)
 
 	var sell_button := Button.new()
@@ -186,6 +215,8 @@ func _build_row(item_id: String) -> Dictionary:
 	sell_button.custom_minimum_size = TRADE_BUTTON_MIN_SIZE
 	sell_button.add_theme_font_size_override("font_size", ROW_FONT_SIZE)
 	sell_button.pressed.connect(_on_sell_pressed.bind(item_id))
+	sell_button.button_down.connect(_on_trade_button_down.bind(item_id, false))
+	sell_button.button_up.connect(_on_trade_button_up)
 	_grid.add_child(sell_button)
 
 	return {
@@ -254,6 +285,10 @@ func refresh() -> void:
 			continue
 		_set_row_visible(row, visible_items[item_id])
 		if not visible_items[item_id]:
+			# 行ごと消えたなら長押しの対象も消えている。上の disabled と
+			# 同じ理由で、ここでも打ち切っておく。
+			if _hold_item == item_id:
+				_stop_hold()
 			# 隠した行の中身は更新しない。次に現れるときに refresh() が
 			# 作り直すため、古い値が見えることはない。
 			# ただし所持数の記録だけは合わせておく（隠れている間の増減を
@@ -290,6 +325,14 @@ func refresh() -> void:
 
 		row["buy"].disabled = over or _buy_amount(item_id) <= 0
 		row["sell"].disabled = over or _sell_amount(item_id) <= 0
+		# 長押し中のボタンが無効化・非表示になったら長押しを打ち切る。
+		# Godot は disabled にしても button_up を出さないため、放っておくと
+		# 「押していないのに押しっぱなし」の状態が残る（次に在庫が戻った
+		# 瞬間、指を離した後なのに取引が再開してしまう）。
+		if _hold_item == item_id:
+			var held_button: Button = row["buy"] if _hold_is_buy else row["sell"]
+			if held_button.disabled:
+				_stop_hold()
 		# 押せない理由は在庫切れ・需要切れと資金不足で違う。ボタンが灰色に
 		# なるだけでは区別できないので、ツールチップで理由を出す。
 		row["buy"].tooltip_text = _buy_blocked_reason(item_id)
@@ -619,6 +662,85 @@ func _play_trade_fx(item_id: String, is_buy: bool) -> void:
 	var from_point: Vector2 = from_control.global_position + from_control.size * 0.5
 	var to_point: Vector2 = to_control.global_position + to_control.size * 0.5
 	_fx.fly_item(item_id, from_point, to_point, UiTheme.item_color(item_id))
+
+
+## 長押しの開始。ここでは取引しない — 1個目は pressed（押して離した時）が
+## 出す。押した瞬間に取引してしまうと、離す前に pressed も来て2個になる。
+func _on_trade_button_down(item_id: String, is_buy: bool) -> void:
+	_hold_item = item_id
+	_hold_is_buy = is_buy
+	_hold_remaining = HOLD_DELAY
+	_hold_interval = HOLD_INTERVAL_MAX
+
+
+## 指を離したら止める。次に押したときは待ちも速度も最初からやり直す
+## （速いまま持ち越すと、1個だけ欲しくて押した2回目が走り出す）。
+func _on_trade_button_up() -> void:
+	_stop_hold()
+
+
+func _stop_hold() -> void:
+	_hold_item = ""
+	_hold_remaining = 0.0
+	_hold_interval = HOLD_INTERVAL_MAX
+
+
+## 長押し中かどうか。検査から状態を確かめるために公開する。
+func is_holding() -> bool:
+	return _hold_item != ""
+
+
+## 現在の連射間隔（秒）。押し続けるほど短くなる。検査用に公開する。
+func hold_interval() -> float:
+	return _hold_interval
+
+
+## 経過時間を渡して、長押しの連射をその分だけ進める。返り値は成立した取引の数。
+##
+## _process から呼ぶが、**時間を引数で受け取る純粋な形にしてある** —
+## ツリー外（--script のハーネス）ではフレームが進まず _process が走らないため、
+## 検査はこれを直接呼んで長押しを再現する。
+func advance_hold(delta: float) -> int:
+	if _hold_item == "":
+		return 0
+	var traded_count: int = 0
+	# 1フレームが長い（処理落ち・ブレークポイント）場合に取りこぼさないよう、
+	# 残り時間が尽きる限り繰り返す。取引が成立しなくなったら抜ける。
+	_hold_remaining -= delta
+	# _repeat_once() は buy()/sell() 経由で refresh() を呼び、そこで長押しが
+	# 打ち切られることがある（在庫が尽きてボタンが無効になった場合）。
+	# 毎回 _hold_item を見直さないと、空になった対象で取引を続けようとする。
+	while _hold_remaining <= 0.0 and _hold_item != "":
+		if not _repeat_once():
+			# 在庫切れ・資金切れ。押し続けても何も起きないので長押しを終える
+			# （残り時間が負のまま回り続けると次のフレームで無駄に空回りする）。
+			_stop_hold()
+			break
+		traded_count += 1
+		_hold_interval = maxf(HOLD_INTERVAL_MIN, _hold_interval * HOLD_ACCEL)
+		_hold_remaining += _hold_interval
+	return traded_count
+
+
+## 長押し中の1個を取引する。成立したら true。
+func _repeat_once() -> bool:
+	if _session == null or _session.is_over():
+		return false
+	if _hold_is_buy:
+		if _buy_amount(_hold_item) <= 0 or not _session.buy(_hold_item, _buy_amount(_hold_item)):
+			return false
+		_play_trade_fx(_hold_item, true)
+		traded.emit(_hold_item, true, _row_origin(_hold_item))
+		return true
+	if _sell_amount(_hold_item) <= 0 or not _session.sell(_hold_item, _sell_amount(_hold_item)):
+		return false
+	_play_trade_fx(_hold_item, false)
+	traded.emit(_hold_item, false, _row_origin(_hold_item))
+	return true
+
+
+func _process(delta: float) -> void:
+	advance_hold(delta)
 
 
 func _on_buy_pressed(item_id: String) -> void:
