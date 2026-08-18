@@ -26,6 +26,7 @@ func _init() -> void:
 	_test_initial_stock_and_demand()
 	_test_buy_limited_by_stock()
 	_test_sell_limited_by_demand()
+	_test_trade_moves_both_ledgers()
 	_test_price_reacts_to_stock()
 	_test_price_stays_in_scale()
 	_test_daily_replenishment()
@@ -278,6 +279,120 @@ func _test_sell_limited_by_demand() -> void:
 	_check(absent != "" and not s2.sell(absent, 1),
 		"需要があっても持っていなければ売れない", "売れてしまった")
 
+
+## 売買が在庫と需要の**両方**を動かすこと。
+##
+## 片側だけ（買い＝在庫だけ、売り＝需要だけ）だった頃は、売った品が街から
+## 消えていた。ここは「増える側」を見る検査なので、減る側の検査
+## （_test_buy_limited_by_stock / _test_sell_limited_by_demand）とは別に置く
+## ——片側を消しても、そちらの検査は全て通ってしまう（実測）。
+func _test_trade_moves_both_ledgers() -> void:
+	print("--- 売買は在庫と需要の両方を動かす ---")
+	var s: GameSession = GameSession.new(23020)
+	s.silver = 10000000
+	s.buy_mount("mammoth")
+
+	# --- 売ると在庫が増える ---
+	# **移動はしない。** move_to() は日を進めるので advance_day() の補充が
+	# 混ざり、「売った分だけ増えたか」が測れなくなる。現在地で需要があり
+	# 棚にも乗る品目を選ぶ。
+	var item_id: String = _item_with_room_to_sell(s)
+	_check(item_id != "", "検査の前提: その場で売り買いできる品目がある", "無い")
+
+	# 売る分を積荷に入れる（買うと在庫が動くので、そこは介さない）。
+	var sold: int = mini(s.demand_count(item_id),
+		MarketTable.stock_cap(s.current_city, item_id))
+	_check(sold > 0, "検査の前提: 売れる個数がある", str(sold))
+	# 棚に余地を作る。満杯だと上限で頭打ちになり、増分が測れない。
+	s.market.consume_stock(s.current_city, item_id, sold)
+	s.cargo[item_id] = s.cargo_count(item_id) + sold
+
+	var stock_before: int = s.stock_count(item_id)
+	s.sell(item_id, sold)
+	_check(s.stock_count(item_id) == stock_before + sold,
+		"売った分だけ在庫が増える（棚に並ぶ）",
+		"%d -> %d（売った %d）" % [stock_before, s.stock_count(item_id), sold])
+
+	# 棚に並んだのだから、買い戻せる。「街に物が出入りしている」の実体。
+	_check(s.max_buyable(item_id) > 0, "売った品はその場で買い戻せる",
+		str(s.max_buyable(item_id)))
+
+	# --- 買うと需要が戻る ---
+	var s2: GameSession = GameSession.new(23021)
+	s2.silver = 10000000
+	s2.buy_mount("mammoth")
+	var bought_item: String = GameData.CITIES[s2.current_city]["specialty"]
+
+	# 需要を先に減らしておく（満杯だと上限で頭打ちになり、戻ったか判らない）。
+	s2.market.consume_demand(s2.current_city, bought_item,
+		s2.demand_count(bought_item))
+	_check(s2.demand_count(bought_item) == 0, "検査の前提: 需要を空にした",
+		str(s2.demand_count(bought_item)))
+
+	var buy_count: int = mini(5, s2.max_buyable(bought_item))
+	_check(buy_count > 0, "検査の前提: 買える個数がある", str(buy_count))
+	s2.buy(bought_item, buy_count)
+	_check(s2.demand_count(bought_item) == buy_count,
+		"買った分だけ需要が戻る（街から出ていった）",
+		"%d（買った %d）" % [s2.demand_count(bought_item), buy_count])
+
+	# --- 増える側は上限で頭打ち ---
+	# 上限を外すと売り込みで棚が無限に積み上がる（隊商から見て永久に満杯）。
+	var s3: GameSession = GameSession.new(23022)
+	s3.silver = 10000000
+	s3.buy_mount("mammoth")
+	var capped: String = _item_with_room_to_sell(s3)
+	_check(capped != "", "検査の前提: 需要のある品目がある", "無い")
+	var cap: int = MarketTable.stock_cap(s3.current_city, capped)
+	# 棚を満杯にしてから、さらに売り込む。
+	s3.market.receive_stock(s3.current_city, capped, cap)
+	s3.cargo[capped] = s3.cargo_count(capped) + s3.demand_count(capped)
+	s3.sell(capped, s3.max_sellable(capped))
+	_check(s3.stock_count(capped) <= cap,
+		"売り込んでも在庫は上限を超えない",
+		"%d / 上限 %d" % [s3.stock_count(capped), cap])
+
+	# 需要も同じく上限で止まる。
+	var s4: GameSession = GameSession.new(23023)
+	s4.silver = 10000000
+	s4.buy_mount("mammoth")
+	var d_item: String = GameData.CITIES[s4.current_city]["specialty"]
+	var d_cap: int = MarketTable.demand_cap(s4.current_city, d_item)
+	s4.buy(d_item, s4.max_buyable(d_item))
+	_check(s4.demand_count(d_item) <= d_cap,
+		"買い占めても需要は上限を超えない",
+		"%d / 上限 %d" % [s4.demand_count(d_item), d_cap])
+
+	# --- 同じ都市での往復では儲からない ---
+	# 買ってすぐ売り返す操作が黒字だと、移動せずシルバーを増やせてしまう。
+	var s5: GameSession = GameSession.new(23024)
+	s5.silver = 10000000
+	s5.buy_mount("mammoth")
+	var loop_item: String = _item_with_room_to_sell(s5)
+	_check(loop_item != "", "検査の前提: 往復に使える品目がある", "無い")
+	var silver_before: int = s5.silver
+	var loop_count: int = mini(mini(3, s5.max_buyable(loop_item)),
+		s5.demand_count(loop_item))
+	_check(loop_count > 0, "検査の前提: 往復できる個数がある", str(loop_count))
+	s5.buy(loop_item, loop_count)
+	s5.sell(loop_item, loop_count)
+	_check(s5.silver < silver_before,
+		"同じ都市で買ってすぐ売り返すと損をする（無限増殖しない）",
+		"%d -> %d" % [silver_before, s5.silver])
+
+
+## 現在地で「需要があり、棚にも積める（stock_cap > 0）」品目。
+## 特産資源は産地から遠いと stock_cap が0で、売っても棚に乗らない。
+func _item_with_room_to_sell(session: GameSession) -> String:
+	for item_id: String in GameData.ITEMS:
+		if session.demand_count(item_id) <= 0:
+			continue
+		if MarketTable.stock_cap(session.current_city, item_id) <= 0:
+			continue
+		if session.max_buyable(item_id) <= 0:
+			continue
+		return item_id
+	return ""
 
 func _test_price_reacts_to_stock() -> void:
 	print("--- 在庫と需要が価格に効く ---")
