@@ -163,7 +163,7 @@ logistics.gd が「そうすると壊れる」と書いている組み合わせ�
 
 ## 検証シナリオ
 
-`scripts/systems/scenario_m1.gd` 〜 `scenario_m32.gd` の32本。
+`scripts/systems/scenario_m1.gd` 〜 `scenario_m33.gd` の33本。
 `scenario_all.gd` の `SCENARIO_COUNT` と一致していること（ランナーが照合して止める）。
 
 シナリオの書き方と3層の検証手順は [rules/testing.md](rules/testing.md) を参照。
