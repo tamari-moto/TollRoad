@@ -16,7 +16,6 @@ const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 const PriceBar = preload("res://scripts/ui/price_bar.gd")
-const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 
 ## 安い理由を示すバッジの文言。
 const BADGE_SPECIALTY: String = "特産"
@@ -43,8 +42,10 @@ const SUPPLY_FONT_SIZE: int = 12
 ## MarketPanel.tscn の columns と必ず一致させること（ずれると行が崩れる）。
 const GRID_COLUMNS: int = 7
 
-## 売買が成立した時に、その行の位置とともに知らせる。
-## 演出はパネルをまたぐため、飛ばす先を知っている main.gd に任せる。
+## 売買が成立した時に、押したボタンの位置（グローバル座標）とともに知らせる。
+##
+## 演出は市場パネルの外（HUD）まで飛ぶ。このパネルは自分の外に何があるかを
+## 知らないので、出発点だけを渡して飛ばす先は main.gd に決めさせる。
 signal traded(item_id: String, is_buy: bool, origin: Vector2)
 
 var _session: GameSession
@@ -54,7 +55,6 @@ var _held_tweens: Dictionary = {}
 
 var _grid: GridContainer
 var _title: Label
-var _fx: FxLayer
 
 
 func bind(session: GameSession) -> void:
@@ -77,10 +77,6 @@ func _build() -> void:
 	_grid = UiUtil.find_node(self, "ItemGrid")
 	if _grid == null:
 		return
-
-	if _fx == null:
-		_fx = FxLayer.new()
-		add_child(_fx)
 
 	# ヘッダ行。列を増やしたら GRID_COLUMNS と .tscn の columns も揃えること。
 	for heading: String in ["品目", "価格", "基準比", "在庫/需要", "所持", "", ""]:
@@ -607,38 +603,26 @@ func _animate_held(item_id: String, from: int, to: int) -> void:
 	_held_tweens[item_id] = tween
 
 
-## 買う/売るボタンから所持数ラベルへアイコンを飛ばす。同一パネル内で完結する演出。
-func _play_trade_fx(item_id: String, is_buy: bool) -> void:
-	if not is_instance_valid(_fx) or not is_inside_tree():
-		return
-	var row: Dictionary = _rows.get(item_id, {})
-	var from_control: Control = row.get("buy") if is_buy else row.get("sell")
-	var to_control: Control = row.get("held")
-	if not is_instance_valid(from_control) or not is_instance_valid(to_control):
-		return
-	var from_point: Vector2 = from_control.global_position + from_control.size * 0.5
-	var to_point: Vector2 = to_control.global_position + to_control.size * 0.5
-	_fx.fly_item(item_id, from_point, to_point, UiTheme.item_color(item_id))
-
-
 func _on_buy_pressed(item_id: String) -> void:
 	var amount: int = _buy_amount(item_id)
 	if _session.buy(item_id, amount):
-		_play_trade_fx(item_id, true)
-		traded.emit(item_id, true, _row_origin(item_id))
+		traded.emit(item_id, true, _row_origin(item_id, true))
 
 
 func _on_sell_pressed(item_id: String) -> void:
 	var amount: int = _sell_amount(item_id)
 	if _session.sell(item_id, amount):
-		_play_trade_fx(item_id, false)
-		traded.emit(item_id, false, _row_origin(item_id))
+		traded.emit(item_id, false, _row_origin(item_id, false))
 
 
-## その品目の行のアイコン位置（グローバル座標）。演出の発着点に使う。
-func _row_origin(item_id: String) -> Vector2:
+## 押したボタンの中心（グローバル座標）。演出の出発点に使う。
+##
+## 行のアイコンではなく**押したボタン**から出す。ボタンを押すたびに1個ずつ
+## 取引する画面なので、視線は押しているボタンにある。そこから品物が動き出す
+## 方が、連打しても「今の一押しが効いた」ことを見失わない。
+func _row_origin(item_id: String, is_buy: bool) -> Vector2:
 	var row: Dictionary = _rows.get(item_id, {})
-	var anchor: Control = row.get("buy")
+	var anchor: Control = row.get("buy") if is_buy else row.get("sell")
 	if is_instance_valid(anchor):
 		return anchor.global_position + anchor.size * 0.5
 	return global_position + size * 0.5

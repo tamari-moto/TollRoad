@@ -23,6 +23,7 @@ const GameStateScript = preload("res://scripts/autoload/game_state.gd")
 const UiUtil = preload("res://scripts/ui/ui_util.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Sfx = preload("res://scripts/ui/sfx.gd")
+const FxLayer = preload("res://scripts/ui/fx_layer.gd")
 const MapView3D = preload("res://scripts/ui/map_view_3d.gd")
 const DebugWindow = preload("res://scripts/ui/debug_window.gd")
 const LogisticsDebugWindow = preload("res://scripts/ui/logistics_debug_window.gd")
@@ -88,6 +89,10 @@ var _panels: Array[Node] = []
 ## 効果音。
 var _sfx: Sfx
 
+## 売買の演出層。**サイドパネルの中ではなく Root の直下**に吊る（理由は
+## _setup_trade_fx()）。
+var _fx: FxLayer
+
 ## サイドパネルが開いているか。
 var _side_panel_open: bool = false
 ## サイドパネルの「閉」状態での offset_left。Main.tscn の初期値をそのまま覚える。
@@ -137,8 +142,9 @@ func _configure() -> void:
 	_briefing_button.tooltip_text = "目標とヒントをもう一度読む"
 
 	_apply_backdrop()
-	_setup_trade_sfx()
+	_setup_trade_feedback()
 	_setup_sfx()
+	_setup_trade_fx()
 	_rest_button.tooltip_text = "1日を消費して待機する（Space）\n相場が動き、島の労働者が働く"
 
 	_side_panel_closed_offset = _side_panel.offset_left
@@ -402,9 +408,11 @@ func is_side_panel_open() -> bool:
 	return _side_panel_open
 
 
-## 市場の売買成立を効果音に繋ぐ。市場と積荷は別タブで同時には映らないため、
-## アイコンを飛ばす演出はせず、即座に反映して音だけ鳴らす。
-func _setup_trade_sfx() -> void:
+## 市場の売買成立を、音とアイコンの演出に繋ぐ。
+##
+## 市場パネルは「何を・買ったか売ったか・どこから」だけを知らせてくる。
+## 鳴らす音も飛ばす先もここで決める（パネルは画面全体を知らない）。
+func _setup_trade_feedback() -> void:
 	var market: Node = UiUtil.find_node(self, "MarketPanel")
 	if market.has_signal("traded") and not market.traded.is_connected(_on_traded):
 		market.traded.connect(_on_traded)
@@ -416,8 +424,39 @@ func _setup_sfx() -> void:
 	add_child(_sfx)
 
 
-func _on_traded(_item_id: String, is_buy: bool, _origin: Vector2) -> void:
+## 売買の演出層を **Root の直下・最後の子** として吊る。
+##
+## 市場パネルの中に置くと飛翔物が HUD まで届かない。SidePanel が
+## `clip_contents = true` で、パネルの縁で切り取られるため（実測ではなく
+## Main.tscn の指定。切るのは開閉のスライドを綺麗に見せるためで、外せない）。
+## 最後の子にするのは、HUD やサイドパネルの**上**を通すため。
+##
+## _configure() から呼ぶので二度呼ばれうる。既にあれば何もしない。
+func _setup_trade_fx() -> void:
+	if is_instance_valid(_fx) or _root == null:
+		return
+	_fx = FxLayer.new()
+	_fx.name = "TradeFx"
+	_root.add_child(_fx)
+
+
+func _on_traded(item_id: String, is_buy: bool, origin: Vector2) -> void:
 	_play(Sfx.Kind.BUY if is_buy else Sfx.Kind.SELL)
+	_fly_trade(item_id, is_buy, origin)
+
+
+## 売買した品目のアイコンを、押したボタンから HUD の該当表示へ飛ばす。
+##
+## **飛び先は main.gd が決める。** 市場パネルは自分の外に何があるかを
+## 知らないし、知るべきでもない（origin だけを渡してくる）。
+##
+## 買いは積載、売りはシルバーへ向ける。その取引で増えるものを指すので、
+## 数字を読まなくても「何をした取引か」が飛ぶ向きで分かる。
+func _fly_trade(item_id: String, is_buy: bool, origin: Vector2) -> void:
+	if not is_instance_valid(_fx) or not is_instance_valid(_hud):
+		return
+	var target: Vector2 = _hud.cargo_anchor() if is_buy else _hud.silver_anchor()
+	_fx.fly_item(item_id, origin, target, UiTheme.item_color(item_id))
 
 
 func _play(kind: Sfx.Kind) -> void:

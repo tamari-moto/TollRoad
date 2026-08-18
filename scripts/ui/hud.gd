@@ -100,6 +100,30 @@ func _animate_silver(target: int) -> void:
 	_silver_tween.chain().tween_callback(_set_silver_text.bind(target))
 
 
+## 売買の演出（fx_layer.gd）が飛んでいく先。グローバル座標で返す。
+##
+## **買いは積載へ、売りはシルバーへ向ける。** その取引で増えるものを
+## 指し示すことで、買いと売りを飛び先だけで見分けられるようにしている。
+## パネルをまたぐ演出なので座標はグローバルで返すこと（呼ぶのは main.gd）。
+##
+## ラベルをまだ引けていなければ HUD の中心を返す。演出が出ないより、
+## 多少ずれても出た方がよい（演出の欠落は気づきにくい）。
+func silver_anchor() -> Vector2:
+	_resolve_nodes()
+	return _center_of(_silver_label)
+
+
+func cargo_anchor() -> Vector2:
+	_resolve_nodes()
+	return _center_of(_cargo_label)
+
+
+func _center_of(label: Label) -> Vector2:
+	if is_instance_valid(label):
+		return label.global_position + label.size * 0.5
+	return global_position + size * 0.5
+
+
 func _set_silver_text(value: int) -> void:
 	if is_instance_valid(_silver_label):
 		_silver_label.text = "%s シルバー" % UiUtil.format_number(value)

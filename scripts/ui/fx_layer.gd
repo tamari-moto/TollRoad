@@ -1,8 +1,14 @@
 extends Control
 ## 画面最前面のエフェクト層。パネルをまたぐ演出をここで飛ばす。
 ##
-## 市場と積荷は別パネルなので、どちらかの内部で動かすと境界で切れる。
-## 全画面を覆うこの層に置き、グローバル座標で飛ばすことで跨げるようにする。
+## 売買の演出は市場（右のサイドパネル）から HUD（画面上部）へ跨いで飛ぶ。
+## **どちらかのパネルの内部に置くと境界で切れる。** SidePanel は
+## `clip_contents = true` なので、市場パネルの中に置いた飛翔物はパネルの縁で
+## 消え、HUD まで届かない。全画面を覆うこの層に置き、グローバル座標で
+## 飛ばすことで跨げるようにする。
+##
+## 吊るのは main.gd（`_setup_trade_fx()`）で、置き場所は `UI/Root` の直下。
+## 誰が飛ばすかは fly_item() の呼び出し側が決める（この層は経路だけを持つ）。
 ##
 ## 入力は一切拾わない（MOUSE_FILTER_IGNORE）。演出中もボタンは押せる。
 
@@ -12,7 +18,14 @@ const UiIcons = preload("res://scripts/ui/ui_icons.gd")
 ## 飛翔にかける秒数。手応えを出すため HUD の補間よりやや長く取る。
 const FLIGHT_DURATION: float = 0.42
 ## 弧の高さ。まっすぐ飛ぶより「運んでいる」感じが出る。
-const ARC_HEIGHT: float = 70.0
+##
+## **固定値ではなく距離に比例させる。** 市場（右のサイドパネル）から HUD
+## （画面上部）まで飛ばすようになり、行程が千px級になった。固定 70px では
+## 行程に対して弧が相対的に潰れ、直線と見分けがつかない。上下限で挟むのは、
+## 短い飛翔で弧が消えず、長い飛翔で画面外へ跳ね上がらないようにするため。
+const ARC_HEIGHT_RATIO: float = 0.20
+const ARC_HEIGHT_MIN: float = 40.0
+const ARC_HEIGHT_MAX: float = 180.0
 ## 飛翔中のアイコンの大きさ。一覧のアイコンより大きくして目を引く。
 const FLIGHT_ICON_SIZE: int = 34
 ## 着地時に一瞬だけ広がる倍率。
@@ -60,7 +73,9 @@ func fly_item(item_id: String, from_global: Vector2, to_global: Vector2,
 	tween.set_parallel(true)
 
 	# 弧を描かせる。制御点を中間の少し上に置く。
-	var control: Vector2 = (start + end) * 0.5 + Vector2(0.0, -ARC_HEIGHT)
+	var arc: float = clampf(
+		start.distance_to(end) * ARC_HEIGHT_RATIO, ARC_HEIGHT_MIN, ARC_HEIGHT_MAX)
+	var control: Vector2 = (start + end) * 0.5 + Vector2(0.0, -arc)
 	tween.tween_method(
 		func(t: float) -> void: _place_on_arc(flyer, start, control, end, t),
 		0.0, 1.0, FLIGHT_DURATION).set_trans(Tween.TRANS_SINE)
