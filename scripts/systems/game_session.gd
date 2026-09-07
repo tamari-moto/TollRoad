@@ -553,7 +553,8 @@ func explore_chance() -> float:
 
 
 ## 探索する。成功すればシルバー・レア品・島倉庫のブーストを得る。
-## 失敗すると積荷の戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を全て失う（資源は無傷）。
+## 失敗すると積荷の戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を、成功率へ
+## 寄与した分——同種 EXPLORE_EQUIP_UNIT_CAP 個まで——失う（資源は無傷）。
 ## 黒ゾーン襲撃の「積荷全損」とは区別する。
 func explore() -> bool:
 	if is_over():
@@ -594,15 +595,33 @@ func _apply_explore_success(is_caerleon: bool) -> void:
 	cargo_changed.emit()
 
 
-func _apply_explore_failure() -> void:
-	var lost: bool = false
+## 探索の失敗で失う戦闘装備の個数（品目 id → 個数）。成功率へ寄与した分
+## ——同種 EXPLORE_EQUIP_UNIT_CAP 個まで——だけを返す。
+## 失敗の判定より前に呼べるので、UI が「何を賭けているか」を先に出せる。
+func explore_equip_at_risk() -> Dictionary:
+	var at_risk: Dictionary = {}
 	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
-		if cargo_count(item_id) > 0:
+		var losing: int = mini(cargo_count(item_id), GameData.EXPLORE_EQUIP_UNIT_CAP)
+		if losing > 0:
+			at_risk[item_id] = losing
+	return at_risk
+
+
+func _apply_explore_failure() -> void:
+	var at_risk: Dictionary = explore_equip_at_risk()
+	var lost_total: int = 0
+	for item_id: String in at_risk:
+		var losing: int = at_risk[item_id]
+		var remaining: int = cargo_count(item_id) - losing
+		if remaining > 0:
+			cargo[item_id] = remaining
+		else:
 			cargo.erase(item_id)
-			lost = true
+		lost_total += losing
 	var flavor: String = GameData.CITIES[current_city]["explore_flavor"]
-	if lost:
-		_log("%s で探索失敗（%s）。積荷の戦闘装備を失った。" % [GameData.CITIES[current_city]["name"], flavor], LogKind.EXPLORE)
+	if lost_total > 0:
+		_log("%s で探索失敗（%s）。積荷の戦闘装備を %d 個失った。" % [
+			GameData.CITIES[current_city]["name"], flavor, lost_total], LogKind.EXPLORE)
 		cargo_changed.emit()
 	else:
 		_log("%s で探索失敗（%s）。" % [GameData.CITIES[current_city]["name"], flavor], LogKind.EXPLORE)

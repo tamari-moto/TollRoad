@@ -17,6 +17,7 @@ func _init() -> void:
 	_test_reward_bounds()
 	_test_capacity_safety()
 	_test_failure()
+	_test_failure_partial_loss()
 	_test_day_and_over()
 	_test_boost()
 	_test_save_round_trip()
@@ -153,6 +154,45 @@ func _test_failure() -> void:
 		if entry.contains("探索失敗"):
 			found_log = true
 	_check(found_log, "探索失敗が航海日誌に記録される", "記録なし")
+
+
+## 失うのは成功率へ寄与した分（同種 EXPLORE_EQUIP_UNIT_CAP 個まで）で止まり、
+## 頭打ちを超えて積んだ分は残ること。
+##
+## _test_failure() は剣を1個しか積まないため、全数ロストでも部分ロストでも
+## 通ってしまいこの規則を検出できない。**上限を超えて積む**のが要点で、
+## ちょうど上限個だけ積む検査にすると同じく素通りする。
+func _test_failure_partial_loss() -> void:
+	print("--- 探索失敗で失うのは寄与した分だけ ---")
+	var over_cap: int = GameData.EXPLORE_EQUIP_UNIT_CAP + 2
+	var expected_left: int = over_cap - GameData.EXPLORE_EQUIP_UNIT_CAP
+	var failed: GameSession = null
+	var at_risk_before: int = -1
+	for i: int in 400:
+		var s: GameSession = GameSession.new(41000 + i)
+		s.buy("sword", over_cap)
+		s.buy("ore", 3)
+		# 在庫が薄い都市では買い切れない。買えた試行だけを見る。
+		if s.cargo_count("sword") != over_cap or s.cargo_count("ore") != 3:
+			continue
+		var at_risk: Dictionary = s.explore_equip_at_risk()
+		s.explore()
+		if s.log_entries[-1].contains("探索失敗"):
+			failed = s
+			at_risk_before = at_risk.get("sword", 0)
+			break
+
+	if failed == null:
+		_check(false, "上限超で装備を積んだまま失敗するシードが見つかる", "400シード試して0件")
+		return
+	_check(at_risk_before == GameData.EXPLORE_EQUIP_UNIT_CAP,
+		"explore_equip_at_risk() が賭けている個数を先に返す", str(at_risk_before))
+	_check(failed.cargo_count("sword") == expected_left,
+		"頭打ちを超えて積んだ分は残る",
+		"%d 個残った（期待 %d）" % [failed.cargo_count("sword"), expected_left])
+	_check(failed.cargo_count("ore") == 3, "資源は無傷", str(failed.cargo_count("ore")))
+	_check(failed.log_entries[-1].contains("%d 個失った" % GameData.EXPLORE_EQUIP_UNIT_CAP),
+		"航海日誌に失った個数が出る", failed.log_entries[-1])
 
 
 func _test_day_and_over() -> void:
