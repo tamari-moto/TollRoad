@@ -11,16 +11,20 @@ const GameSession = preload("res://scripts/systems/game_session.gd")
 
 func _init() -> void:
 	_test_city_flavors()
+	_test_slot_shape()
+	_test_slot_moves()
+	_test_slot_net_worth()
 	_test_chance_formula()
 	_test_ravenspire_penalty()
 	_test_success_rate()
 	_test_reward_bounds()
 	_test_capacity_safety()
 	_test_failure()
-	_test_failure_partial_loss()
+	_test_success_keeps_slots()
 	_test_day_and_over()
 	_test_boost()
 	_test_save_round_trip()
+	_test_slot_save_round_trip()
 	_finish()
 
 
@@ -31,40 +35,145 @@ func _test_city_flavors() -> void:
 		_check(flavor != "", "%s に探索フレーバーがある" % city_id, "ない")
 
 
+func _test_slot_shape() -> void:
+	print("--- スロットの形 ---")
+	var s: GameSession = GameSession.new(20100)
+	_check(s.explore_slots.size() == GameData.EXPLORE_SLOT_COUNT,
+		"開始時からスロットが定数ぶん並ぶ", str(s.explore_slots.size()))
+	var all_empty: bool = true
+	for i: int in s.explore_slots.size():
+		if s.slot_item(i) != "":
+			all_empty = false
+	_check(all_empty, "開始時は全枠が空", str(s.explore_slots))
+	_check(s.first_empty_slot() == 0, "最初の空き枠は0番", str(s.first_empty_slot()))
+	_check(s.slot_item(-1) == "" and s.slot_item(999) == "",
+		"範囲外の参照は空を返す（落ちない）", "落ちるか空以外を返した")
+
+	# 装備以外は挿せない。資源を挿せてしまうと成功率と純資産の前提が崩れる。
+	s.buy("ore", 3)
+	var ore_before: int = s.cargo_count("ore")
+	_check(not s.equip_slot(0, "ore"), "資源はスロットに挿せない", "挿せてしまった")
+	_check(s.slot_item(0) == "", "拒否された後もスロットは空のまま", s.slot_item(0))
+	_check(s.cargo_count("ore") == ore_before, "拒否時に積荷が減らない",
+		"%d / %d" % [s.cargo_count("ore"), ore_before])
+
+	# 積荷に無い装備は挿せない。
+	_check(not s.equip_slot(0, "staff"), "積荷に無い装備は挿せない", "挿せてしまった")
+
+
+## スロットは積荷とは別の置き場——挿すと積荷から出て積載重量が空く。
+## 戻すときは積載に空きが要る。
+func _test_slot_moves() -> void:
+	print("--- スロットへの出し入れ ---")
+	var s: GameSession = GameSession.new(20101)
+	s.buy("sword", 2)
+	if s.cargo_count("sword") != 2:
+		_check(false, "検査の前提: 剣を2個買えた", str(s.cargo_count("sword")))
+		return
+	var weight_before: int = s.cargo_weight()
+	var sword_weight: int = GameData.ITEMS["sword"]["weight"]
+
+	_check(s.equip_slot(0, "sword"), "スロットへ挿せる", "挿せない")
+	_check(s.cargo_count("sword") == 1, "挿した分だけ積荷から減る", str(s.cargo_count("sword")))
+	_check(s.cargo_weight() == weight_before - sword_weight,
+		"挿すと積載重量が空く", "%d / %d" % [s.cargo_weight(), weight_before - sword_weight])
+
+	_check(s.unequip_slot(0), "スロットから戻せる", "戻せない")
+	_check(s.cargo_count("sword") == 2, "戻すと積荷が元に戻る", str(s.cargo_count("sword")))
+	_check(s.cargo_weight() == weight_before, "重量も元に戻る", str(s.cargo_weight()))
+	_check(not s.unequip_slot(0), "空のスロットは戻せない", "戻せてしまった")
+
+	# 入れ替え。挿さっている物は積荷へ返る。
+	var s2: GameSession = GameSession.new(20102)
+	s2.silver = 999999
+	s2.cargo["sword"] = 1
+	s2.cargo["bow"] = 1
+	_check(s2.equip_slot(0, "sword"), "検査の前提: 剣を挿せた", "挿せない")
+	_check(s2.equip_slot(0, "bow"), "同じ枠へ別の装備を挿すと入れ替わる", "入れ替わらない")
+	_check(s2.slot_item(0) == "bow", "枠の中身が新しい方になる", s2.slot_item(0))
+	_check(s2.cargo_count("sword") == 1, "元の中身は積荷へ返る", str(s2.cargo_count("sword")))
+	_check(s2.cargo_count("bow") == 0, "新しい方は積荷から出る", str(s2.cargo_count("bow")))
+
+	# 積載が満杯だと戻せない。free_capacity() が負にならないこと。
+	var s3: GameSession = GameSession.new(20103)
+	s3.cargo["sword"] = 1
+	if not s3.equip_slot(0, "sword"):
+		_check(false, "検査の前提: 剣を挿せた", "挿せない")
+		return
+	s3.cargo.clear()
+	var stone_weight: int = GameData.ITEMS["stone"]["weight"]
+	s3.cargo["stone"] = int(s3.capacity() / stone_weight)
+	_check(s3.free_capacity() < GameData.ITEMS["sword"]["weight"],
+		"検査の前提: 積載に剣ぶんの空きが無い", str(s3.free_capacity()))
+	_check(not s3.unequip_slot(0), "積載が埋まっていれば戻せない", "戻せてしまった")
+	_check(s3.slot_item(0) == "sword", "拒否されても装備は消えない", s3.slot_item(0))
+	_check(s3.free_capacity() >= 0, "積載超過にならない", str(s3.free_capacity()))
+
+
+## スロットへ移しても純資産が変わらないこと。
+## 数え漏らすと、装備を挿すだけでランクが下がる（勝利条件が置き場所で動く）。
+func _test_slot_net_worth() -> void:
+	print("--- スロットの中身も純資産に数える ---")
+	var s: GameSession = GameSession.new(20104)
+	s.buy("sword", 2)
+	if s.cargo_count("sword") != 2:
+		_check(false, "検査の前提: 剣を2個買えた", str(s.cargo_count("sword")))
+		return
+	var before: int = s.net_worth()
+	_check(s.equip_slot(0, "sword"), "検査の前提: 挿せた", "挿せない")
+	_check(s.net_worth() == before, "挿しても純資産は変わらない",
+		"%d / %d" % [s.net_worth(), before])
+	_check(s.unequip_slot(0), "検査の前提: 戻せた", "戻せない")
+	_check(s.net_worth() == before, "戻しても純資産は変わらない",
+		"%d / %d" % [s.net_worth(), before])
+
+
+## スロットに挿した装備だけが成功率に効くこと。
+## **積荷に何個あっても効かない**のがスロット制の要点なので、
+## 「積荷に積んだだけでは上がらない」を先に押さえる。ここが抜けると、
+## 旧仕様（積荷を数える）のままでも以降の検査が通ってしまう。
 func _test_chance_formula() -> void:
-	print("--- 成功率の算出式 ---")
+	print("--- 成功率の算出式（スロット） ---")
 	var s: GameSession = GameSession.new(20001)
 	_check(is_equal_approx(s.explore_chance(), GameData.EXPLORE_BASE_CHANCE),
-		"装備なしは基本確率のまま", str(s.explore_chance()))
+		"スロットが空なら基本確率のまま", str(s.explore_chance()))
 
-	s.buy("sword", 1)
-	_check(s.cargo_count("sword") == 1, "検査の前提: 剣を1個買えた", str(s.cargo_count("sword")))
+	# 全枠を剣で埋めるので枠数ぶん買う（1個ずつ挿すと積荷から出ていくため)。
+	s.buy("sword", GameData.EXPLORE_SLOT_COUNT)
+	_check(s.cargo_count("sword") == GameData.EXPLORE_SLOT_COUNT,
+		"検査の前提: 剣を枠数ぶん買えた", str(s.cargo_count("sword")))
+	_check(is_equal_approx(s.explore_chance(), GameData.EXPLORE_BASE_CHANCE),
+		"積荷に積んだだけでは成功率は上がらない", str(s.explore_chance()))
+
+	_check(s.equip_slot(0, "sword"), "スロット0へ挿せる", "挿せない")
 	_check(is_equal_approx(s.explore_chance(),
 			GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_BONUS_PER_UNIT),
-		"装備1個で+3%相当のボーナス", str(s.explore_chance()))
+		"スロット1個で+3%相当のボーナス", str(s.explore_chance()))
 
-	s.buy("sword", 5)
-	_check(s.cargo_count("sword") >= GameData.EXPLORE_EQUIP_UNIT_CAP,
-		"検査の前提: 剣を頭打ち数以上持っている", str(s.cargo_count("sword")))
+	# 同種は頭打ちまで。5枠すべてを剣で埋めても3個ぶんしか効かない。
+	for i: int in range(1, GameData.EXPLORE_SLOT_COUNT):
+		s.equip_slot(i, "sword")
+	_check(s.slot_counts().get("sword", 0) == GameData.EXPLORE_SLOT_COUNT,
+		"検査の前提: 全枠が剣で埋まった", str(s.slot_counts()))
 	_check(is_equal_approx(s.explore_chance(),
 			GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_UNIT_CAP * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT),
-		"同種の装備は頭打ち数までしか加算されない", str(s.explore_chance()))
+		"同種は頭打ち数までしか加算されない", str(s.explore_chance()))
 
-	# 種類を跨ぐとボーナスが伸びるが、合計は上限でクランプされる。
-	# ここで見たいのは explore_chance() のクランプ式そのものであり、市場から
-	# 買い集める経済的な妥当性ではない（装備の生産地は都市ごとに1種類しかなく、
-	# IMPORT_INITIAL_RATIO=0.0 の下では初日に全種類を1都市でまとめ買いできない）。
-	# そのため cargo を直接積んで前提を作る。
+	# 種類を跨ぐと伸びる。全枠を別種で埋めたときが最大。
 	var s2: GameSession = GameSession.new(20002)
 	s2.silver = 999999
 	s2.buy_mount("mammoth")
-	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
-		s2.cargo[item_id] = GameData.EXPLORE_EQUIP_UNIT_CAP
-	var uncapped_bonus: float = GameData.EXPLORE_COMBAT_ITEMS.size() * GameData.EXPLORE_EQUIP_UNIT_CAP * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
-	_check(uncapped_bonus > GameData.EXPLORE_EQUIP_BONUS_CAP,
-		"検査の前提: クランプ無しなら上限を超える", str(uncapped_bonus))
-	_check(is_equal_approx(s2.explore_chance(), GameData.EXPLORE_BASE_CHANCE + GameData.EXPLORE_EQUIP_BONUS_CAP),
-		"ボーナス合計は上限でクランプされる", str(s2.explore_chance()))
+	for i: int in GameData.EXPLORE_SLOT_COUNT:
+		s2.cargo[GameData.EXPLORE_COMBAT_ITEMS[i]] = 1
+	for i: int in GameData.EXPLORE_SLOT_COUNT:
+		_check(s2.equip_slot(i, GameData.EXPLORE_COMBAT_ITEMS[i]),
+			"検査の前提: スロット%d に別種を挿せる" % i, "挿せない")
+	var expected_max: float = GameData.EXPLORE_SLOT_COUNT * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
+	_check(is_equal_approx(s2.explore_equip_bonus(), expected_max),
+		"別種で全枠を埋めるとスロット数ぶんのボーナス", str(s2.explore_equip_bonus()))
+	_check(expected_max < GameData.EXPLORE_EQUIP_BONUS_CAP,
+		"スロット制では合計上限に届かない（上限は歯止めとして残るだけ）",
+		"%.2f >= %.2f" % [expected_max, GameData.EXPLORE_EQUIP_BONUS_CAP])
 
 
 func _test_ravenspire_penalty() -> void:
@@ -129,70 +238,59 @@ func _test_capacity_safety() -> void:
 	_check(true, "1000回とも積載超過しない", "")
 
 
+## 失敗で失うのは**スロットの中身だけ**で、積荷の装備は無傷であること。
+## 旧仕様は積荷の装備を消していたので、ここが両方を分けて見る要になる。
 func _test_failure() -> void:
-	print("--- 探索失敗時のリスク ---")
+	print("--- 探索失敗で失うのはスロットだけ ---")
 	var failed: GameSession = null
-	for i: int in 200:
-		var s: GameSession = GameSession.new(40000 + i)
-		s.buy("sword", 1)
-		s.buy("ore", 5)
-		if s.cargo_count("sword") != 1 or s.cargo_count("ore") != 5:
-			continue
-		s.explore()
-		if s.log_entries[-1].contains("探索失敗"):
-			failed = s
-			break
-
-	if failed == null:
-		_check(false, "探索に失敗するシードが見つかる", "200シード試して0件")
-		return
-	_check(failed.cargo_count("sword") == 0, "失敗すると戦闘装備を失う", str(failed.cargo_count("sword")))
-	_check(failed.cargo_count("ore") == 5, "資源は無傷", str(failed.cargo_count("ore")))
-
-	var found_log: bool = false
-	for entry: String in failed.log_entries:
-		if entry.contains("探索失敗"):
-			found_log = true
-	_check(found_log, "探索失敗が航海日誌に記録される", "記録なし")
-
-
-## 失うのは成功率へ寄与した分（同種 EXPLORE_EQUIP_UNIT_CAP 個まで）で止まり、
-## 頭打ちを超えて積んだ分は残ること。
-##
-## _test_failure() は剣を1個しか積まないため、全数ロストでも部分ロストでも
-## 通ってしまいこの規則を検出できない。**上限を超えて積む**のが要点で、
-## ちょうど上限個だけ積む検査にすると同じく素通りする。
-func _test_failure_partial_loss() -> void:
-	print("--- 探索失敗で失うのは寄与した分だけ ---")
-	var over_cap: int = GameData.EXPLORE_EQUIP_UNIT_CAP + 2
-	var expected_left: int = over_cap - GameData.EXPLORE_EQUIP_UNIT_CAP
-	var failed: GameSession = null
-	var at_risk_before: int = -1
 	for i: int in 400:
-		var s: GameSession = GameSession.new(41000 + i)
-		s.buy("sword", over_cap)
-		s.buy("ore", 3)
-		# 在庫が薄い都市では買い切れない。買えた試行だけを見る。
-		if s.cargo_count("sword") != over_cap or s.cargo_count("ore") != 3:
+		var s: GameSession = GameSession.new(40000 + i)
+		# 積荷に4個。うち1個だけをスロットへ移す（残り3個は積荷に残る）。
+		s.buy("sword", 4)
+		s.buy("ore", 5)
+		if s.cargo_count("sword") != 4 or s.cargo_count("ore") != 5:
 			continue
-		var at_risk: Dictionary = s.explore_equip_at_risk()
+		if not s.equip_slot(0, "sword"):
+			continue
 		s.explore()
 		if s.log_entries[-1].contains("探索失敗"):
 			failed = s
-			at_risk_before = at_risk.get("sword", 0)
 			break
 
 	if failed == null:
-		_check(false, "上限超で装備を積んだまま失敗するシードが見つかる", "400シード試して0件")
+		_check(false, "スロットを埋めたまま失敗するシードが見つかる", "400シード試して0件")
 		return
-	_check(at_risk_before == GameData.EXPLORE_EQUIP_UNIT_CAP,
-		"explore_equip_at_risk() が賭けている個数を先に返す", str(at_risk_before))
-	_check(failed.cargo_count("sword") == expected_left,
-		"頭打ちを超えて積んだ分は残る",
-		"%d 個残った（期待 %d）" % [failed.cargo_count("sword"), expected_left])
-	_check(failed.cargo_count("ore") == 3, "資源は無傷", str(failed.cargo_count("ore")))
-	_check(failed.log_entries[-1].contains("%d 個失った" % GameData.EXPLORE_EQUIP_UNIT_CAP),
-		"航海日誌に失った個数が出る", failed.log_entries[-1])
+	_check(failed.slot_item(0) == "", "失敗するとスロットが空になる", failed.slot_item(0))
+	_check(failed.cargo_count("sword") == 3, "積荷に残した装備は無傷",
+		"%d 個（期待 3）" % failed.cargo_count("sword"))
+	_check(failed.cargo_count("ore") == 5, "資源は無傷", str(failed.cargo_count("ore")))
+	_check(failed.log_entries[-1].contains("探索失敗"),
+		"探索失敗が航海日誌に記録される", failed.log_entries[-1])
+
+
+## 成功したときはスロットが減らないこと（消費は失敗時のみ）。
+## 「毎回消費」との取り違えをここで止める。
+func _test_success_keeps_slots() -> void:
+	print("--- 成功してもスロットは減らない ---")
+	var succeeded: GameSession = null
+	for i: int in 400:
+		var s: GameSession = GameSession.new(45000 + i)
+		s.buy("sword", 2)
+		if s.cargo_count("sword") != 2:
+			continue
+		if not s.equip_slot(0, "sword"):
+			continue
+		s.explore()
+		if s.log_entries[-1].contains("探索成功"):
+			succeeded = s
+			break
+
+	if succeeded == null:
+		_check(false, "スロットを埋めたまま成功するシードが見つかる", "400シード試して0件")
+		return
+	_check(succeeded.slot_item(0) == "sword", "成功後もスロットは挿さったまま", succeeded.slot_item(0))
+	_check(succeeded.cargo_count("sword") == 1, "積荷の残りも変わらない",
+		str(succeeded.cargo_count("sword")))
 
 
 func _test_day_and_over() -> void:
@@ -284,3 +382,41 @@ func _test_save_round_trip() -> void:
 	var gain: int = restored.warehouse_total() - before
 	var expected: int = restored.worker_count() * GameData.RESOURCES_PER_WORKER_PER_DAY * GameData.EXPLORE_BOOST_MULT
 	_check(gain == expected, "復元後もブーストが効いている", "%d / %d" % [gain, expected])
+
+
+## スロットがセーブを往復すること。**JSON.stringify() を経由して比べる**
+## （辞書どうしの比較はメモリ上で欠けないため、壊れた実装でも通る）。
+func _test_slot_save_round_trip() -> void:
+	print("--- スロットのセーブ往復 ---")
+	var s: GameSession = GameSession.new(20105)
+	s.silver = 999999
+	s.cargo["sword"] = 1
+	s.cargo["bow"] = 1
+	if not s.equip_slot(0, "sword") or not s.equip_slot(2, "bow"):
+		_check(false, "検査の前提: 2枠に挿せた", str(s.explore_slots))
+		return
+
+	var via_json: Variant = JSON.parse_string(JSON.stringify(s.to_dict()))
+	_check(via_json is Dictionary, "JSON として往復できる", str(typeof(via_json)))
+	if not (via_json is Dictionary):
+		return
+	var restored: GameSession = GameSession.new(0)
+	restored.from_dict(via_json)
+	_check(restored.explore_slots.size() == GameData.EXPLORE_SLOT_COUNT,
+		"復元後も枠数が揃う", str(restored.explore_slots.size()))
+	_check(restored.slot_item(0) == "sword" and restored.slot_item(2) == "bow",
+		"挿した中身と位置が戻る", str(restored.explore_slots))
+	_check(restored.slot_item(1) == "", "空き枠は空きのまま戻る", restored.slot_item(1))
+	_check(is_equal_approx(restored.explore_equip_bonus(), s.explore_equip_bonus()),
+		"復元後の成功率ボーナスが一致する", str(restored.explore_equip_bonus()))
+
+	# スロットを持たない版のセーブ（旧セーブ）を読んでも落ちないこと。
+	var legacy: Dictionary = s.to_dict()
+	legacy.erase("explore_slots")
+	var legacy_json: Variant = JSON.parse_string(JSON.stringify(legacy))
+	var from_legacy: GameSession = GameSession.new(0)
+	from_legacy.from_dict(legacy_json)
+	_check(from_legacy.explore_slots.size() == GameData.EXPLORE_SLOT_COUNT,
+		"スロットが無い旧セーブでも枠数が揃う", str(from_legacy.explore_slots.size()))
+	_check(from_legacy.explore_equip_bonus() == 0.0,
+		"旧セーブのスロットは空", str(from_legacy.explore_equip_bonus()))

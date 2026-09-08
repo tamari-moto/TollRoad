@@ -560,7 +560,7 @@ func _append_log(message: String, kind: int = -1, with_sound: bool = true) -> vo
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	# 積荷の全損は最も重い事象なので、その行だけ色を変えて見落とさせない。
-	# 探索失敗も戦闘装備を失う重い事象なので同様に扱う。
+	# 探索失敗もスロットの装備を失う重い事象なので同様に扱う。
 	if Sfx.is_severe_log_kind(log_kind, message):
 		label.add_theme_color_override("font_color", UiTheme.WARN)
 	_log_list.add_child(label)

@@ -237,14 +237,23 @@ const CRAFT_FEE: int = 90
 const CRAFT_REFUND_RATE: float = 0.30
 
 # --- 探索 ---
-## 戦闘装備として兼用する既存の交易用装備。積荷にあるほど成功率が上がる。
+## 戦闘装備として兼用する既存の交易用装備。**探索スロットに挿した分だけ**が
+## 成功率に効き、失敗時に失われる。積荷に何個あるかは探索に一切関係しない。
 const EXPLORE_COMBAT_ITEMS: Array[String] = ["sword", "bow", "robe", "armor", "shield", "warhammer", "cloak", "staff"]
+
+## 探索スロットの数。ここに挿した装備だけが探索の対象になる。
+## スロットの中身は積荷とは別の置き場で、積載重量を食わず市場でも売れない。
+const EXPLORE_SLOT_COUNT: int = 5
 
 const EXPLORE_BASE_CHANCE: float = 0.35
 ## 装備1個あたりのボーナス。同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
-## （種類を跨いで持つ方が伸びる設計）。
+## （種類を跨いで挿す方が伸びる設計）。
 const EXPLORE_EQUIP_BONUS_PER_UNIT: float = 0.03
 const EXPLORE_EQUIP_UNIT_CAP: int = 3
+## 以下2つの上限は、スロット制になって**もう効いていない**（到達しない）。
+## スロット5枠 × 3% = 最大 +15% で EXPLORE_EQUIP_BONUS_CAP(30%) に届かず、
+## 基本35% + 仲間の加算 + 15% でも EXPLORE_MAX_CHANCE(85%) に届かない。
+## 残してあるのは、枠数やボーナスを将来動かしたときの歯止めとして。
 const EXPLORE_EQUIP_BONUS_CAP: float = 0.30
 const EXPLORE_MAX_CHANCE: float = 0.85
 ## レイヴンスパイアは黒ゾーンの並びで成功率が下がる代わりに報酬が大きい。

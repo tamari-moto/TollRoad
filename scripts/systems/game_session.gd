@@ -59,6 +59,14 @@ var active_companion: String = GameData.COMPANION_NONE
 ## item_id -> 個数
 var cargo: Dictionary = {}
 
+## 探索スロット。長さは GameData.EXPLORE_SLOT_COUNT で、各要素は装備の
+## item_id か ""（空き）。**積荷とは別の置き場**で、積載重量を食わず市場でも
+## 売れない。探索の成功率に効くのも、失敗で失われるのもここだけ。
+##
+## 純資産には数える（net_worth()）。数えないと、装備をスロットへ移すだけで
+## 純資産が減り、勝利条件が装備の置き場所で変わってしまう。
+var explore_slots: Array[String] = []
+
 ## 探索成功のブーストが残っている日数。0なら効果なし。
 var _boost_days_left: int = 0
 
@@ -99,6 +107,7 @@ func _init(rng_seed: int = 0) -> void:
 	logistics = Logistics.new(_rng)
 	price_history = PriceHistory.new()
 	price_history.record(prices)
+	_ensure_slots()
 	_record_memo()
 
 
@@ -163,13 +172,20 @@ func is_stranded() -> bool:
 	return true
 
 
-## 純資産 = シルバー + (積荷 + 島倉庫) の基準価格 × 0.9
+## 純資産 = シルバー + (積荷 + 島倉庫 + 探索スロット) の基準価格 × 0.9
+##
+## スロットの中身も数える。数えないと装備を挿すだけで純資産が減り、
+## 「どこに置いてあるか」で勝利条件が動いてしまう。
 func net_worth() -> int:
 	var stock_value: int = 0
 	for item_id: String in cargo:
 		stock_value += GameData.ITEMS[item_id]["base_price"] * cargo[item_id]
 	for item_id: String in warehouse:
 		stock_value += GameData.ITEMS[item_id]["base_price"] * warehouse[item_id]
+	var slots: Dictionary = slot_counts()
+	for item_id: String in slots:
+		var held: int = slots[item_id]
+		stock_value += GameData.ITEMS[item_id]["base_price"] * held
 	return silver + int(round(stock_value * GameData.NET_WORTH_STOCK_RATE))
 
 
@@ -528,15 +544,117 @@ func move_to(destination: String) -> bool:
 	return true
 
 
+# --- 探索スロット ---
+
+## スロットの配列を GameData.EXPLORE_SLOT_COUNT の長さに揃える。
+## 空きは ""。枠数を変えた後の古いセーブを読んでも破綻しないよう、
+## 参照する側ではなくここで一度だけ形を整える。
+## 枠が減る場合、あふれた中身は**捨てずに積荷へ戻す**（積めなければ諦める）。
+func _ensure_slots() -> void:
+	while explore_slots.size() > GameData.EXPLORE_SLOT_COUNT:
+		var overflow: String = explore_slots[explore_slots.size() - 1]
+		explore_slots.remove_at(explore_slots.size() - 1)
+		if overflow != "" and free_capacity() >= GameData.ITEMS[overflow]["weight"]:
+			cargo[overflow] = cargo_count(overflow) + 1
+	while explore_slots.size() < GameData.EXPLORE_SLOT_COUNT:
+		explore_slots.append("")
+
+
+## index 番のスロットの中身（空きなら ""）。範囲外は "" を返す。
+func slot_item(index: int) -> String:
+	if index < 0 or index >= explore_slots.size():
+		return ""
+	return explore_slots[index]
+
+
+## スロットの中身の集計（item_id -> 個数）。空きは数えない。
+func slot_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	for item_id: String in explore_slots:
+		if item_id != "":
+			counts[item_id] = counts.get(item_id, 0) + 1
+	return counts
+
+
+## 空いているスロットの番号。無ければ -1。
+func first_empty_slot() -> int:
+	for i: int in explore_slots.size():
+		if explore_slots[i] == "":
+			return i
+	return -1
+
+
+## 積荷の装備を1個、index 番のスロットへ挿す。
+##
+## スロットは積荷とは別の置き場なので、挿すと積荷から**出る**（重量が空く）。
+## 既に何か挿さっていれば入れ替えとして、元の中身を積荷へ戻す。
+## 入れ替えで積載が溢れる場合は何もせず false を返す
+## （free_capacity() が非負であるという他の計算の前提を崩さないため）。
+func equip_slot(index: int, item_id: String) -> bool:
+	if index < 0 or index >= explore_slots.size():
+		return false
+	if not GameData.EXPLORE_COMBAT_ITEMS.has(item_id):
+		return false
+	if cargo_count(item_id) <= 0:
+		return false
+	var previous: String = explore_slots[index]
+	if previous == item_id:
+		return false
+	# 挿す分だけ積荷が軽くなり、戻す分だけ重くなる。差し引きで溢れないこと。
+	var delta: int = GameData.ITEMS[item_id]["weight"]
+	if previous != "":
+		delta -= GameData.ITEMS[previous]["weight"]
+	if free_capacity() + delta < 0:
+		return false
+
+	_take_from_cargo(item_id, 1)
+	explore_slots[index] = item_id
+	if previous != "":
+		cargo[previous] = cargo_count(previous) + 1
+	cargo_changed.emit()
+	return true
+
+
+## index 番のスロットを空にし、中身を積荷へ戻す。
+## 積載に空きが無ければ何もせず false（装備は挿さったまま残る）。
+func unequip_slot(index: int) -> bool:
+	if index < 0 or index >= explore_slots.size():
+		return false
+	var item_id: String = explore_slots[index]
+	if item_id == "":
+		return false
+	if free_capacity() < GameData.ITEMS[item_id]["weight"]:
+		return false
+	explore_slots[index] = ""
+	cargo[item_id] = cargo_count(item_id) + 1
+	cargo_changed.emit()
+	return true
+
+
+## 積荷から count 個引く。0個になった項目は残さない
+## （cargo_weight() と net_worth() が全キーを舐めるため、
+## 0 の項目が残っても害は無いが、セーブの往復で差が出る）。
+func _take_from_cargo(item_id: String, count: int) -> void:
+	var remaining: int = cargo_count(item_id) - count
+	if remaining > 0:
+		cargo[item_id] = remaining
+	else:
+		cargo.erase(item_id)
+
+
 # --- 探索（1日消費） ---
 
-## 積荷にある戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）による成功率の加算。
+## 探索スロットに挿した戦闘装備による成功率の加算。
+## **積荷に何個あるかは関係しない。** 挿さっている分だけが効く。
 ## 同種は EXPLORE_EQUIP_UNIT_CAP 個までしか加算されない
-## （種類を跨いで持つ方が伸びる設計）。
+## （種類を跨いで挿す方が伸びる設計。5枠すべてを同じ装備で埋めても
+## 3個ぶんしか効かない）。
 func explore_equip_bonus() -> float:
 	var bonus: float = 0.0
-	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
-		bonus += mini(cargo_count(item_id), GameData.EXPLORE_EQUIP_UNIT_CAP) * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
+	var counts: Dictionary = slot_counts()
+	for item_id: String in counts:
+		var held: int = counts[item_id]
+		bonus += mini(held, GameData.EXPLORE_EQUIP_UNIT_CAP) * GameData.EXPLORE_EQUIP_BONUS_PER_UNIT
 	return minf(bonus, GameData.EXPLORE_EQUIP_BONUS_CAP)
 
 
@@ -553,9 +671,9 @@ func explore_chance() -> float:
 
 
 ## 探索する。成功すればシルバー・レア品・島倉庫のブーストを得る。
-## 失敗すると積荷の戦闘装備（GameData.EXPLORE_COMBAT_ITEMS）を、成功率へ
-## 寄与した分——同種 EXPLORE_EQUIP_UNIT_CAP 個まで——失う（資源は無傷）。
-## 黒ゾーン襲撃の「積荷全損」とは区別する。
+## 失敗すると**探索スロットの中身だけ**を失う。積荷は資源も装備も無傷で、
+## 黒ゾーン襲撃の「積荷全損」とは別物。
+## 成功した場合はスロットの中身は減らない（消費は失敗時のみ）。
 func explore() -> bool:
 	if is_over():
 		return false
@@ -595,32 +713,25 @@ func _apply_explore_success(is_caerleon: bool) -> void:
 	cargo_changed.emit()
 
 
-## 探索の失敗で失う戦闘装備の個数（品目 id → 個数）。成功率へ寄与した分
-## ——同種 EXPLORE_EQUIP_UNIT_CAP 個まで——だけを返す。
+## 探索の失敗で失うもの（品目 id → 個数）＝スロットの中身そのもの。
+## slot_counts() の別名だが、呼ぶ側の意図（賭け金を見たいのか、
+## 挿さっている物を見たいのか）で名前を分けてある。
 ## 失敗の判定より前に呼べるので、UI が「何を賭けているか」を先に出せる。
 func explore_equip_at_risk() -> Dictionary:
-	var at_risk: Dictionary = {}
-	for item_id: String in GameData.EXPLORE_COMBAT_ITEMS:
-		var losing: int = mini(cargo_count(item_id), GameData.EXPLORE_EQUIP_UNIT_CAP)
-		if losing > 0:
-			at_risk[item_id] = losing
-	return at_risk
+	return slot_counts()
 
 
+## 失敗。**スロットを空にするだけ**で、積荷には一切触らない。
+## スロットの中身は積荷から出ているので、ここで積荷を減らすと二重取りになる。
 func _apply_explore_failure() -> void:
-	var at_risk: Dictionary = explore_equip_at_risk()
 	var lost_total: int = 0
-	for item_id: String in at_risk:
-		var losing: int = at_risk[item_id]
-		var remaining: int = cargo_count(item_id) - losing
-		if remaining > 0:
-			cargo[item_id] = remaining
-		else:
-			cargo.erase(item_id)
-		lost_total += losing
+	for i: int in explore_slots.size():
+		if explore_slots[i] != "":
+			explore_slots[i] = ""
+			lost_total += 1
 	var flavor: String = GameData.CITIES[current_city]["explore_flavor"]
 	if lost_total > 0:
-		_log("%s で探索失敗（%s）。積荷の戦闘装備を %d 個失った。" % [
+		_log("%s で探索失敗（%s）。スロットの装備 %d 個を失った。" % [
 			GameData.CITIES[current_city]["name"], flavor, lost_total], LogKind.EXPLORE)
 		cargo_changed.emit()
 	else:
@@ -942,6 +1053,7 @@ func to_dict() -> Dictionary:
 		"island_level": island_level,
 		"active_companion": active_companion,
 		"cargo": cargo.duplicate(true),
+		"explore_slots": explore_slots.duplicate(),
 		"warehouse": warehouse.duplicate(true),
 		"memo": memo.duplicate(true),
 		"log_entries": log_entries.duplicate(),
@@ -984,6 +1096,11 @@ func from_dict(data: Dictionary) -> void:
 
 	if data.has("cargo"):
 		cargo = _restore_counts(data["cargo"])
+	if data.has("explore_slots"):
+		explore_slots = _restore_slots(data["explore_slots"])
+	# スロットを持たない版のセーブは空のまま。長さだけは必ず揃える
+	# （枠数を変えた後の古いセーブでも、参照する側が範囲を気にせず済む）。
+	_ensure_slots()
 	if data.has("warehouse"):
 		warehouse = _restore_counts(data["warehouse"])
 	if data.has("memo"):
@@ -1033,6 +1150,22 @@ func from_dict(data: Dictionary) -> void:
 
 
 ## item_id -> 個数。未知の品目は捨てる（品目を消した後の古いセーブ対策）。
+## セーブから探索スロットを戻す。知らない品目と装備以外は空きに落とす
+## （品目を消した後の古いセーブで、存在しない id を抱えたまま
+## GameData.ITEMS を引いて落ちるのを防ぐ）。長さは _ensure_slots() が揃える。
+func _restore_slots(raw: Variant) -> Array[String]:
+	var restored: Array[String] = []
+	if not (raw is Array):
+		return restored
+	for entry: Variant in raw:
+		var item_id: String = str(entry)
+		if GameData.EXPLORE_COMBAT_ITEMS.has(item_id):
+			restored.append(item_id)
+		else:
+			restored.append("")
+	return restored
+
+
 func _restore_counts(source: Dictionary) -> Dictionary:
 	var out: Dictionary = {}
 	for item_id: Variant in source:

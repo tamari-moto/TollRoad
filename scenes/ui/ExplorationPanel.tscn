@@ -27,6 +27,26 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "成功率 —"
 
+[node name="SlotsTitle" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "探索スロット"
+
+[node name="SlotsRow" type="HBoxContainer" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="EquipTitle" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "積荷の装備"
+
+[node name="EquipList" type="VBoxContainer" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
 [node name="HintLabel" type="Label" parent="Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
