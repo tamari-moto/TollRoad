@@ -222,7 +222,7 @@ Godot 自身なら `load().new()` で大半を1プロセスに収められる。
 ## シグナルの流れ
 
 `GameSession` の7シグナル — `day_advanced(day)` / `silver_changed(amount)` /
-`cargo_changed()` / `warehouse_changed()` / `island_upgraded(level)` /
+`cargo_changed()` / お`warehouse_changed()` / `island_upgraded(level)` /
 `mount_changed(id)` / `logged(message)`。
 
 **分散購読が主。** 各パネルが `bind()` の中で自分の関心事だけを直接繋ぐ。
